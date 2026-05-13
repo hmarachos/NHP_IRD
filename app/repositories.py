@@ -13,6 +13,7 @@ class DocumentRepository:
         original_filename: str,
         stored_filename: str,
         parsed: ParsedDocument,
+        note: str = "",
         status: str = "processed",
         error: str = "",
     ) -> int:
@@ -22,9 +23,9 @@ class DocumentRepository:
             INSERT INTO documents (
                 contract_number, object_name, original_filename, stored_filename,
                 working_title, official_title, issuer, issue_date, valid_until,
-                validity_text, no_expiration, raw_text, status, error
+                validity_text, no_expiration, raw_text, note, status, error
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 contract_number,
@@ -39,6 +40,7 @@ class DocumentRepository:
                 parsed.validity_text,
                 1 if parsed.no_expiration else 0,
                 parsed.raw_text,
+                note,
                 status,
                 error,
             ),
@@ -53,7 +55,33 @@ class DocumentRepository:
             )
         )
 
+    def list_grouped(self) -> list[Row]:
+        return list(
+            get_db().execute(
+                """
+                SELECT *
+                FROM documents
+                ORDER BY contract_number COLLATE NOCASE ASC, created_at DESC, id DESC
+                """
+            )
+        )
+
     def get(self, document_id: int) -> Row | None:
         return get_db().execute(
             "SELECT * FROM documents WHERE id = ?", (document_id,)
         ).fetchone()
+
+    def delete(self, document_id: int) -> bool:
+        db = get_db()
+        cursor = db.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        db.commit()
+        return cursor.rowcount > 0
+
+    def update_note(self, document_id: int, note: str) -> bool:
+        db = get_db()
+        cursor = db.execute(
+            "UPDATE documents SET note = ? WHERE id = ?",
+            (note, document_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0

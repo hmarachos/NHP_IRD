@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS documents (
     validity_text TEXT,
     no_expiration INTEGER NOT NULL DEFAULT 0,
     raw_text TEXT,
+    note TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'processed',
     error TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -34,7 +35,14 @@ def get_db() -> sqlite3.Connection:
 def init_db() -> None:
     db = get_db()
     db.executescript(SCHEMA)
+    ensure_column(db, "documents", "note", "TEXT NOT NULL DEFAULT ''")
     db.commit()
+
+
+def ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def close_db(_error: Exception | None = None) -> None:

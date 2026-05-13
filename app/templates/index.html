@@ -19,34 +19,67 @@
             <span>PDF-документ</span>
             <input type="file" name="pdf_file" accept="application/pdf" required>
         </label>
+        <label>
+            <span>Примечание</span>
+            <textarea name="note" rows="3"></textarea>
+        </label>
         <button type="submit">Проанализировать</button>
     </form>
 
     <section class="records">
-        <h2>Последние документы</h2>
-        {% if documents %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Договор</th>
-                        <th>Объект</th>
-                        <th>Рабочее название</th>
-                        <th>Дата выдачи</th>
-                        <th>Срок</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for document in documents %}
-                        <tr>
-                            <td><a href="{{ url_for('web.document_detail', document_id=document.id) }}">{{ document.contract_number }}</a></td>
-                            <td>{{ document.object_name }}</td>
-                            <td>{{ document.working_title or "—" }}</td>
-                            <td>{{ document.issue_date or "—" }}</td>
-                            <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <h2>Исходные данные по договорам</h2>
+        {% if contract_groups %}
+            <div class="contract-groups">
+                {% for group in contract_groups %}
+                    <section class="contract-group">
+                        <header class="contract-group-head">
+                            <div>
+                                <h3>Договор {{ group.contract_number }}</h3>
+                                <p>{{ group.object_names|join("; ") }}</p>
+                            </div>
+                            <span>{{ group.documents|length }} док.</span>
+                        </header>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Документ</th>
+                                    <th>Дата выдачи</th>
+                                    <th>Срок</th>
+                                    <th>Примечание</th>
+                                    <th>Статус</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for document in group.documents %}
+                                    <tr>
+                                        <td>
+                                            <a href="{{ url_for('web.document_detail', document_id=document.id) }}">
+                                                {{ document.working_title or document.official_title or document.original_filename or "Документ" }}
+                                            </a>
+                                        </td>
+                                        <td>{{ document.issue_date or "—" }}</td>
+                                        <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
+                                        <td class="note-cell">{{ document.note or "—" }}</td>
+                                        <td><span class="status status-{{ document.status }}">{{ document.status }}</span></td>
+                                        <td>
+                                            <div class="row-actions">
+                                                {% if document.stored_filename %}
+                                                    <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть</a>
+                                                {% endif %}
+                                                <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
+                                                    <button class="danger-button" type="submit">Удалить</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </section>
+                {% endfor %}
+            </div>
         {% else %}
             <p class="empty">Загруженных документов пока нет.</p>
         {% endif %}

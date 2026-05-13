@@ -4,7 +4,15 @@
 <section class="document-view">
     <div class="document-head">
         <h1>{{ document.working_title or "Документ" }}</h1>
-        <span class="status status-{{ document.status }}">{{ document.status }}</span>
+        <div class="document-actions">
+            {% if document.stored_filename %}
+                <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть PDF</a>
+            {% endif %}
+            <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
+                <button class="danger-button" type="submit">Удалить</button>
+            </form>
+            <span class="status status-{{ document.status }}">{{ document.status }}</span>
+        </div>
     </div>
 
     {% if document.error %}
@@ -18,8 +26,32 @@
         <div><dt>Кем выдан</dt><dd>{{ document.issuer or "—" }}</dd></div>
         <div><dt>Дата выдачи</dt><dd>{{ document.issue_date or "—" }}</dd></div>
         <div><dt>Срок действия</dt><dd>{{ "без срока действия" if document.no_expiration else (document.valid_until or "—") }}</dd></div>
-        <div><dt>Файл</dt><dd>{{ document.original_filename }}</dd></div>
+        <div>
+            <dt>Файл</dt>
+            <dd>
+                {% if document.stored_filename %}
+                    <a href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">{{ document.original_filename }}</a>
+                {% else %}
+                    {{ document.original_filename or "—" }}
+                {% endif %}
+            </dd>
+        </div>
     </dl>
+
+    <section class="note-panel">
+        <h2>Примечание</h2>
+        <form action="{{ url_for('web.update_document_note', document_id=document.id) }}" method="post">
+            <textarea name="note" rows="4">{{ document.note or "" }}</textarea>
+            <button type="submit">Сохранить примечание</button>
+        </form>
+    </section>
+
+    {% if document.stored_filename %}
+        <section class="pdf-preview">
+            <h2>Предпросмотр PDF</h2>
+            <iframe src="{{ url_for('web.document_preview', document_id=document.id) }}" title="Предпросмотр PDF"></iframe>
+        </section>
+    {% endif %}
 
     {% if document.validity_text %}
         <section class="text-block">

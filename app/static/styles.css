@@ -71,6 +71,12 @@ h2 {
     font-size: 18px;
 }
 
+h3 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.25;
+}
+
 label {
     display: grid;
     gap: 8px;
@@ -106,6 +112,49 @@ button:hover {
     background: var(--accent-dark);
 }
 
+.button-link,
+.danger-button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.button-link {
+    color: #ffffff;
+    background: var(--accent);
+}
+
+.button-link:hover {
+    background: var(--accent-dark);
+}
+
+.button-link.secondary {
+    color: var(--accent-dark);
+    background: #e4f2ee;
+}
+
+.button-link.secondary:hover {
+    background: #d2e9e2;
+}
+
+.danger-button {
+    width: auto;
+    color: #ffffff;
+    background: var(--danger);
+}
+
+.danger-button:hover {
+    background: #8f1d14;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -123,6 +172,51 @@ td {
 th {
     color: var(--muted);
     font-weight: 600;
+}
+
+.contract-groups {
+    display: grid;
+    gap: 20px;
+}
+
+.contract-group {
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+}
+
+.contract-group:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.contract-group-head {
+    display: flex;
+    gap: 16px;
+    align-items: start;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.contract-group-head p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.35;
+}
+
+.contract-group-head span {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 5px 10px;
+    background: #eef2f6;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.note-cell {
+    max-width: 260px;
+    color: var(--muted);
+    line-height: 1.35;
 }
 
 a {
@@ -144,6 +238,23 @@ a {
     gap: 16px;
     align-items: start;
     justify-content: space-between;
+}
+
+.document-actions,
+.row-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.document-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.document-actions form,
+.row-actions form {
+    margin: 0;
 }
 
 .status {
@@ -191,6 +302,32 @@ dd {
     margin-top: 28px;
 }
 
+.note-panel {
+    margin-top: 28px;
+}
+
+.note-panel form {
+    display: grid;
+    gap: 12px;
+}
+
+.note-panel button {
+    width: auto;
+    justify-self: start;
+}
+
+.pdf-preview {
+    margin-top: 28px;
+}
+
+.pdf-preview iframe {
+    width: 100%;
+    height: min(760px, 78vh);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #ffffff;
+}
+
 pre {
     max-height: 520px;
     overflow: auto;
@@ -211,5 +348,13 @@ pre {
 
     .topbar {
         padding: 0 16px;
+    }
+
+    .contract-group {
+        overflow-x: auto;
+    }
+
+    .contract-group table {
+        min-width: 680px;
     }
 }
