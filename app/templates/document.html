@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="document-view">
+    <div class="document-head">
+        <h1>{{ document.working_title or "Документ" }}</h1>
+        <span class="status status-{{ document.status }}">{{ document.status }}</span>
+    </div>
+
+    {% if document.error %}
+        <p class="error">{{ document.error }}</p>
+    {% endif %}
+
+    <dl class="fields">
+        <div><dt>Номер договора</dt><dd>{{ document.contract_number }}</dd></div>
+        <div><dt>Наименование объекта</dt><dd>{{ document.object_name }}</dd></div>
+        <div><dt>Наименование документа</dt><dd>{{ document.official_title or document.working_title or "—" }}</dd></div>
+        <div><dt>Кем выдан</dt><dd>{{ document.issuer or "—" }}</dd></div>
+        <div><dt>Дата выдачи</dt><dd>{{ document.issue_date or "—" }}</dd></div>
+        <div><dt>Срок действия</dt><dd>{{ "без срока действия" if document.no_expiration else (document.valid_until or "—") }}</dd></div>
+        <div><dt>Файл</dt><dd>{{ document.original_filename }}</dd></div>
+    </dl>
+
+    {% if document.validity_text %}
+        <section class="text-block">
+            <h2>Фрагмент о сроке действия</h2>
+            <p>{{ document.validity_text }}</p>
+        </section>
+    {% endif %}
+
+    {% if document.raw_text %}
+        <section class="text-block">
+            <h2>OCR-текст</h2>
+            <pre>{{ document.raw_text }}</pre>
+        </section>
+    {% endif %}
+</section>
+{% endblock %}

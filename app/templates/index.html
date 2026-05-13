@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="workspace">
+    <form class="upload-form" action="{{ url_for('web.upload_document') }}" method="post" enctype="multipart/form-data">
+        <h1>Загрузка документа</h1>
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+        <label>
+            <span>Номер договора</span>
+            <input name="contract_number" required>
+        </label>
+        <label>
+            <span>Наименование объекта</span>
+            <textarea name="object_name" rows="3" required></textarea>
+        </label>
+        <label>
+            <span>PDF-документ</span>
+            <input type="file" name="pdf_file" accept="application/pdf" required>
+        </label>
+        <button type="submit">Проанализировать</button>
+    </form>
+
+    <section class="records">
+        <h2>Последние документы</h2>
+        {% if documents %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Договор</th>
+                        <th>Объект</th>
+                        <th>Рабочее название</th>
+                        <th>Дата выдачи</th>
+                        <th>Срок</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for document in documents %}
+                        <tr>
+                            <td><a href="{{ url_for('web.document_detail', document_id=document.id) }}">{{ document.contract_number }}</a></td>
+                            <td>{{ document.object_name }}</td>
+                            <td>{{ document.working_title or "—" }}</td>
+                            <td>{{ document.issue_date or "—" }}</td>
+                            <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="empty">Загруженных документов пока нет.</p>
+        {% endif %}
+    </section>
+</section>
+{% endblock %}
