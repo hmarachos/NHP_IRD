@@ -18,6 +18,14 @@ class DocumentProcessingPipeline:
     def process(self, pdf_path: Path) -> ParsedDocument:
         text = self.text_extractor.extract(pdf_path)
         parsed = self.ai_extractor.extract(text, self.document_types)
+        fallback_parsed = self.regex_extractor.extract(text)
+        if not parsed.issue_date and fallback_parsed.issue_date:
+            parsed.issue_date = fallback_parsed.issue_date
+        if not parsed.valid_until and fallback_parsed.valid_until:
+            parsed.valid_until = fallback_parsed.valid_until
+            parsed.no_expiration = False
+        if not parsed.validity_text and fallback_parsed.validity_text:
+            parsed.validity_text = fallback_parsed.validity_text
         if not parsed.working_title or parsed.working_title == "Неопределенный документ":
             parsed.working_title = self.classifier.classify(text, parsed.official_title)
         if self._should_use_classified_title(parsed.official_title, parsed.working_title):
