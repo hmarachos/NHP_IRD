@@ -1,11 +1,15 @@
-from flask import Flask
+# Пакет app для обработки документов
 
-from app.config import Config
-from app.database import close_db, init_db
-from app.web.routes import bp as web_bp
-
-
-def create_app(config_class: type[Config] = Config) -> Flask:
+def create_app(config_class=None):
+    """Создает экземпляр Flask приложения."""
+    from flask import Flask
+    from app.config import Config as DefaultConfig
+    from app.database import close_db, init_db
+    from app.web.routes import bp as web_bp
+    
+    if config_class is None:
+        config_class = DefaultConfig
+    
     app = Flask(__name__)
     app.config.from_object(config_class)
 

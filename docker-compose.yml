@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-change-me}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.2}
+      - USE_AI=${USE_AI:-true}
+      - TESSERACT_LANG=${TESSERACT_LANG:-rus+eng}
+      - OCR_DPI=${OCR_DPI:-300}
+      - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH:-26214400}
+    volumes:
+      - ./instance:/app/instance
+      - ./uploads:/app/instance/uploads
+    restart: unless-stopped
