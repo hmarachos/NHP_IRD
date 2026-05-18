@@ -23,9 +23,6 @@ COPY requirements.txt .
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем .env.example как .env (если файла нет, он будет создан)
-COPY .env.example .env
-
 # Копируем исходный код
 COPY . .
 
