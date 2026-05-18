@@ -23,14 +23,14 @@ COPY requirements.txt .
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем .env.example как .env (если файла нет, он будет создан)
+COPY .env.example .env
+
 # Копируем исходный код
 COPY . .
 
 # Создаем необходимые директории
 RUN mkdir -p instance/uploads
-
-# Копируем .env файл (если существует) или создаем из примера
-COPY .env .env 2>/dev/null || (echo ".env not found, using .env.example" && cp .env.example .env)
 
 # Устанавливаем переменные окружения
 ENV FLASK_APP=run.py
