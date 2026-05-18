@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if object %}
+    <section class="object-header">
+        <a class="button-link secondary" href="{{ url_for('web.object_workspace', object_id=object.id) }}">К документам</a>
+        <div>
+            <p>Договор {{ object.contract_number }}</p>
+            <h1>{{ object.name }}</h1>
+        </div>
+    </section>
+{% endif %}
+
 <section class="document-view">
     <div class="document-head">
         <h1>{{ document.working_title or "Документ" }}</h1>
@@ -20,8 +30,6 @@
     {% endif %}
 
     <dl class="fields">
-        <div><dt>Номер договора</dt><dd>{{ document.contract_number }}</dd></div>
-        <div><dt>Наименование объекта</dt><dd>{{ document.object_name }}</dd></div>
         <div><dt>Наименование документа</dt><dd>{{ document.official_title or document.working_title or "—" }}</dd></div>
         <div><dt>Кем выдан</dt><dd>{{ document.issuer or "—" }}</dd></div>
         <div><dt>Дата выдачи</dt><dd>{{ document.issue_date or "—" }}</dd></div>

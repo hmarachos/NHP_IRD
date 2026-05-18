@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="workspace">
-    <form class="upload-form" action="{{ url_for('web.upload_document') }}" method="post" enctype="multipart/form-data">
-        <h1>Загрузка документа</h1>
+<section class="objects-page">
+    <form class="object-form" action="{{ url_for('web.create_object') }}" method="post">
+        <h1>Объекты</h1>
         {% if error %}
             <p class="error">{{ error }}</p>
         {% endif %}
@@ -13,75 +13,46 @@
         </label>
         <label>
             <span>Наименование объекта</span>
-            <textarea name="object_name" rows="3" required></textarea>
+            <textarea name="name" rows="3" required></textarea>
         </label>
-        <label>
-            <span>PDF-документ</span>
-            <input type="file" name="pdf_file" accept="application/pdf" required>
-        </label>
-        <label>
-            <span>Примечание</span>
-            <textarea name="note" rows="3"></textarea>
-        </label>
-        <button type="submit">Проанализировать</button>
+        <button type="submit">Создать объект</button>
     </form>
 
-    <section class="records">
-        <h2>Исходные данные по договорам</h2>
-        {% if contract_groups %}
-            <div class="contract-groups">
-                {% for group in contract_groups %}
-                    <section class="contract-group">
-                        <header class="contract-group-head">
-                            <div>
-                                <h3>Договор {{ group.contract_number }}</h3>
-                                <p>{{ group.object_names|join("; ") }}</p>
-                            </div>
-                            <span>{{ group.documents|length }} док.</span>
-                        </header>
+    <section class="objects-list">
+        <h2>Выберите объект</h2>
+        {% if objects %}
+            <div class="object-items">
+                {% for object in objects %}
+                    <article class="object-item">
+                        <a class="object-link" href="{{ url_for('web.object_workspace', object_id=object.id) }}">
+                            <strong>{{ object.name }}</strong>
+                            <span>Договор {{ object.contract_number }}</span>
+                            <small>{{ object.documents_count }} док.</small>
+                        </a>
 
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Документ</th>
-                                    <th>Дата выдачи</th>
-                                    <th>Срок</th>
-                                    <th>Примечание</th>
-                                    <th>Статус</th>
-                                    <th>Действия</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for document in group.documents %}
-                                    <tr>
-                                        <td>
-                                            <a href="{{ url_for('web.document_detail', document_id=document.id) }}">
-                                                {{ document.working_title or document.official_title or document.original_filename or "Документ" }}
-                                            </a>
-                                        </td>
-                                        <td>{{ document.issue_date or "—" }}</td>
-                                        <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
-                                        <td class="note-cell">{{ document.note or "—" }}</td>
-                                        <td><span class="status status-{{ document.status }}">{{ document.status }}</span></td>
-                                        <td>
-                                            <div class="row-actions">
-                                                {% if document.stored_filename %}
-                                                    <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть</a>
-                                                {% endif %}
-                                                <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
-                                                    <button class="danger-button" type="submit">Удалить</button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </section>
+                        <details class="object-edit">
+                            <summary>Переименовать</summary>
+                            <form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post">
+                                <label>
+                                    <span>Номер договора</span>
+                                    <input name="contract_number" value="{{ object.contract_number }}" required>
+                                </label>
+                                <label>
+                                    <span>Наименование объекта</span>
+                                    <textarea name="name" rows="2" required>{{ object.name }}</textarea>
+                                </label>
+                                <button type="submit">Сохранить</button>
+                            </form>
+                        </details>
+
+                        <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Удалить объект, документы в базе и загруженные PDF?');">
+                            <button class="danger-button" type="submit">Удалить</button>
+                        </form>
+                    </article>
                 {% endfor %}
             </div>
         {% else %}
-            <p class="empty">Загруженных документов пока нет.</p>
+            <p class="empty">Объектов пока нет. Создайте первый объект, чтобы загрузить документы.</p>
         {% endif %}
     </section>
 </section>

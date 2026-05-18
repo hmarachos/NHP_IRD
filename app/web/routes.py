@@ -1,7 +1,7 @@
 from flask import Blueprint, abort, current_app, redirect, render_template, request, send_from_directory, url_for
 
 from app.models import ParsedDocument
-from app.repositories import DocumentRepository
+from app.repositories import DocumentRepository, ObjectRepository
 from app.services.pipeline import DocumentProcessingPipeline
 from app.services.storage import StorageService
 
@@ -9,44 +9,95 @@ from app.services.storage import StorageService
 bp = Blueprint("web", __name__)
 
 
-def build_contract_groups(documents):
-    groups_by_contract = {}
-    for document in documents:
-        contract_number = document["contract_number"]
-        group = groups_by_contract.setdefault(
-            contract_number,
-            {
-                "contract_number": contract_number,
-                "object_names": [],
-                "documents": [],
-            },
-        )
-        object_name = document["object_name"]
-        if object_name and object_name not in group["object_names"]:
-            group["object_names"].append(object_name)
-        group["documents"].append(document)
-
-    return list(groups_by_contract.values())
-
-
 @bp.get("/")
 def index():
-    documents = DocumentRepository().list_grouped()
-    return render_template("index.html", contract_groups=build_contract_groups(documents))
+    objects = ObjectRepository().list_all()
+    return render_template("index.html", objects=objects)
 
 
-@bp.post("/documents")
-def upload_document():
+@bp.post("/objects")
+def create_object():
     contract_number = request.form.get("contract_number", "").strip()
-    object_name = request.form.get("object_name", "").strip()
+    name = request.form.get("name", "").strip()
+
+    if not contract_number or not name:
+        return render_template(
+            "index.html",
+            objects=ObjectRepository().list_all(),
+            error="Заполните номер договора и наименование объекта.",
+        ), 400
+
+    object_id = ObjectRepository().create(
+        contract_number=contract_number,
+        name=name,
+    )
+    return redirect(url_for("web.object_workspace", object_id=object_id))
+
+
+@bp.post("/objects/<int:object_id>/update")
+def update_object(object_id: int):
+    contract_number = request.form.get("contract_number", "").strip()
+    name = request.form.get("name", "").strip()
+
+    if not contract_number or not name:
+        return render_template(
+            "index.html",
+            objects=ObjectRepository().list_all(),
+            error="Заполните номер договора и наименование объекта.",
+        ), 400
+
+    updated = ObjectRepository().update(
+        object_id,
+        contract_number=contract_number,
+        name=name,
+    )
+    if not updated:
+        abort(404)
+    return redirect(url_for("web.index"))
+
+
+@bp.post("/objects/<int:object_id>/delete")
+def delete_object(object_id: int):
+    object_repository = ObjectRepository()
+    document_repository = DocumentRepository()
+    obj = object_repository.get(object_id)
+    if obj is None:
+        abort(404)
+
+    stored_filenames = document_repository.list_stored_filenames_by_object(object_id)
+    document_repository.delete_by_object(object_id)
+    deleted = object_repository.delete(object_id)
+    if deleted:
+        delete_stored_files(stored_filenames)
+
+    return redirect(url_for("web.index"))
+
+
+@bp.get("/objects/<int:object_id>")
+def object_workspace(object_id: int):
+    obj = ObjectRepository().get(object_id)
+    if obj is None:
+        return "Объект не найден", 404
+
+    documents = DocumentRepository().list_by_object(object_id)
+    return render_template("object.html", object=obj, documents=documents)
+
+
+@bp.post("/objects/<int:object_id>/documents")
+def upload_document(object_id: int):
+    obj = ObjectRepository().get(object_id)
+    if obj is None:
+        abort(404)
+
     note = request.form.get("note", "").strip()
     file = request.files.get("pdf_file")
 
-    if not contract_number or not object_name or not file:
+    if not file:
         return render_template(
-            "index.html",
-            contract_groups=build_contract_groups(DocumentRepository().list_grouped()),
-            error="Заполните номер договора, наименование объекта и выберите PDF-файл.",
+            "object.html",
+            object=obj,
+            documents=DocumentRepository().list_by_object(object_id),
+            error="Выберите PDF-файл.",
         ), 400
 
     storage = StorageService(current_app.config["UPLOAD_DIR"])
@@ -61,8 +112,9 @@ def upload_document():
         )
         parsed = pipeline.process(path)
         document_id = repository.create(
-            contract_number=contract_number,
-            object_name=object_name,
+            object_id=object_id,
+            contract_number=obj["contract_number"],
+            object_name=obj["name"],
             original_filename=original_name,
             stored_filename=stored_name,
             parsed=parsed,
@@ -71,8 +123,9 @@ def upload_document():
     except Exception as exc:
         parsed = ParsedDocument()
         document_id = repository.create(
-            contract_number=contract_number,
-            object_name=object_name,
+            object_id=object_id,
+            contract_number=obj["contract_number"],
+            object_name=obj["name"],
             original_filename=file.filename or "",
             stored_filename="",
             parsed=parsed,
@@ -89,7 +142,8 @@ def document_detail(document_id: int):
     document = DocumentRepository().get(document_id)
     if document is None:
         return "Документ не найден", 404
-    return render_template("document.html", document=document)
+    obj = ObjectRepository().get(document["object_id"]) if document["object_id"] else None
+    return render_template("document.html", document=document, object=obj)
 
 
 @bp.post("/documents/<int:document_id>/note")
@@ -124,12 +178,21 @@ def delete_document(document_id: int):
     if document is None:
         abort(404)
 
+    object_id = document["object_id"]
     stored_filename = document["stored_filename"]
     deleted = repository.delete(document_id)
     if deleted and stored_filename:
-        upload_dir = current_app.config["UPLOAD_DIR"].resolve()
+        delete_stored_files([stored_filename])
+
+    if object_id:
+        return redirect(url_for("web.object_workspace", object_id=object_id))
+
+    return redirect(url_for("web.index"))
+
+
+def delete_stored_files(stored_filenames: list[str]) -> None:
+    upload_dir = current_app.config["UPLOAD_DIR"].resolve()
+    for stored_filename in stored_filenames:
         stored_path = (upload_dir / stored_filename).resolve()
         if upload_dir in stored_path.parents and stored_path.exists():
             stored_path.unlink()
-
-    return redirect(url_for("web.index"))

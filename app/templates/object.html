@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="object-header">
+    <a class="button-link secondary" href="{{ url_for('web.index') }}">К объектам</a>
+    <div>
+        <p>Договор {{ object.contract_number }}</p>
+        <h1>{{ object.name }}</h1>
+    </div>
+</section>
+
+<section class="workspace">
+    <form class="upload-form" action="{{ url_for('web.upload_document', object_id=object.id) }}" method="post" enctype="multipart/form-data">
+        <h2>Загрузка документа</h2>
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+        <label>
+            <span>PDF-документ</span>
+            <input type="file" name="pdf_file" accept="application/pdf" required>
+        </label>
+        <label>
+            <span>Примечание</span>
+            <textarea name="note" rows="3"></textarea>
+        </label>
+        <button type="submit">Проанализировать</button>
+    </form>
+
+    <section class="records">
+        <h2>Исходные данные</h2>
+        {% if documents %}
+            <div class="documents-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Документ</th>
+                            <th>Дата выдачи</th>
+                            <th>Срок</th>
+                            <th>Примечание</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for document in documents %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('web.document_detail', document_id=document.id) }}">
+                                        {{ document.working_title or document.official_title or document.original_filename or "Документ" }}
+                                    </a>
+                                </td>
+                                <td>{{ document.issue_date or "—" }}</td>
+                                <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
+                                <td class="note-cell">{{ document.note or "—" }}</td>
+                                <td><span class="status status-{{ document.status }}">{{ document.status }}</span></td>
+                                <td>
+                                    <div class="row-actions">
+                                        {% if document.stored_filename %}
+                                            <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть</a>
+                                        {% endif %}
+                                        <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
+                                            <button class="danger-button" type="submit">Удалить</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty">Загруженных документов по выбранному объекту пока нет.</p>
+        {% endif %}
+    </section>
+</section>
+{% endblock %}
