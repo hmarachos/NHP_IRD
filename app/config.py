@@ -22,13 +22,19 @@ class Config:
     DATABASE_PATH = resolve_project_path(os.getenv("DATABASE_PATH", BASE_DIR / "instance" / "documents.db"))
     UPLOAD_DIR = resolve_project_path(os.getenv("UPLOAD_DIR", BASE_DIR / "instance" / "uploads"))
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(25 * 1024 * 1024)))
+    MAX_UPLOAD_FILE_SIZE = int(os.getenv("MAX_UPLOAD_FILE_SIZE", str(25 * 1024 * 1024)))
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").strip().lower()
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "90"))
     USE_AI = os.getenv("USE_AI", "true").lower() in {"1", "true", "yes", "on"}
 
     TESSERACT_LANG = os.getenv("TESSERACT_LANG", "rus+eng")
     OCR_DPI = int(os.getenv("OCR_DPI", "300"))
+    EXPIRY_WARNING_DAYS = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
 
     DOCUMENT_TYPES = DOCUMENT_TYPES
 

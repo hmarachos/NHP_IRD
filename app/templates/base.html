@@ -3,14 +3,19 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Анализ исходных данных</title>
+    <meta name="theme-color" content="#f6f7f9">
+    <title>{% block title %}Архив ИРД{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <header class="topbar">
-        <a class="brand" href="{{ url_for('web.index') }}">ИРД Аналитика</a>
+        <a class="brand" href="{{ url_for('web.index') }}"><span class="brand-mark">И</span><span>Архив ИРД<small>Проектные документы</small></span></a>
+        <nav><a href="{{ url_for('web.index') }}">Проекты</a><a href="{{ url_for('web.manage_templates') }}">Шаблоны</a></nav>
     </header>
     <main class="page">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}<p class="notice notice-{{ category }}">{{ message }}</p>{% endfor %}
+        {% endwith %}
         {% block content %}{% endblock %}
     </main>
 </body>

@@ -7,6 +7,8 @@ class PdfTextExtractor:
         self.dpi = dpi
 
     def extract(self, pdf_path: Path) -> str:
+        if pdf_path.suffix.lower() != ".pdf":
+            return self._extract_image(pdf_path)
         text = self._extract_embedded_text(pdf_path)
         if self._has_enough_text(text):
             return text
@@ -68,6 +70,40 @@ class PdfTextExtractor:
             pages_text.append(f"--- page {index + 1} ---\n{text.strip()}")
 
         return "\n\n".join(pages_text).strip()
+
+    def _extract_image(self, image_path: Path) -> str:
+        try:
+            import pytesseract
+            from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+            if image_path.suffix.lower() in {".heic", ".heif"}:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+        except ImportError as exc:
+            raise RuntimeError("Для распознавания фото нужны Pillow, pytesseract и pillow-heif.") from exc
+
+        self._ensure_tesseract_languages(pytesseract)
+        try:
+            with Image.open(image_path) as source:
+                image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail((3200, 3200), Image.Resampling.LANCZOS)
+            image = ImageOps.grayscale(image)
+            image = ImageOps.autocontrast(image)
+            image = ImageEnhance.Sharpness(image).enhance(1.4)
+            image = image.filter(ImageFilter.MedianFilter(size=3))
+            return pytesseract.image_to_string(
+                image,
+                lang=self.tesseract_lang,
+                config="--oem 1 --psm 6 -c preserve_interword_spaces=1",
+            ).strip()
+        except pytesseract.TesseractError as exc:
+            message = str(exc)
+            if "Failed loading language" in message or "Error opening data file" in message:
+                raise RuntimeError(
+                    "Tesseract не нашел языковой пакет для OCR. Для русских фото нужен rus+eng."
+                ) from exc
+            raise
+        except Exception as exc:
+            raise RuntimeError("Не удалось открыть фотографию для распознавания.") from exc
 
     def _ensure_tesseract_languages(self, pytesseract) -> None:
         available = set(pytesseract.get_languages(config=""))

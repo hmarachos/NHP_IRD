@@ -1,76 +1,18 @@
 {% extends "base.html" %}
-
+{% block title %}{{ object.name }} · Архив ИРД{% endblock %}
 {% block content %}
-<section class="object-header">
-    <a class="button-link secondary" href="{{ url_for('web.index') }}">К объектам</a>
-    <div>
-        <p>Договор {{ object.contract_number }}</p>
-        <h1>{{ object.name }}</h1>
-    </div>
+<div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><span>{{ object.contract_number }}</span></div>
+{% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+<section class="project-overview"><div><span class="contract-tag">ДОГОВОР {{ object.contract_number }}</span><h1>{{ object.name }}</h1><p class="subheading">Архив документов проекта</p></div><a class="secondary-button" href="{{ url_for('web.export_object', object_id=object.id) }}">↓ Скачать архив</a></section>
+{% if alerts %}<section class="alert-panel compact"><strong>Напоминание о сроках</strong><ul>{% for alert in alerts %}<li><a href="{{ url_for('web.document_detail', document_id=alert.document.id) }}">{{ alert.document.working_title or alert.document.original_filename }}</a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>{% endif %}
+<section class="upload-panel panel"><div class="section-title"><span class="icon-badge">↑</span><div><h2>Добавить документы</h2><p>PDF или фото — можно выбрать несколько файлов или сделать снимок камерой.</p></div></div>
+    <form action="{{ url_for('web.upload_documents', object_id=object.id) }}" method="post" enctype="multipart/form-data" class="upload-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="file-picker"><input type="file" name="files" accept="application/pdf,image/*,.heic,.heif" capture="environment" multiple required><span class="upload-symbol">＋</span><strong>Выбрать PDF или фото</strong><small>PDF, JPEG, PNG, WebP, HEIC · до 25 МБ</small></label><div class="upload-controls"><label><span>Примечание (необязательно)</span><input name="note" placeholder="Например, получено от заказчика 20 октября"></label><button type="submit">Загрузить и распознать <span>→</span></button></div></form>
 </section>
-
-<section class="workspace">
-    <form class="upload-form" action="{{ url_for('web.upload_document', object_id=object.id) }}" method="post" enctype="multipart/form-data">
-        <h2>Загрузка документа</h2>
-        {% if error %}
-            <p class="error">{{ error }}</p>
-        {% endif %}
-        <label>
-            <span>PDF-документ</span>
-            <input type="file" name="pdf_file" accept="application/pdf" required>
-        </label>
-        <label>
-            <span>Примечание</span>
-            <textarea name="note" rows="3"></textarea>
-        </label>
-        <button type="submit">Проанализировать</button>
-    </form>
-
-    <section class="records">
-        <h2>Исходные данные</h2>
-        {% if documents %}
-            <div class="documents-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Документ</th>
-                            <th>Дата выдачи</th>
-                            <th>Срок</th>
-                            <th>Примечание</th>
-                            <th>Статус</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for document in documents %}
-                            <tr>
-                                <td>
-                                    <a href="{{ url_for('web.document_detail', document_id=document.id) }}">
-                                        {{ document.working_title or document.official_title or document.original_filename or "Документ" }}
-                                    </a>
-                                </td>
-                                <td>{{ document.issue_date or "—" }}</td>
-                                <td>{{ "без срока" if document.no_expiration else (document.valid_until or "—") }}</td>
-                                <td class="note-cell">{{ document.note or "—" }}</td>
-                                <td><span class="status status-{{ document.status }}">{{ document.status }}</span></td>
-                                <td>
-                                    <div class="row-actions">
-                                        {% if document.stored_filename %}
-                                            <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть</a>
-                                        {% endif %}
-                                        <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
-                                            <button class="danger-button" type="submit">Удалить</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p class="empty">Загруженных документов по выбранному объекту пока нет.</p>
-        {% endif %}
-    </section>
+<section class="section-block" id="checklist"><div class="section-title"><div><p class="eyebrow">КОНТРОЛЬ КОМПЛЕКТНОСТИ</p><h2>Список документов</h2><p>{{ received_count }} получено · {{ missing_count }} ожидается</p></div><form action="{{ url_for('web.apply_template', object_id=object.id) }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="template_id" aria-label="Шаблон">{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select><button class="secondary-button" type="submit">Применить шаблон</button></form></div>
+    {% if checklist %}<div class="checklist panel">{% for item in checklist %}<form class="checklist-row" action="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="checklist-name"><strong>{{ item.title }}</strong>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</div><select name="status" aria-label="Статус документа"><option value="missing" {% if item.status == 'missing' %}selected{% endif %}>Ожидается</option><option value="received" {% if item.status == 'received' %}selected{% endif %}>Получен</option><option value="not_required" {% if item.status == 'not_required' %}selected{% endif %}>Не требуется</option></select><select name="document_id" aria-label="Связанный документ"><option value="">Без привязки</option>{% for document in documents + archived_documents %}<option value="{{ document.id }}" {% if item.document_id == document.id %}selected{% endif %}>{{ document.working_title or document.original_filename }}{% if document.archived_at %} · в архиве{% endif %}</option>{% endfor %}</select><button class="icon-button" type="submit" title="Сохранить">✓</button></form>{% endfor %}</div>{% else %}<div class="empty-state compact-empty"><p>Для проекта пока нет списка документов.</p><p>Примените шаблон или создайте свой в разделе «Шаблоны».</p></div>{% endif %}
 </section>
+<section class="section-block"><div class="section-title"><div><p class="eyebrow">ФАЙЛЫ И РАСПОЗНАВАНИЕ</p><h2>Документы проекта</h2><p>{{ documents|length }} загружено</p></div></div>
+    {% if documents %}<div class="document-list">{% for document in documents %}<article class="document-card panel"><a class="document-card-main" href="{{ url_for('web.document_detail', document_id=document.id) }}"><span class="file-type">{{ 'PDF' if document.mime_type == 'application/pdf' else 'ФОТО' }}</span><span class="doc-info"><strong>{{ document.working_title or document.official_title or document.original_filename or 'Документ' }}</strong><small>{{ document.issuer or document.original_filename }} · {{ document.created_at[:10] }}</small></span><span class="doc-date">{% if document.no_expiration %}Без срока{% elif document.valid_until %}До {{ document.valid_until }}{% else %}Срок не указан{% endif %}</span><span class="status-chip status-{{ document.status }}">{{ 'Распознано' if document.status == 'processed' else 'Проверьте' }}</span></a><div class="document-card-actions"><a href="{{ url_for('web.document_detail', document_id=document.id) }}">Открыть →</a><form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Убрать документ из списка? Оригинал останется в архиве и его можно будет восстановить.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit">Убрать из списка</button></form></div></article>{% endfor %}</div>{% else %}<div class="empty-state compact-empty"><p>Документов пока нет. Добавьте PDF или сделайте фото.</p></div>{% endif %}
+</section>
+{% if archived_documents %}<details class="archive-section document-archive"><summary>Убранные документы <span class="count-pill">{{ archived_documents|length }}</span></summary><div class="archive-list">{% for document in archived_documents %}<div><span><strong>{{ document.working_title or document.original_filename or 'Документ' }}</strong><small>Оригинал сохранён · {{ document.archived_at[:10] }}</small></span><form action="{{ url_for('web.restore_document', document_id=document.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form></div>{% endfor %}</div></details>{% endif %}
 {% endblock %}

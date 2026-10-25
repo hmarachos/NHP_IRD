@@ -24,4 +24,4 @@ ENV FLASK_ENV=production
 
 EXPOSE 5000
 
-CMD ["python", "run.py"]
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:5000", "run:app"]

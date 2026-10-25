@@ -23,7 +23,7 @@
    docker-compose up -d
    ```
 
-4. Приложение будет доступно по адресу: http://localhost:5000
+4. Приложение будет доступно по адресу: http://localhost:5050 (порт задается через `APP_PORT`)
 
 **Примечание:** Dockerfile автоматически скопирует `.env` файл в контейнер. Если `.env` не существует, будет использован `.env.example`.
 
@@ -45,6 +45,11 @@
 | `SECRET_KEY` | Ключ безопасности Flask | `dev-secret-change-me` |
 | `OPENAI_API_KEY` | Ключ API OpenAI | (обязательно для AI функций) |
 | `OPENAI_MODEL` | Модель OpenAI | `gpt-5.2` |
+| `AI_PROVIDER` | Обработчик реквизитов: `ollama` или `openai` | `openai` |
+| `OLLAMA_BASE_URL` | Адрес Ollama с точки зрения контейнера | `http://host.docker.internal:11434` |
+| `OLLAMA_MODEL` | Локальная модель | `qwen3.5:9b` |
+| `OLLAMA_TIMEOUT` | Тайм-аут запроса к Ollama, секунды | `90` |
+| `APP_PORT` | Порт приложения на компьютере | `5050` |
 | `USE_AI` | Использовать AI функции | `true` |
 | `TESSERACT_LANG` | Язык для OCR | `rus+eng` |
 | `OCR_DPI` | DPI для OCR | `300` |

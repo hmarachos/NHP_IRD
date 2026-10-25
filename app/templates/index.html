@@ -1,59 +1,28 @@
 {% extends "base.html" %}
-
+{% block title %}Проекты · Архив ИРД{% endblock %}
 {% block content %}
-<section class="objects-page">
-    <form class="object-form" action="{{ url_for('web.create_object') }}" method="post">
-        <h1>Объекты</h1>
-        {% if error %}
-            <p class="error">{{ error }}</p>
-        {% endif %}
-        <label>
-            <span>Номер договора</span>
-            <input name="contract_number" required>
-        </label>
-        <label>
-            <span>Наименование объекта</span>
-            <textarea name="name" rows="3" required></textarea>
-        </label>
-        <button type="submit">Создать объект</button>
-    </form>
-
-    <section class="objects-list">
-        <h2>Выберите объект</h2>
-        {% if objects %}
-            <div class="object-items">
-                {% for object in objects %}
-                    <article class="object-item">
-                        <a class="object-link" href="{{ url_for('web.object_workspace', object_id=object.id) }}">
-                            <strong>{{ object.name }}</strong>
-                            <span>Договор {{ object.contract_number }}</span>
-                            <small>{{ object.documents_count }} док.</small>
-                        </a>
-
-                        <details class="object-edit">
-                            <summary>Переименовать</summary>
-                            <form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post">
-                                <label>
-                                    <span>Номер договора</span>
-                                    <input name="contract_number" value="{{ object.contract_number }}" required>
-                                </label>
-                                <label>
-                                    <span>Наименование объекта</span>
-                                    <textarea name="name" rows="2" required>{{ object.name }}</textarea>
-                                </label>
-                                <button type="submit">Сохранить</button>
-                            </form>
-                        </details>
-
-                        <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Удалить объект, документы в базе и загруженные PDF?');">
-                            <button class="danger-button" type="submit">Удалить</button>
-                        </form>
-                    </article>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p class="empty">Объектов пока нет. Создайте первый объект, чтобы загрузить документы.</p>
-        {% endif %}
+<section class="page-heading"><div><p class="eyebrow">АРХИВ ИСХОДНЫХ ДАННЫХ</p><h1>Ваши проекты</h1><p class="subheading">Документы, распознавание и сроки действия — в одном месте.</p></div></section>
+{% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+{% if alerts %}
+<section class="alert-panel"><div><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul>{% for alert in alerts[:5] %}<li><a href="{{ url_for('web.document_detail', document_id=alert.document.id) }}">{{ alert.document.working_title or alert.document.original_filename }}</a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
+{% endif %}
+<section class="dashboard-grid">
+    <section class="panel create-panel"><div class="section-title"><span class="icon-badge">＋</span><div><h2>Новый проект</h2><p>Создайте архив документов</p></div></div>
+        <form action="{{ url_for('web.create_object') }}" method="post" class="stack-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label><span>Номер договора</span><input name="contract_number" placeholder="Например, 24-017" required></label>
+            <label><span>Название проекта</span><input name="name" placeholder="Название объекта или проекта" required></label>
+            <label><span>Список документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
+            <button type="submit">Создать проект <span aria-hidden="true">→</span></button>
+        </form>
+    </section>
+    <section class="project-area"><div class="section-title"><div><h2>Активные проекты</h2><p>{{ objects|length }} в работе</p></div></div>
+        {% if objects %}<div class="project-grid">{% for object in objects %}
+            <article class="project-card"><a class="project-card-main" href="{{ url_for('web.object_workspace', object_id=object.id) }}"><span class="contract-tag">{{ object.contract_number }}</span><h3>{{ object.name }}</h3><span class="project-meta">{{ object.documents_count }} {{ 'документ' if object.documents_count == 1 else ('документа' if object.documents_count in [2,3,4] else 'документов') }}</span></a>
+                <div class="card-actions"><details><summary>Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Проект</span><input name="name" value="{{ object.name }}" required></label><button type="submit">Сохранить</button></form></details><form action="{{ url_for('web.archive_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet-button" type="submit">В архив</button></form></div>
+            </article>
+        {% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-icon">▤</span><h3>Пока нет проектов</h3><p>Создайте проект — и добавляйте в него PDF и фотографии документов.</p></div>{% endif %}
     </section>
 </section>
+{% if archived_objects %}<details class="archive-section"><summary>Архив проектов <span class="count-pill">{{ archived_objects|length }}</span></summary><div class="archive-list">{% for object in archived_objects %}<div><span><strong>{{ object.name }}</strong><small>Договор {{ object.contract_number }}</small></span><div class="archive-actions"><a href="{{ url_for('web.export_object', object_id=object.id) }}">Скачать архив</a><form action="{{ url_for('web.restore_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form><form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit">Удалить</button></form></div></div>{% endfor %}</div></details>{% endif %}
 {% endblock %}

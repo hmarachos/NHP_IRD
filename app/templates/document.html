@@ -1,78 +1,13 @@
 {% extends "base.html" %}
-
+{% block title %}{{ document.working_title or 'Документ' }} · Архив ИРД{% endblock %}
 {% block content %}
-{% if object %}
-    <section class="object-header">
-        <a class="button-link secondary" href="{{ url_for('web.object_workspace', object_id=object.id) }}">К документам</a>
-        <div>
-            <p>Договор {{ object.contract_number }}</p>
-            <h1>{{ object.name }}</h1>
-        </div>
-    </section>
-{% endif %}
-
-<section class="document-view">
-    <div class="document-head">
-        <h1>{{ document.working_title or "Документ" }}</h1>
-        <div class="document-actions">
-            {% if document.stored_filename %}
-                <a class="button-link secondary" href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть PDF</a>
-            {% endif %}
-            <form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Удалить документ из базы и удалить загруженный PDF?');">
-                <button class="danger-button" type="submit">Удалить</button>
-            </form>
-            <span class="status status-{{ document.status }}">{{ document.status }}</span>
-        </div>
-    </div>
-
-    {% if document.error %}
-        <p class="error">{{ document.error }}</p>
-    {% endif %}
-
-    <dl class="fields">
-        <div><dt>Наименование документа</dt><dd>{{ document.official_title or document.working_title or "—" }}</dd></div>
-        <div><dt>Кем выдан</dt><dd>{{ document.issuer or "—" }}</dd></div>
-        <div><dt>Дата выдачи</dt><dd>{{ document.issue_date or "—" }}</dd></div>
-        <div><dt>Срок действия</dt><dd>{{ "без срока действия" if document.no_expiration else (document.valid_until or "—") }}</dd></div>
-        <div>
-            <dt>Файл</dt>
-            <dd>
-                {% if document.stored_filename %}
-                    <a href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">{{ document.original_filename }}</a>
-                {% else %}
-                    {{ document.original_filename or "—" }}
-                {% endif %}
-            </dd>
-        </div>
-    </dl>
-
-    <section class="note-panel">
-        <h2>Примечание</h2>
-        <form action="{{ url_for('web.update_document_note', document_id=document.id) }}" method="post">
-            <textarea name="note" rows="4">{{ document.note or "" }}</textarea>
-            <button type="submit">Сохранить примечание</button>
-        </form>
-    </section>
-
-    {% if document.stored_filename %}
-        <section class="pdf-preview">
-            <h2>Предпросмотр PDF</h2>
-            <iframe src="{{ url_for('web.document_preview', document_id=document.id) }}" title="Предпросмотр PDF"></iframe>
-        </section>
-    {% endif %}
-
-    {% if document.validity_text %}
-        <section class="text-block">
-            <h2>Фрагмент о сроке действия</h2>
-            <p>{{ document.validity_text }}</p>
-        </section>
-    {% endif %}
-
-    {% if document.raw_text %}
-        <section class="text-block">
-            <h2>OCR-текст</h2>
-            <pre>{{ document.raw_text }}</pre>
-        </section>
-    {% endif %}
+<div class="breadcrumbs"><a href="{{ url_for('web.object_workspace', object_id=object.id) if object else url_for('web.index') }}">{{ object.name if object else 'Проекты' }}</a><span>/</span><span>Документ</span></div>
+<section class="document-view panel"><div class="document-head"><div><p class="eyebrow">КАРТОЧКА ДОКУМЕНТА</p><h1>{{ document.working_title or document.official_title or document.original_filename or 'Документ' }}</h1><p class="subheading">{{ document.original_filename }}</p></div><span class="status-chip status-{{ document.status }}">{{ 'Распознано' if document.status == 'processed' else 'Нужно проверить' }}</span></div>
+{% if document.error %}<p class="notice notice-error">Не удалось распознать: {{ document.error }}</p>{% endif %}
+{% if document.expiry.key in ['expired','expiring'] %}<p class="notice notice-{{ document.expiry.key }}">{{ document.expiry.label }}</p>{% endif %}
+<form class="stack-form document-fields" action="{{ url_for('web.update_document_fields', document_id=document.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="fields-grid"><label><span>Рабочее название</span><input name="working_title" value="{{ document.working_title or '' }}"></label><label><span>Официальное название</span><input name="official_title" value="{{ document.official_title or '' }}"></label><label><span>Кем выдан</span><input name="issuer" value="{{ document.issuer or '' }}"></label><label><span>Дата выдачи</span><input type="date" name="issue_date" value="{{ issue_date_iso }}"></label><label><span>Действует до</span><input type="date" name="valid_until" value="{{ valid_until_iso }}" {% if document.no_expiration %}disabled{% endif %}></label><label class="check-label"><input type="checkbox" name="no_expiration" {% if document.no_expiration %}checked{% endif %} onchange="this.form.elements.valid_until.disabled=this.checked"><span>Срок действия не ограничен</span></label></div><button type="submit">Сохранить сведения</button></form>
+<form action="{{ url_for('web.update_document_note', document_id=document.id) }}" method="post" class="stack-form note-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Примечание</span><textarea name="note" rows="3" placeholder="Добавьте заметку">{{ document.note or '' }}</textarea></label><button class="secondary-button" type="submit">Сохранить примечание</button></form>
+{% if document.stored_filename %}<section class="preview-block"><div class="section-title"><h2>Оригинал документа</h2><a href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank">Открыть отдельно ↗</a></div>{% if document.mime_type == 'application/pdf' %}<iframe src="{{ url_for('web.document_preview', document_id=document.id) }}" title="Предпросмотр PDF"></iframe>{% else %}<a href="{{ url_for('web.document_preview', document_id=document.id) }}" target="_blank"><img class="image-preview" src="{{ url_for('web.document_preview', document_id=document.id) }}" alt="{{ document.original_filename }}"></a>{% endif %}</section>{% endif %}
+{% if document.validity_text %}<details class="text-details"><summary>Фрагмент о сроке действия</summary><p>{{ document.validity_text }}</p></details>{% endif %}{% if document.raw_text %}<details class="text-details"><summary>Распознанный текст</summary><pre>{{ document.raw_text }}</pre></details>{% endif %}
 </section>
 {% endblock %}
