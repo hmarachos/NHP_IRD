@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from flask import current_app, g
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 SCHEMA = """
@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS objects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_number TEXT NOT NULL,
     name TEXT NOT NULL,
+    customer TEXT NOT NULL DEFAULT '',
     template_id INTEGER,
     archived_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -94,6 +95,7 @@ def init_db() -> None:
     db = get_db()
     backup_before_migration(db)
     db.executescript(SCHEMA)
+    ensure_column(db, "objects", "customer", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "objects", "template_id", "INTEGER")
     ensure_column(db, "objects", "archived_at", "TEXT")
     ensure_column(db, "documents", "object_id", "INTEGER")
@@ -195,6 +197,27 @@ def migrate_objects(db: sqlite3.Connection) -> None:
 def seed_default_template(db: sqlite3.Connection) -> None:
     from app.document_types import DOCUMENT_TYPES
 
+    # Rename the original built-in checklist in place so existing project links
+    # and checklist item references remain valid.
+    db.execute(
+        "UPDATE checklist_templates SET name = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE name = ? AND NOT EXISTS (SELECT 1 FROM checklist_templates WHERE name = ?)",
+        (
+            "Возведение/реконструкция АЗС",
+            "Исходные данные для проектирования",
+            "Возведение/реконструкция АЗС",
+        ),
+    )
+    db.execute(
+        "UPDATE checklist_templates SET description = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE name = ? AND description = ?",
+        (
+            "Перечень исходных документов для возведения или реконструкции АЗС.",
+            "Возведение/реконструкция АЗС",
+            "Базовый перечень документов для проектно-изыскательских работ.",
+        ),
+    )
+
     initialized = db.execute(
         "SELECT value FROM app_settings WHERE key = 'default_template_seeded'"
     ).fetchone()
@@ -203,14 +226,14 @@ def seed_default_template(db: sqlite3.Connection) -> None:
 
     template = db.execute(
         "SELECT id FROM checklist_templates WHERE name = ?",
-        ("Исходные данные для проектирования",),
+        ("Возведение/реконструкция АЗС",),
     ).fetchone()
     if template is None:
         cursor = db.execute(
             "INSERT INTO checklist_templates (name, description) VALUES (?, ?)",
             (
-                "Исходные данные для проектирования",
-                "Базовый перечень документов для проектно-изыскательских работ.",
+                "Возведение/реконструкция АЗС",
+                "Перечень исходных документов для возведения или реконструкции АЗС.",
             ),
         )
         db.executemany(

@@ -99,8 +99,14 @@ class DocumentClassifier:
 
         return best_title if best_score >= 0.28 else "Неопределенный документ"
 
+    def classify_by_rule(self, text: str, official_title: str = "") -> str:
+        """Return a deterministic explicit-marker match, without fuzzy fallback."""
+        return self._classify_by_rules(self._normalize(f"{official_title}\n{text[:8000]}"))
+
     def _classify_by_rules(self, haystack: str) -> str:
-        for title, markers in RULES:
+        # Prefer the most specific rule: broad markers such as "ТКО" may
+        # appear in unrelated surrounding text or OCR noise.
+        for title, markers in sorted(RULES, key=lambda rule: max(map(len, rule[1])), reverse=True):
             if title in self.document_types and any(self._normalize(marker) in haystack for marker in markers):
                 return title
         return ""

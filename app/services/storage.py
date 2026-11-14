@@ -16,11 +16,14 @@ class StorageService:
 
     def save_upload(self, file: FileStorage) -> tuple[str, str, Path, str]:
         original_name = file.filename or "document.pdf"
-        safe_name = secure_filename(original_name)
-        suffix = Path(safe_name).suffix.lower()
+        basename = original_name.replace("\\", "/").rsplit("/", 1)[-1]
+        original_path = Path(basename)
+        suffix = original_path.suffix.lower()
         allowed = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
         if suffix not in allowed:
             raise ValueError("Поддерживаются PDF, JPG, PNG, WebP и HEIC.")
+        safe_stem = secure_filename(original_path.stem) or "document"
+        safe_name = f"{safe_stem}{suffix}"
 
         content = file.stream.read()
         file.stream.seek(0)

@@ -5,11 +5,11 @@ from app.models import ParsedDocument
 
 
 class ObjectRepository:
-    def create(self, *, contract_number: str, name: str, template_id: int | None = None) -> int:
+    def create(self, *, contract_number: str, name: str, customer: str = "", template_id: int | None = None) -> int:
         db = get_db()
         cursor = db.execute(
-            "INSERT INTO objects (contract_number, name, template_id) VALUES (?, ?, ?)",
-            (contract_number, name, template_id),
+            "INSERT INTO objects (contract_number, name, customer, template_id) VALUES (?, ?, ?, ?)",
+            (contract_number, name, customer, template_id),
         )
         object_id = int(cursor.lastrowid)
         if template_id:
@@ -46,15 +46,15 @@ class ObjectRepository:
             "SELECT * FROM objects WHERE id = ?", (object_id,)
         ).fetchone()
 
-    def update(self, object_id: int, *, contract_number: str, name: str) -> bool:
+    def update(self, object_id: int, *, contract_number: str, name: str, customer: str = "") -> bool:
         db = get_db()
         cursor = db.execute(
             """
             UPDATE objects
-            SET contract_number = ?, name = ?
+            SET contract_number = ?, name = ?, customer = ?
             WHERE id = ?
             """,
-            (contract_number, name, object_id),
+            (contract_number, name, customer, object_id),
         )
         db.execute(
             """
@@ -85,11 +85,11 @@ class ObjectRepository:
         db.commit()
         return cursor.rowcount > 0
 
-    def permanently_delete_archived(self, object_id: int) -> list[str] | None:
-        """Delete an archived project and its document rows, returning stored file names."""
+    def permanently_delete(self, object_id: int) -> list[str] | None:
+        """Delete a project and its document rows, returning stored file names."""
         db = get_db()
         project = db.execute(
-            "SELECT id FROM objects WHERE id = ? AND archived_at IS NOT NULL",
+            "SELECT id FROM objects WHERE id = ?",
             (object_id,),
         ).fetchone()
         if project is None:
@@ -106,7 +106,7 @@ class ObjectRepository:
         try:
             db.execute("DELETE FROM documents WHERE object_id = ?", (object_id,))
             cursor = db.execute(
-                "DELETE FROM objects WHERE id = ? AND archived_at IS NOT NULL",
+                "DELETE FROM objects WHERE id = ?",
                 (object_id,),
             )
             if cursor.rowcount != 1:
@@ -325,6 +325,27 @@ class ChecklistRepository:
         db.commit()
         return int(cursor.lastrowid)
 
+    def copy_template(self, template_id: int, name: str | None = None) -> int | None:
+        """Copy a template and its ordered document list."""
+        db = get_db()
+        source = self.get_template(template_id)
+        if source is None:
+            return None
+        copy_name = (name or f"{source['name']} — копия").strip()
+        cursor = db.execute(
+            "INSERT INTO checklist_templates (name, description) VALUES (?, ?)",
+            (copy_name, source["description"]),
+        )
+        copied_id = int(cursor.lastrowid)
+        db.execute(
+            "INSERT INTO checklist_template_items (template_id, title, description, sort_order) "
+            "SELECT ?, title, description, sort_order FROM checklist_template_items "
+            "WHERE template_id = ? ORDER BY sort_order, id",
+            (copied_id, template_id),
+        )
+        db.commit()
+        return copied_id
+
     def update_template(self, template_id: int, name: str, description: str) -> bool:
         db = get_db()
         cursor = db.execute(
@@ -438,7 +459,7 @@ class ChecklistRepository:
             return
         db = get_db()
         for row in db.execute(
-            "SELECT id, title FROM project_checklist_items WHERE object_id = ? AND status <> 'not_required' ORDER BY id",
+            "SELECT id, title, status FROM project_checklist_items WHERE object_id = ? AND status = 'missing' ORDER BY id",
             (object_id,),
         ):
             if self._normalize(row["title"]) == normalized:
@@ -448,6 +469,13 @@ class ChecklistRepository:
                 )
                 db.commit()
                 return
+
+    def sync_documents_to_checklist(self, object_id: int, documents: list[Row]) -> None:
+        """Link already-uploaded documents to exact title matches in an applied checklist."""
+        for document in documents:
+            title = document["working_title"] or document["official_title"]
+            if title:
+                self.match_document(object_id, document["id"], title)
 
     @staticmethod
     def _normalize(value: str) -> str:

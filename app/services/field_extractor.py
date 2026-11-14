@@ -4,7 +4,7 @@ from datetime import date
 from app.models import ParsedDocument
 
 
-DATE_RE = re.compile(r"\b([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})\b")
+DATE_RE = re.compile(r"(?<!\d)([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})(?!\d)")
 ORG_KEYWORDS = (
     "государственное учреждение",
     "республиканское унитарное предприятие",
@@ -16,6 +16,16 @@ ORG_KEYWORDS = (
     "исполком",
     "предприятие",
     "центр",
+    "общество с ограниченной ответственностью",
+    "совместное общество с ограниченной ответственностью",
+    "открытое акционерное общество",
+    "закрытое акционерное общество",
+    "общество с дополнительной ответственностью",
+    "частное предприятие",
+    "ооо",
+    "оао",
+    "зао",
+    "белорусский народный банк",
 )
 BELARUSIAN_MARKERS = ("дзяржаў", "рэспубл", "установа", "маладзеч", "гігіен", "эпідэмі", "аховы здар")
 YEAR_WORDS = {
@@ -50,6 +60,9 @@ class RegexFieldExtractor:
 
     def _extract_title(self, text: str) -> str:
         lines = [line.strip(" .,:;") for line in text.splitlines() if line.strip()]
+        for line in lines[:25]:
+            if re.match(r"^(?:технические условия|технические требования|решение)\b", line, re.IGNORECASE) and 10 <= len(line) <= 220:
+                return line
         for marker in ("ТЕХНИЧЕСКИЕ УСЛОВИЯ", "ТЕХНИЧЕСКИЕ ТРЕБОВАНИЯ", "РЕШЕНИЕ"):
             if marker.lower() in text.lower():
                 return marker
@@ -60,11 +73,15 @@ class RegexFieldExtractor:
 
     def _extract_issuer(self, text: str) -> str:
         lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("--- page")]
-        organization = self._extract_russian_organization_from_header(lines[:25])
+        correspondence_issuer = self._extract_correspondence_issuer(text)
+        if correspondence_issuer:
+            return correspondence_issuer
+
+        organization = self._extract_russian_organization_from_header(lines[:12])
         if organization:
             return organization
 
-        for line in lines[:25]:
+        for line in lines[:12]:
             candidate = self._prefer_russian_text(line)
             lowered = candidate.lower()
             if any(word in lowered for word in ORG_KEYWORDS):
@@ -73,6 +90,24 @@ class RegexFieldExtractor:
         match = re.search(r"(?:выдан[оы]?|кем выдан[оы]?)\s*[:\-]\s*(.+)", text, re.IGNORECASE)
         return self._clean_issuer(self._prefer_russian_text(match.group(1))) if match else ""
 
+    def _extract_correspondence_issuer(self, text: str) -> str:
+        organization_start = (
+            r"(?:РУП|Республиканское\s+унитарное\s+предприятие|"
+            r"КУП|Коммунальное\s+унитарное\s+предприятие|"
+            r"УП|Унитарное\s+предприятие|ОАО|ЗАО|ООО|ОДО|"
+            r"Государственное\s+предприятие|Частное\s+предприятие)"
+        )
+        action = (
+            r"(?:просит|просим|сообщает|сообщаем|информирует|информируем|"
+            r"направляет|направляем|уведомляет|уведомляем|заявляет|заявляем|"
+            r"обращается|представляет|подтверждает)"
+        )
+        match = re.search(
+            rf"(?im)^\s*({organization_start}\b[^\n]{{0,180}}?)\s+{action}\b",
+            text,
+        )
+        return self._clean_issuer(match.group(1)) if match else ""
+
     def _extract_russian_organization_from_header(self, lines: list[str]) -> str:
         candidates = []
         for start, line in enumerate(lines):
@@ -80,9 +115,13 @@ class RegexFieldExtractor:
             if not self._looks_like_organization_start(segment):
                 continue
 
+            if any(marker in segment.lower() for marker in ("р/с", "банк", "код ", "унп", "окпо")):
+                continue
             parts = [segment]
             for following in lines[start + 1 : start + 5]:
                 following_segment = self._prefer_russian_text(following)
+                if any(marker in following_segment.lower() for marker in ("р/с", "банк", "код ", "унп", "окпо", "юридический адрес", "почтовый адрес", "тел.")):
+                    break
                 if self._looks_like_organization_continuation(following_segment):
                     parts.append(following_segment)
                     if "»" in following_segment or ")" in following_segment:
@@ -153,8 +192,12 @@ class RegexFieldExtractor:
         return value.strip(" .,:;-")
 
     def _extract_issue_date(self, text: str) -> str:
-        for line in [line.strip() for line in text.splitlines()[:45] if line.strip()]:
-            if re.search(r"^(?:на\s*)?№", line, re.IGNORECASE):
+        first_page = text.split("--- page 2 ---", 1)[0]
+        lines = [line.strip() for line in first_page.splitlines() if line.strip()]
+        for line in lines[:45]:
+            # "На № ... от ..." is a blank incoming-reference field; an
+            # outgoing letterhead line "№ ... от DD.MM.YYYY" is a real date.
+            if re.match(r"^на\s*№", line, re.IGNORECASE):
                 continue
             if "№" in line or re.search(r"\bN(?:o)?\b", line):
                 match = DATE_RE.search(line)
@@ -162,13 +205,21 @@ class RegexFieldExtractor:
                     return self._format_date(match.group(1))
 
         for pattern in (
-            r"([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})\s*(?:г\.?)?\s*(?:№|N|No)",
+            r"(?:^|\n)\s*(?:от|выдан[ао]?)\s*[:№\-]*\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})",
             r"(?:дата выдачи)\s*[:\-]?\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})",
-            r"\b([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})\b",
         ):
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, first_page, re.IGNORECASE)
             if match:
                 return self._format_date(match.group(1))
+        # Some scans put the issuance date in a standalone footer.
+        # Some scanned utilities place the actual issuance date in a standalone
+        # footer. Prefer the final standalone date over dates cited in regulations.
+        standalone_dates = list(re.finditer(
+            r"(?m)^\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})\s*:?\s*$",
+            first_page,
+        ))
+        if standalone_dates:
+            return self._format_date(standalone_dates[-1].group(1))
         return ""
 
     def _extract_valid_until(self, text: str, issue_date: str = "") -> str:
@@ -198,6 +249,9 @@ class RegexFieldExtractor:
 
     def _extract_duration_years(self, text: str) -> int:
         patterns = (
+            r"срок\s+действия[^.\n]{0,120}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
+            r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
+            r"в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?[^.\n]{0,220}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
             r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
             r"в\s+течение\s+(\d+|[а-яё]+)\s+лет?[^.\n]{0,160}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
             r"(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи[^.\n]{0,160}в\s+течение\s+(\d+|[а-яё]+)\s+лет?",

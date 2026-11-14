@@ -60,7 +60,7 @@ brew install tesseract tesseract-lang
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5.2
+OPENAI_MODEL=gpt-6-luna
 TESSERACT_LANG=rus+eng
 USE_AI=true
 ```
@@ -73,10 +73,11 @@ flask --app run run --debug
 
 Откройте `http://127.0.0.1:5000`.
 
-Для локального извлечения реквизитов через Ollama задайте `AI_PROVIDER=ollama`,
-`OLLAMA_BASE_URL=http://host.docker.internal:11434` и `OLLAMA_MODEL=qwen3.5:9b`.
-При запуске без Docker используйте `http://127.0.0.1:11434`. Текст сканов по-прежнему
-распознается Tesseract, после чего Ollama определяет тип и реквизиты документа.
+Текст фото и сканированных PDF распознаётся локально через Tesseract. GPT-6 Luna
+извлекает реквизиты через OpenAI API. Длинный OCR-текст передаётся модели частями,
+чтобы анализ охватывал весь документ. Ключ храните только в локальном `.env` и не
+публикуйте его в репозитории. Word-документы формируются локально и отдельной оплаты
+модели не требуют.
 
 Ежедневный список истекающих сроков можно вывести командой:
 

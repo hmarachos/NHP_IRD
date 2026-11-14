@@ -44,11 +44,7 @@
 |------------|----------|----------------------|
 | `SECRET_KEY` | Ключ безопасности Flask | `dev-secret-change-me` |
 | `OPENAI_API_KEY` | Ключ API OpenAI | (обязательно для AI функций) |
-| `OPENAI_MODEL` | Модель OpenAI | `gpt-5.2` |
-| `AI_PROVIDER` | Обработчик реквизитов: `ollama` или `openai` | `openai` |
-| `OLLAMA_BASE_URL` | Адрес Ollama с точки зрения контейнера | `http://host.docker.internal:11434` |
-| `OLLAMA_MODEL` | Локальная модель | `qwen3.5:9b` |
-| `OLLAMA_TIMEOUT` | Тайм-аут запроса к Ollama, секунды | `90` |
+| `OPENAI_MODEL` | Модель извлечения реквизитов | `gpt-6-luna` |
 | `APP_PORT` | Порт приложения на компьютере | `5050` |
 | `USE_AI` | Использовать AI функции | `true` |
 | `TESSERACT_LANG` | Язык для OCR | `rus+eng` |

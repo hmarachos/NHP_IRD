@@ -1,18 +1,194 @@
 {% extends "base.html" %}
 {% block title %}{{ object.name }} · Архив ИРД{% endblock %}
 {% block content %}
-<div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><span>{{ object.contract_number }}</span></div>
-{% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
-<section class="project-overview"><div><span class="contract-tag">ДОГОВОР {{ object.contract_number }}</span><h1>{{ object.name }}</h1><p class="subheading">Архив документов проекта</p></div><a class="secondary-button" href="{{ url_for('web.export_object', object_id=object.id) }}">↓ Скачать архив</a></section>
-{% if alerts %}<section class="alert-panel compact"><strong>Напоминание о сроках</strong><ul>{% for alert in alerts %}<li><a href="{{ url_for('web.document_detail', document_id=alert.document.id) }}">{{ alert.document.working_title or alert.document.original_filename }}</a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>{% endif %}
-<section class="upload-panel panel"><div class="section-title"><span class="icon-badge">↑</span><div><h2>Добавить документы</h2><p>PDF или фото — можно выбрать несколько файлов или сделать снимок камерой.</p></div></div>
-    <form action="{{ url_for('web.upload_documents', object_id=object.id) }}" method="post" enctype="multipart/form-data" class="upload-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="file-picker"><input type="file" name="files" accept="application/pdf,image/*,.heic,.heif" capture="environment" multiple required><span class="upload-symbol">＋</span><strong>Выбрать PDF или фото</strong><small>PDF, JPEG, PNG, WebP, HEIC · до 25 МБ</small></label><div class="upload-controls"><label><span>Примечание (необязательно)</span><input name="note" placeholder="Например, получено от заказчика 20 октября"></label><button type="submit">Загрузить и распознать <span>→</span></button></div></form>
-</section>
-<section class="section-block" id="checklist"><div class="section-title"><div><p class="eyebrow">КОНТРОЛЬ КОМПЛЕКТНОСТИ</p><h2>Список документов</h2><p>{{ received_count }} получено · {{ missing_count }} ожидается</p></div><form action="{{ url_for('web.apply_template', object_id=object.id) }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="template_id" aria-label="Шаблон">{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select><button class="secondary-button" type="submit">Применить шаблон</button></form></div>
-    {% if checklist %}<div class="checklist panel">{% for item in checklist %}<form class="checklist-row" action="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="checklist-name"><strong>{{ item.title }}</strong>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</div><select name="status" aria-label="Статус документа"><option value="missing" {% if item.status == 'missing' %}selected{% endif %}>Ожидается</option><option value="received" {% if item.status == 'received' %}selected{% endif %}>Получен</option><option value="not_required" {% if item.status == 'not_required' %}selected{% endif %}>Не требуется</option></select><select name="document_id" aria-label="Связанный документ"><option value="">Без привязки</option>{% for document in documents + archived_documents %}<option value="{{ document.id }}" {% if item.document_id == document.id %}selected{% endif %}>{{ document.working_title or document.original_filename }}{% if document.archived_at %} · в архиве{% endif %}</option>{% endfor %}</select><button class="icon-button" type="submit" title="Сохранить">✓</button></form>{% endfor %}</div>{% else %}<div class="empty-state compact-empty"><p>Для проекта пока нет списка документов.</p><p>Примените шаблон или создайте свой в разделе «Шаблоны».</p></div>{% endif %}
-</section>
-<section class="section-block"><div class="section-title"><div><p class="eyebrow">ФАЙЛЫ И РАСПОЗНАВАНИЕ</p><h2>Документы проекта</h2><p>{{ documents|length }} загружено</p></div></div>
-    {% if documents %}<div class="document-list">{% for document in documents %}<article class="document-card panel"><a class="document-card-main" href="{{ url_for('web.document_detail', document_id=document.id) }}"><span class="file-type">{{ 'PDF' if document.mime_type == 'application/pdf' else 'ФОТО' }}</span><span class="doc-info"><strong>{{ document.working_title or document.official_title or document.original_filename or 'Документ' }}</strong><small>{{ document.issuer or document.original_filename }} · {{ document.created_at[:10] }}</small></span><span class="doc-date">{% if document.no_expiration %}Без срока{% elif document.valid_until %}До {{ document.valid_until }}{% else %}Срок не указан{% endif %}</span><span class="status-chip status-{{ document.status }}">{{ 'Распознано' if document.status == 'processed' else 'Проверьте' }}</span></a><div class="document-card-actions"><a href="{{ url_for('web.document_detail', document_id=document.id) }}">Открыть →</a><form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Убрать документ из списка? Оригинал останется в архиве и его можно будет восстановить.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit">Убрать из списка</button></form></div></article>{% endfor %}</div>{% else %}<div class="empty-state compact-empty"><p>Документов пока нет. Добавьте PDF или сделайте фото.</p></div>{% endif %}
-</section>
-{% if archived_documents %}<details class="archive-section document-archive"><summary>Убранные документы <span class="count-pill">{{ archived_documents|length }}</span></summary><div class="archive-list">{% for document in archived_documents %}<div><span><strong>{{ document.working_title or document.original_filename or 'Документ' }}</strong><small>Оригинал сохранён · {{ document.archived_at[:10] }}</small></span><form action="{{ url_for('web.restore_document', document_id=document.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form></div>{% endfor %}</div></details>{% endif %}
+<div class="project-workspace" data-project-workspace>
+
+    <div class="project-workspace-main">
+        {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+
+        <section class="workspace-tab-panel" data-workspace-panel="overview">
+            <div class="workspace-panel-heading"><div><p class="eyebrow">ОБЗОР ПРОЕКТА</p><h2>Сводка</h2><p>Состояние исходных данных и быстрый доступ к основным действиям.</p></div></div>
+            <div class="workspace-metrics"><article class="workspace-metric panel"><span>Получено по списку</span><strong>{{ received_count }} <small>из {{ checklist|length }}</small></strong></article><article class="workspace-metric panel"><span>Файлов в архиве</span><strong>{{ documents|length }}</strong></article><article class="workspace-metric panel"><span>Ожидает получения</span><strong>{{ missing_count }}</strong></article></div>
+            {% if alerts %}<section class="alert-panel compact"><strong>Требуют внимания по срокам</strong><ul>{% for alert in alerts %}<li><a href="{{ url_for('web.document_detail', document_id=alert.document.id) }}">{{ alert.document.working_title or alert.document.original_filename }}</a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>{% else %}<div class="notice workspace-clear-notice">Документов с приближающимся или истёкшим сроком нет.</div>{% endif %}
+            <div class="workspace-quick-actions"><button type="button" class="secondary-button" data-open-tab="checklist">Открыть комплектность</button><button type="button" class="secondary-button" data-open-tab="upload">Добавить документы</button><button type="button" class="secondary-button" data-open-tab="documents">Перейти к архиву файлов</button></div>
+        </section>
+
+        <section class="workspace-tab-panel section-block" id="checklist" data-workspace-panel="checklist" hidden><div class="section-title"><div><p class="eyebrow">КОНТРОЛЬ КОМПЛЕКТНОСТИ</p><h2>Список документов</h2><p>{{ received_count }} получено · {{ missing_count }} ожидается</p></div><form action="{{ url_for('web.apply_template', object_id=object.id) }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="template_id" aria-label="Шаблон">{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select><button class="secondary-button" type="submit">Применить шаблон</button></form></div>
+            {% if checklist %}<div class="checklist panel"><div class="checklist-table-header" aria-hidden="true"><span>№</span><span>Документ</span><span>Статус</span><span>Исходный документ</span><span></span></div>
+                {% for item in checklist %}{% set linked = (documents + archived_documents)|selectattr('id', 'equalto', item.document_id)|first if item.document_id else none %}{% set expiry = linked.expiry if linked else none %}<div class="checklist-row" data-checklist-row data-title="{{ item.title|lower }}" data-status="{{ item.status }}" data-linked="{{ (linked.working_title or linked.original_filename)|lower if linked else '' }}" data-expiry="{{ expiry.key if expiry else '' }}" data-expiry-date="{{ linked.valid_until or '' if linked else '' }}">
+                    <span class="checklist-number">{{ loop.index }}</span><div class="checklist-name">{% if linked and not linked.archived_at %}<a class="checklist-document-link" href="{{ url_for('web.document_detail', document_id=linked.id) }}">{{ item.title }}</a>{% else %}<strong>{{ item.title }}</strong>{% endif %}{% if item.description %}<small>{{ item.description }}</small>{% endif %}
+                        {% if linked and item.status == 'received' %}<small data-expiry-display>{% if expiry.key == 'expired' %}<a class="checklist-expiry expiry-expired" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Просрочен · до {{ linked.valid_until }}</a>{% elif expiry.key == 'expiring' %}<a class="checklist-expiry expiry-expiring" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Истекает · до {{ linked.valid_until }}</a>{% elif expiry.key == 'valid' %}<a class="checklist-expiry expiry-valid" href="{{ url_for('web.document_detail', document_id=linked.id) }}">До {{ linked.valid_until }}</a>{% elif expiry.key == 'unlimited' %}Без срока{% else %}Срок не указан{% endif %}</small>{% else %}<small data-expiry-display hidden></small>{% endif %}
+                        {% if not linked or linked.archived_at %}<form class="checklist-file-form" action="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" method="post" enctype="multipart/form-data" data-checklist-upload><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="checklist-file-pick"><input class="visually-hidden" type="file" name="files" accept="application/pdf,image/*,.heic,.heif" multiple required data-checklist-files><span>＋ Добавить PDF или фото</span></label><span class="checklist-file-names" data-checklist-file-names></span><button type="submit" disabled hidden data-checklist-upload-button>Прикрепить выбранное</button></form>{% endif %}</div>
+                    <form class="checklist-edit-row" action="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" method="post" data-autosave-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="{{ item.status }}" data-status-value><input type="hidden" name="document_id" value="{{ item.document_id or '' }}" data-document-value><select name="_status_ui" aria-label="Статус документа" data-status-ui><option value="missing" {% if item.status == 'missing' %}selected{% endif %}>Ожидается</option><option value="received" {% if item.status == 'received' %}selected{% endif %}>Получен</option><option value="not_required" {% if item.status == 'not_required' %}selected{% endif %}>Не требуется</option></select><select name="_document_ui" aria-label="Исходный документ" data-document-ui><option value="" data-title="" data-expiry="" data-valid-until="">Выберите исходный документ</option>{% set linked_ids = checklist|map(attribute='document_id')|list %}{% for document in documents %}{% if document.id == item.document_id or document.id not in linked_ids %}<option value="{{ document.id }}" data-title="{{ document.working_title or document.original_filename }}" data-expiry="{{ document.expiry.key }}" data-valid-until="{{ document.valid_until or '' }}" data-url="{{ url_for('web.document_detail', document_id=document.id) }}" {% if item.document_id == document.id %}selected{% endif %}>{{ document.working_title or document.original_filename }}</option>{% endif %}{% endfor %}</select><span class="autosave-indicator" aria-live="polite"></span></form>
+                </div>{% endfor %}
+            </div>{% else %}<div class="empty-state compact-empty"><p>Для проекта пока нет списка документов.</p><p>Примените шаблон или создайте свой в разделе «Шаблоны».</p></div>{% endif %}
+        </section>
+
+        <section class="workspace-tab-panel section-block" data-workspace-panel="documents" hidden><div class="section-title"><div><p class="eyebrow">ФАЙЛЫ И РАСПОЗНАВАНИЕ</p><h2>Архив документов</h2><p>{{ documents|length }} загружено</p></div></div>
+            {% if documents %}<div class="project-documents-table-wrap panel" data-project-documents><table class="project-documents-table"><thead><tr><th><button type="button" data-doc-sort="title">Документ <span>↕</span></button><input type="search" data-doc-filter="title" placeholder="Название или орган" aria-label="Фильтр по документу"></th><th><button type="button" data-doc-sort="deadline">Срок действия <span>↕</span></button><input type="search" data-doc-filter="deadline" placeholder="Дата или без срока" aria-label="Фильтр по сроку"></th><th><button type="button" data-doc-sort="overdue">Индекс <span>↕</span></button><select data-doc-filter="overdue" aria-label="Фильтр просрочки"><option value="">Все</option><option value="overdue">Просрочено</option><option value="active">Не просрочено</option><option value="unknown">Не указан</option></select></th><th><button type="button" data-doc-sort="status">Распознавание <span>↕</span></button><select data-doc-filter="status" aria-label="Фильтр распознавания"><option value="">Все</option><option value="processed">Распознано</option><option value="error">Проверьте</option></select></th><th></th></tr></thead><tbody>{% for document in documents %}{% set expiry = document.expiry %}<tr data-project-document data-title="{{ ((document.working_title or document.official_title or document.original_filename or '') ~ ' ' ~ (document.issuer or ''))|lower }}" data-deadline="{{ document.valid_until or ('Без срока' if document.no_expiration else 'Срок не указан') }}" data-overdue="{{ 'overdue' if expiry.key == 'expired' else ('active' if expiry.key in ['valid', 'expiring', 'unlimited'] else 'unknown') }}" data-status="{{ document.status }}"><td><a class="project-document-title" href="{{ url_for('web.document_detail', document_id=document.id) }}">{{ document.working_title or document.official_title or document.original_filename or 'Документ' }}</a><small class="project-document-meta">{{ document.issuer or document.original_filename }} · {{ document.created_at[:10] }}</small></td><td>{% if document.no_expiration %}<span class="doc-date">Без срока</span>{% elif document.valid_until %}<span class="doc-date">До {{ document.valid_until }}</span>{% else %}<span class="doc-date">Срок не указан</span>{% endif %}</td><td>{% if expiry.key == 'expired' %}<span class="expiry-expired">Просрочено</span>{% elif expiry.key == 'expiring' %}<span class="expiry-expiring">Скоро истекает</span>{% elif expiry.key == 'valid' %}<span class="expiry-valid">Действует</span>{% elif expiry.key == 'unlimited' %}<span class="expiry-valid">Без срока</span>{% else %}<span class="doc-date">—</span>{% endif %}</td><td><span class="status-chip status-{{ document.status }}">{{ 'Распознано' if document.status == 'processed' else 'Проверьте' }}</span></td><td class="project-document-actions"><a class="icon-action" href="{{ url_for('web.document_detail', document_id=document.id) }}" aria-label="Открыть документ" title="Открыть документ"><svg aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8ZM1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.997 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8a13 13 0 0 1-1.66 2.043C11.88 11.332 10.003 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8Z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0Z"/></svg></a><form action="{{ url_for('web.delete_document', document_id=document.id) }}" method="post" onsubmit="return confirm('Убрать документ из списка? Оригинал останется в архиве и его можно будет восстановить.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="icon-action icon-action-danger" type="submit" aria-label="Убрать документ из списка" title="Убрать документ из списка"><svg aria-hidden="true" viewBox="0 0 16 16" focusable="false"><path d="M5.5 5.5a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2H6V1a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1h3.5a1 1 0 0 1 1 1ZM6 2h4V1H6v1Zm6 2H4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4Z"/></svg></button></form></td></tr>{% endfor %}</tbody></table><p class="checklist-no-results" data-doc-no-results hidden>По выбранным фильтрам документов нет.</p></div>{% else %}<div class="empty-state compact-empty"><p>Документов пока нет. Добавьте PDF или фото.</p></div>{% endif %}
+        </section>
+
+        <section class="workspace-tab-panel" data-workspace-panel="upload" hidden><div class="upload-panel panel"><div class="section-title"><span class="icon-badge">↑</span><div><h2>Добавить документы</h2><p>PDF или фотографии страниц. Выбранные фото будут собраны в один многостраничный PDF.</p></div></div><form action="{{ url_for('web.upload_documents', object_id=object.id) }}" method="post" enctype="multipart/form-data" class="upload-form" data-upload-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="file-picker"><input type="file" name="files" accept="application/pdf,image/*,.heic,.heif" multiple required><span class="upload-symbol">＋</span><strong>Выбрать PDF или фото</strong><small>PDF, JPEG, PNG, WebP, HEIC · до 25 МБ</small></label><div class="upload-controls"><label><span>Примечание (необязательно)</span><input name="note" placeholder="Например, получено от заказчика 20 октября"></label><button type="submit" data-upload-submit>Загрузить и распознать <span>→</span></button><div class="upload-feedback" data-upload-feedback aria-live="polite" hidden></div></div><div class="selected-files" data-selected-files hidden></div></form></div></section>
+
+        <section class="workspace-tab-panel" data-workspace-panel="tools" hidden><div class="document-tools panel"><div><p class="eyebrow">ОФОРМЛЕНИЕ</p><h2>Документы по проекту</h2><p>Подготовьте документы Word по данным архива и статусам комплектности.</p></div><div class="document-tools-actions"><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='inventory') }}">Создать опись документов</a><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='request') }}">Запрос недостающих исходных данных</a><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='handover') }}">Создать акт приёма-передачи ИРД</a></div></div></section>
+
+        {% if archived_documents %}<section class="workspace-tab-panel" data-workspace-panel="removed" hidden><div class="section-title"><div><p class="eyebrow">АРХИВ</p><h2>Убранные документы</h2><p>Исходные файлы сохранены и могут быть возвращены в проект.</p></div></div><div class="archive-list">{% for document in archived_documents %}<div class="panel"><span><strong>{{ document.working_title or document.original_filename or 'Документ' }}</strong><small>Оригинал сохранён · {{ document.archived_at[:10] }}</small></span><form action="{{ url_for('web.restore_document', document_id=document.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form></div>{% endfor %}</div></section>{% endif %}
+    </div>
+</div>
+<script>
+(() => {
+    const workspace = document.querySelector('[data-project-workspace]');
+    if (workspace) {
+        const panels = Array.from(workspace.querySelectorAll('[data-workspace-panel]'));
+        const navItems = Array.from(document.querySelectorAll('.app-sidebar [data-workspace-tab]'));
+        const params = new URLSearchParams(window.location.search);
+        const initialTab = params.get('tab') || (params.get('view') === 'checklist-columns' || window.location.hash === '#checklist' ? 'checklist' : 'overview');
+        const activateTab = (name, updateUrl = true) => {
+            if (!panels.some((panel) => panel.dataset.workspacePanel === name)) name = 'overview';
+            panels.forEach((panel) => { panel.hidden = panel.dataset.workspacePanel !== name; });
+            navItems.forEach((item) => {
+                const active = item.dataset.workspaceTab === name;
+                item.classList.toggle('is-active', active);
+                item.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            if (updateUrl) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', name);
+                url.searchParams.delete('view');
+                url.hash = '';
+                window.history.replaceState({}, '', url);
+            }
+        };
+        navItems.forEach((item) => item.addEventListener('click', () => activateTab(item.dataset.workspaceTab)));
+        workspace.querySelectorAll('[data-open-tab]').forEach((item) => item.addEventListener('click', () => activateTab(item.dataset.openTab)));
+        activateTab(initialTab, false);
+    }
+
+    const uploadForm = document.querySelector('[data-upload-form]');
+    if (uploadForm) {
+        const input = uploadForm.querySelector('input[type="file"]');
+        const list = uploadForm.querySelector('[data-selected-files]');
+        const feedback = uploadForm.querySelector('[data-upload-feedback]');
+        const submit = uploadForm.querySelector('[data-upload-submit]');
+        input.addEventListener('change', () => {
+            list.replaceChildren();
+            const files = Array.from(input.files || []);
+            list.hidden = files.length === 0;
+            files.forEach((file) => {
+                const row = document.createElement('div'); row.className = 'selected-file';
+                const icon = document.createElement('span'); icon.className = 'selected-file-icon'; icon.textContent = file.type === 'application/pdf' ? 'PDF' : 'ФОТО';
+                const name = document.createElement('span'); name.className = 'selected-file-name'; name.textContent = file.name;
+                const size = document.createElement('small'); size.textContent = `${(file.size / 1024 / 1024).toFixed(1)} МБ`;
+                row.append(icon, name, size); list.append(row);
+            });
+            feedback.hidden = true;
+        });
+        uploadForm.addEventListener('submit', () => {
+            if (!input.files.length) return;
+            submit.disabled = true;
+            submit.innerHTML = '<span class="spinner" aria-hidden="true"></span> Загружаем и распознаём…';
+            feedback.hidden = false;
+            feedback.textContent = `Загружаем ${input.files.length} ${input.files.length === 1 ? 'файл' : 'файла'} и распознаём. Это может занять некоторое время.`;
+            feedback.classList.add('is-working');
+        });
+    }
+    document.querySelectorAll('[data-autosave-form]').forEach((form) => {
+        let timer; let controller;
+        const indicator = form.querySelector('.autosave-indicator');
+        const save = async () => {
+            if (controller) controller.abort();
+            controller = new AbortController();
+            indicator.textContent = 'Сохраняем…'; indicator.classList.add('is-saving');
+            try {
+                const response = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal, headers: {'X-Requested-With': 'fetch'}});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                indicator.textContent = 'Сохранено'; indicator.classList.remove('is-saving'); indicator.classList.add('is-saved');
+                window.setTimeout(() => { indicator.textContent = ''; indicator.classList.remove('is-saved'); }, 1800);
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                indicator.textContent = 'Не сохранено'; indicator.classList.remove('is-saving', 'is-saved'); indicator.classList.add('is-save-error');
+            }
+        };
+        const statusUI = form.querySelector('[data-status-ui]');
+        const documentUI = form.querySelector('[data-document-ui]');
+        const row = form.closest('[data-checklist-row]');
+        const updateRow = () => {
+            const option = documentUI.selectedOptions[0];
+            const status = statusUI.value;
+            const expiry = option.dataset.expiry || '';
+            const linkedTitle = option.dataset.title || '';
+            const validUntil = option.dataset.validUntil || '';
+            row.dataset.status = status; row.dataset.linked = linkedTitle.toLowerCase();
+            row.dataset.expiry = expiry; row.dataset.expiryDate = validUntil;
+            const cell = row.querySelector('[data-expiry-display]'); cell.replaceChildren();
+            if (status !== 'received' || !documentUI.value) { cell.hidden = true; return; }
+            cell.hidden = false;
+            const labels = {expired: `Просрочен · до ${validUntil}`, expiring: `Истекает · до ${validUntil}`, valid: `До ${validUntil}`, unlimited: 'Без срока', unknown: 'Срок не указан'};
+            const label = labels[expiry] || labels.unknown;
+            if (expiry === 'expired' || expiry === 'expiring' || expiry === 'valid') {
+                const link = document.createElement('a'); link.href = option.dataset.url; link.className = `checklist-expiry expiry-${expiry}`; link.textContent = label; cell.append(link);
+            } else { const text = document.createElement('span'); text.className = 'checklist-expiry'; text.textContent = label; cell.append(text); }
+        };
+        statusUI.addEventListener('change', () => { form.querySelector('[data-status-value]').value = statusUI.value; updateRow(); window.clearTimeout(timer); timer = window.setTimeout(save, 250); });
+        documentUI.addEventListener('change', () => { form.querySelector('[data-document-value]').value = documentUI.value; if (documentUI.value && statusUI.value === 'missing') { statusUI.value = 'received'; form.querySelector('[data-status-value]').value = 'received'; } updateRow(); window.clearTimeout(timer); timer = window.setTimeout(save, 250); });
+    });
+
+    const documentSelects = Array.from(document.querySelectorAll('[data-document-ui]'));
+    const refreshAvailableDocuments = () => {
+        documentSelects.forEach((select) => {
+            const selectedElsewhere = new Set(documentSelects.filter((other) => other !== select).map((other) => other.value).filter(Boolean));
+            Array.from(select.options).forEach((option) => {
+                if (!option.value) return;
+                const unavailable = selectedElsewhere.has(option.value);
+                option.hidden = unavailable;
+                option.disabled = unavailable;
+            });
+        });
+    };
+    documentSelects.forEach((select) => select.addEventListener('change', refreshAvailableDocuments));
+    refreshAvailableDocuments();
+
+    document.querySelectorAll('[data-checklist-upload]').forEach((form) => {
+        const input = form.querySelector('[data-checklist-files]');
+        const button = form.querySelector('[data-checklist-upload-button]');
+        const names = form.querySelector('[data-checklist-file-names]');
+        input.addEventListener('change', () => {
+            const files = Array.from(input.files || []);
+            button.disabled = files.length === 0;
+            button.hidden = files.length === 0;
+            button.textContent = files.length ? `Загрузить ${files.length} ${files.length === 1 ? 'файл' : 'файла'}` : 'Прикрепить выбранное';
+            names.textContent = files.length ? files.map((file) => file.name).join(', ') : '';
+        });
+        form.addEventListener('submit', () => {
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner spinner-dark" aria-hidden="true"></span> Загружаем страницы…';
+        });
+    });
+
+    const documentsTable = document.querySelector('[data-project-documents]');
+    if (documentsTable) {
+        const body = documentsTable.querySelector('tbody');
+        const rows = () => Array.from(body.querySelectorAll('[data-project-document]'));
+        const filters = {title: documentsTable.querySelector('[data-doc-filter="title"]'), deadline: documentsTable.querySelector('[data-doc-filter="deadline"]'), overdue: documentsTable.querySelector('[data-doc-filter="overdue"]'), status: documentsTable.querySelector('[data-doc-filter="status"]')};
+        const applyFilters = () => {
+            rows().forEach((row) => {
+                const shown = (!filters.title.value || row.dataset.title.includes(filters.title.value.trim().toLowerCase())) && (!filters.deadline.value || row.dataset.deadline.toLowerCase().includes(filters.deadline.value.trim().toLowerCase())) && (!filters.overdue.value || row.dataset.overdue === filters.overdue.value) && (!filters.status.value || row.dataset.status === filters.status.value);
+                row.hidden = !shown;
+            });
+            documentsTable.querySelector('[data-doc-no-results]').hidden = rows().some((row) => !row.hidden);
+        };
+        Object.values(filters).forEach((control) => { control.addEventListener('input', applyFilters); control.addEventListener('change', applyFilters); });
+        const directions = {};
+        documentsTable.querySelectorAll('[data-doc-sort]').forEach((button) => button.addEventListener('click', () => {
+            const key = button.dataset.docSort; directions[key] = !directions[key];
+            rows().sort((a, b) => {
+                const av = key === 'title' ? a.dataset.title : key === 'deadline' ? a.dataset.deadline : a.dataset[key];
+                const bv = key === 'title' ? b.dataset.title : key === 'deadline' ? b.dataset.deadline : b.dataset[key];
+                const cmp = (av || '').localeCompare(bv || '', 'ru', {numeric: true});
+                return directions[key] ? cmp : -cmp;
+            }).forEach((row) => body.append(row));
+        }));
+    }
+})();
+</script>
 {% endblock %}

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 class PdfTextExtractor:
@@ -11,8 +12,56 @@ class PdfTextExtractor:
             return self._extract_image(pdf_path)
         text = self._extract_embedded_text(pdf_path)
         if self._has_enough_text(text):
+            if self._is_correspondence(text) and not self._has_numbered_date(text):
+                header = self._extract_correspondence_header(pdf_path)
+                if header:
+                    return f"{header}\n\n{text}"
             return text
         return self._extract_with_ocr(pdf_path)
+
+    @staticmethod
+    def _is_correspondence(text: str) -> bool:
+        return bool(re.search(
+            r"\b(?:письм\w*|просит|просим|сообщает|сообщаем|информирует|информируем|направляет|направляем|уведомляет|уведомляем)\b",
+            text,
+            re.IGNORECASE,
+        ))
+
+    @staticmethod
+    def _has_numbered_date(text: str) -> bool:
+        date = r"[0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2}"
+        return bool(re.search(
+            rf"(?:№|N(?:o|º|°)?)\s*[\wА-Яа-яЁё./-]{{2,30}}\s+(?:от\s*)?{date}",
+            text,
+            re.IGNORECASE,
+        ))
+
+    def _extract_correspondence_header(self, pdf_path: Path) -> str:
+        """OCR the first-page letterhead strip when the PDF text layer omits it."""
+        try:
+            import pypdfium2 as pdfium
+            import pytesseract
+            from PIL import ImageOps
+
+            pdf = pdfium.PdfDocument(str(pdf_path))
+            if not len(pdf):
+                return ""
+            image = pdf[0].render(scale=self.dpi / 72).to_pil().convert("RGB")
+            width, height = image.size
+            header_image = image.crop((0, 0, width, int(height * 0.18)))
+            header_image = ImageOps.autocontrast(ImageOps.grayscale(header_image))
+            text = pytesseract.image_to_string(
+                header_image,
+                lang=self.tesseract_lang,
+                config="--oem 1 --psm 11 -c preserve_interword_spaces=1",
+            ).strip()
+            if self._has_numbered_date(text):
+                return f"--- letterhead ---\n{text}"
+        except Exception:
+            # Letterhead OCR is a supplement; the embedded text remains usable
+            # if this optional targeted pass cannot run.
+            return ""
+        return ""
 
     def _extract_embedded_text(self, pdf_path: Path) -> str:
         try:

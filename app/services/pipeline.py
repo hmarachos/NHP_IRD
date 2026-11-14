@@ -21,12 +21,24 @@ class DocumentProcessingPipeline:
         fallback_parsed = self.regex_extractor.extract(text)
         if not parsed.issue_date and fallback_parsed.issue_date:
             parsed.issue_date = fallback_parsed.issue_date
-        if not parsed.valid_until and fallback_parsed.valid_until:
-            parsed.valid_until = fallback_parsed.valid_until
-            parsed.no_expiration = False
+        if not parsed.issuer and fallback_parsed.issuer:
+            parsed.issuer = fallback_parsed.issuer
+        if not parsed.official_title and fallback_parsed.official_title:
+            parsed.official_title = fallback_parsed.official_title
         if not parsed.validity_text and fallback_parsed.validity_text:
             parsed.validity_text = fallback_parsed.validity_text
-        if not parsed.working_title or parsed.working_title == "Неопределенный документ":
+        if fallback_parsed.valid_until and (
+            not parsed.valid_until or parsed.no_expiration
+        ):
+            parsed.valid_until = fallback_parsed.valid_until
+            parsed.no_expiration = False
+        elif not parsed.validity_text and fallback_parsed.validity_text:
+            parsed.validity_text = fallback_parsed.validity_text
+            parsed.no_expiration = fallback_parsed.no_expiration
+        rule_title = self.classifier.classify_by_rule(text, parsed.official_title)
+        if rule_title:
+            parsed.working_title = rule_title
+        elif not parsed.working_title or parsed.working_title == "Неопределенный документ":
             parsed.working_title = self.classifier.classify(text, parsed.official_title)
         if self._should_use_classified_title(parsed.official_title, parsed.working_title):
             parsed.official_title = parsed.working_title

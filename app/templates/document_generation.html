@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ spec.title }} · {{ project.name }}{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><a href="{{ url_for('web.object_workspace', object_id=project.id) }}">{{ project.name }}</a><span>/</span><span>{{ spec.title }}</span></div>
+<section class="document-generation panel">
+    <p class="eyebrow">ДОКУМЕНТ ПРОЕКТА</p>
+    <h1>{{ spec.title }}</h1>
+    <p class="subheading">{{ spec.description }} Документ будет сформирован в формате Word (.docx).</p>
+    <div class="generation-summary">
+        <span><small>Проект</small><strong>{{ project.name }}</strong></span>
+        <span><small>Договор</small><strong>{{ project.contract_number }}</strong></span>
+        {% if kind == 'inventory' %}<span><small>Документов</small><strong>{{ documents|length }}</strong></span>{% endif %}
+        {% if kind == 'request' %}<span><small>Ожидается</small><strong>{{ missing_count }}</strong></span>{% endif %}
+        {% if kind == 'handover' %}<span><small>К передаче</small><strong>{{ documents|length }}</strong></span>{% endif %}
+    </div>
+    {% if kind == 'request' and missing_count == 0 %}
+    <p class="notice notice-error">В чек-листе нет документов со статусом «Ожидается». Сначала настройте список документов проекта.</p>
+    {% elif kind == 'handover' and not documents %}
+    <p class="notice notice-error">В проекте пока нет загруженных документов. Добавьте их перед составлением акта.</p>
+    {% endif %}
+    {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+    <form method="post" class="generation-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if kind == 'request' %}
+        <label><span>Кому направить</span><input name="recipient" placeholder="Организация или должность получателя"></label>
+        <label><span>От кого</span><input name="sender" placeholder="Организация отправителя"></label>
+        <label><span>Исходящий номер</span><input name="number" placeholder="Оставьте пустым, если не нужен"></label>
+        <label><span>Подписант</span><input name="sender_signatory" placeholder="Должность и Ф.И.О."></label>
+        {% elif kind == 'handover' %}
+        <label><span>Передающая сторона</span><input name="sender" placeholder="Организация или ответственное лицо"></label>
+        <label><span>Принимающая сторона</span><input name="recipient" placeholder="Организация или ответственное лицо"></label>
+        <label><span>Номер акта</span><input name="number" placeholder="Оставьте пустым для заполнения от руки"></label>
+        {% endif %}
+        {% if kind != 'inventory' %}<label><span>Дата документа</span><input type="date" name="date"></label>{% endif %}
+        <div class="generation-actions"><a class="secondary-button" href="{{ url_for('web.object_workspace', object_id=project.id) }}">Назад к проекту</a><button type="submit" {% if kind == 'request' and missing_count == 0 or kind == 'handover' and not documents %}disabled{% endif %}>Скачать Word</button></div>
+    </form>
+    {% if kind == 'inventory' %}<a class="generation-back" href="{{ url_for('web.object_workspace', object_id=project.id) }}">← Назад к проекту</a>{% endif %}
+</section>
+{% endblock %}
