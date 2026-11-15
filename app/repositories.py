@@ -691,3 +691,24 @@ class AppSettingsRepository:
             "SELECT value FROM app_settings WHERE key = ?", (key,)
         ).fetchone()
         return row["value"] if row else None
+
+
+class CorrespondenceRepository:
+    def list_by_object(self, object_id: int):
+        return list(get_db().execute("SELECT * FROM correspondence WHERE object_id = ? ORDER BY COALESCE(letter_date, '' ) DESC, id DESC", (object_id,)))
+
+    def get(self, letter_id: int):
+        return get_db().execute("SELECT * FROM correspondence WHERE id = ?", (letter_id,)).fetchone()
+
+    def create(self, **values) -> int:
+        db = get_db()
+        fields = ('object_id','direction','number','letter_date','sender','recipient','subject','summary','original_filename','stored_filename','mime_type','raw_text','status','error')
+        cur = db.execute(f"INSERT INTO correspondence ({','.join(fields)}) VALUES ({','.join('?' for _ in fields)})", tuple(values.get(k, '') for k in fields))
+        db.commit()
+        return int(cur.lastrowid)
+
+    def update(self, letter_id: int, **values) -> bool:
+        keys = ('direction','number','letter_date','sender','recipient','subject','summary')
+        cur = get_db().execute('UPDATE correspondence SET ' + ', '.join(f'{k} = ?' for k in keys) + ' WHERE id = ?', tuple(values.get(k, '') for k in keys) + (letter_id,))
+        get_db().commit()
+        return cur.rowcount > 0

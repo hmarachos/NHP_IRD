@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from flask import current_app, g
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 SCHEMA = """
@@ -39,6 +39,27 @@ CREATE TABLE IF NOT EXISTS documents (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS correspondence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id INTEGER NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('incoming','outgoing')),
+    number TEXT NOT NULL DEFAULT '',
+    letter_date TEXT NOT NULL DEFAULT '',
+    sender TEXT NOT NULL DEFAULT '',
+    recipient TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    original_filename TEXT NOT NULL DEFAULT '',
+    stored_filename TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+    raw_text TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'processed',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_correspondence_object_date ON correspondence(object_id, letter_date DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS checklist_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261115-template-create-modal') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
@@ -25,6 +25,7 @@
                     {% if request.endpoint == 'web.object_workspace' %}
                     <button type="button" class="project-nav-item" data-workspace-tab="overview" aria-selected="false"><i class="project-nav-icon bi bi-house" aria-hidden="true"></i><span>Сводка</span></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="checklist" aria-selected="false"><i class="project-nav-icon bi bi-list-check" aria-hidden="true"></i><span>Комплектность</span><small>{{ received_count }}/{{ checklist|length }}</small></button>
+                    <button type="button" class="project-nav-item" data-workspace-tab="correspondence" aria-selected="false"><i class="project-nav-icon bi bi-envelope" aria-hidden="true"></i><span>Переписка</span><small>{{ correspondence|default([])|length }}</small></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="documents" aria-selected="false"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span><small>{{ documents|length }}</small></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="upload" aria-selected="false"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="tools" aria-selected="false"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></button>
@@ -33,6 +34,7 @@
                     {% else %}
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='overview') }}"><i class="project-nav-icon bi bi-house" aria-hidden="true"></i><span>Сводка</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='checklist') }}"><i class="project-nav-icon bi bi-list-check" aria-hidden="true"></i><span>Комплектность</span></a>
+                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='correspondence') }}"><i class="project-nav-icon bi bi-envelope" aria-hidden="true"></i><span>Переписка</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='documents') }}"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='upload') }}"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='tools') }}"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></a>

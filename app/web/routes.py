@@ -1,9 +1,10 @@
 import hashlib
 import io
 import json
+import logging
 import re
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import quote
@@ -14,14 +15,16 @@ from flask import Blueprint, abort, current_app, flash, make_response, redirect,
 from werkzeug.utils import secure_filename
 
 from app.models import ParsedDocument
-from app.repositories import ChecklistRepository, DocumentRepository, HandoverActRepository, ObjectRepository
+from app.repositories import ChecklistRepository, CorrespondenceRepository, DocumentRepository, HandoverActRepository, ObjectRepository
 from app.services.expiry import attach_expiry, expiry_state, iso_date
 from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
 from app.services.pipeline import DocumentProcessingPipeline
+from app.services.pdf_text import PdfTextExtractor
 from app.services.storage import StorageService
 
 
 bp = Blueprint("web", __name__)
+logger = logging.getLogger(__name__)
 
 
 @bp.get("/")
@@ -92,9 +95,11 @@ def restore_object(object_id: int):
 @bp.post("/objects/<int:object_id>/delete")
 def delete_object(object_id: int):
     act_filenames = HandoverActRepository().filenames_for_object(object_id)
+    correspondence_filenames = [row["stored_filename"] for row in CorrespondenceRepository().list_by_object(object_id)]
     stored_filenames = ObjectRepository().permanently_delete(object_id)
     if stored_filenames is None:
         abort(404)
+    stored_filenames.extend(correspondence_filenames)
 
     upload_dir = Path(current_app.config["UPLOAD_DIR"]).resolve()
     cleanup_failed = False
@@ -162,6 +167,7 @@ def object_workspace(object_id: int):
         missing_count=sum(row["status"] == "missing" for row in checklist),
         received_count=sum(row["status"] == "received" for row in checklist),
         warning_days=warning_days,
+        correspondence=CorrespondenceRepository().list_by_object(object_id),
     )
 
 
@@ -474,6 +480,107 @@ def upload_documents(object_id: int):
     return redirect(url_for("web.object_workspace", object_id=object_id))
 
 
+@bp.post("/objects/<int:object_id>/correspondence")
+def upload_correspondence(object_id: int):
+    obj = ObjectRepository().get(object_id)
+    if obj is None or obj["archived_at"]:
+        abort(404)
+    direction = request.form.get("direction", "incoming")
+    if direction not in {"incoming", "outgoing"}:
+        direction = "incoming"
+    files = [file for file in request.files.getlist("files") if file and file.filename]
+    if not files:
+        flash("Выберите PDF или фотографии страниц письма.", "error")
+        return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+
+    storage = StorageService(current_app.config["UPLOAD_DIR"], max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"])
+    saved_files = []
+    for file in files:
+        try:
+            saved_files.append(storage.save_upload(file))
+        except Exception as exc:
+            flash(f"{file.filename}: {exc}", "error")
+
+    image_files = [item for item in saved_files if item[3].startswith("image/")]
+    pdf_files = [item for item in saved_files if item[3] == "application/pdf"]
+    if image_files:
+        combined_path = Path(current_app.config["UPLOAD_DIR"]) / f"{uuid4().hex}_letter-pages.pdf"
+        try:
+            _combine_image_uploads(image_files, combined_path)
+            pdf_files.append((f"Письмо — {len(image_files)} страниц.pdf", combined_path.name, combined_path, "application/pdf"))
+        except Exception as exc:
+            flash(f"Не удалось собрать фотографии письма в PDF: {exc}", "error")
+        finally:
+            for _name, _stored, source_path, _mime in image_files:
+                source_path.unlink(missing_ok=True)
+
+    extractor = PdfTextExtractor(tesseract_lang=current_app.config["TESSERACT_LANG"], dpi=current_app.config["OCR_DPI"])
+    repository = CorrespondenceRepository()
+    created = 0
+    for original_name, stored_name, path, mime_type in pdf_files:
+        raw_text = ""
+        values = {"direction": direction, "number": "", "letter_date": "", "sender": "", "recipient": "", "subject": "", "summary": ""}
+        status, error = "processed", ""
+        try:
+            raw_text = extractor.extract(path)
+            values.update(_extract_correspondence_fields(raw_text))
+            if not raw_text.strip():
+                raise ValueError("В письме не удалось распознать текст.")
+        except Exception as exc:
+            status, error = "error", str(exc)
+            logger.exception("Correspondence OCR or extraction failed")
+        repository.create(
+            object_id=object_id, **values, original_filename=original_name,
+            stored_filename=stored_name, mime_type=mime_type, raw_text=raw_text,
+            status=status, error=error,
+        )
+        created += 1
+    if created:
+        flash(f"Добавлено писем: {created}. Проверьте распознанные реквизиты.", "success")
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+
+
+@bp.post("/objects/<int:object_id>/correspondence/<int:letter_id>")
+def update_correspondence(object_id: int, letter_id: int):
+    repo = CorrespondenceRepository()
+    letter = repo.get(letter_id)
+    if letter is None or letter["object_id"] != object_id:
+        abort(404)
+    direction = request.form.get("direction", letter["direction"])
+    if direction not in {"incoming", "outgoing"}:
+        direction = letter["direction"]
+    repo.update(
+        letter_id,
+        direction=direction,
+        number=request.form.get("number", "").strip()[:100],
+        letter_date=_normalize_letter_date(request.form.get("letter_date", "")),
+        sender=request.form.get("sender", "").strip()[:500],
+        recipient=request.form.get("recipient", "").strip()[:500],
+        subject=request.form.get("subject", "").strip()[:500],
+        summary=request.form.get("summary", "").strip()[:4000],
+    )
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+
+
+@bp.get("/correspondence/<int:letter_id>/file")
+def correspondence_file(letter_id: int):
+    letter = CorrespondenceRepository().get(letter_id)
+    if letter is None or not letter["stored_filename"]:
+        abort(404)
+    stored = letter["stored_filename"]
+    if Path(stored).name != stored:
+        abort(404)
+    response = send_from_directory(
+        current_app.config["UPLOAD_DIR"], stored,
+        mimetype=letter["mime_type"] or "application/pdf", as_attachment=False,
+        download_name=letter["original_filename"] or stored,
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @bp.get("/documents/<int:document_id>")
 def document_detail(document_id: int):
     document = DocumentRepository().get(document_id)
@@ -567,6 +674,7 @@ def export_object(object_id: int):
     if obj is None:
         abort(404)
     documents = DocumentRepository().list_by_object(object_id, include_archived=True)
+    letters = CorrespondenceRepository().list_by_object(object_id)
     checklist = ChecklistRepository().list_project_items(object_id)
     acts = HandoverActRepository().list_by_object(object_id)
     archive = io.BytesIO()
@@ -574,6 +682,7 @@ def export_object(object_id: int):
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         bundle.writestr("project.json", json.dumps(dict(obj), ensure_ascii=False, indent=2))
         bundle.writestr("documents.json", json.dumps([dict(row) for row in documents], ensure_ascii=False, indent=2))
+        bundle.writestr("correspondence.json", json.dumps([dict(row) for row in letters], ensure_ascii=False, indent=2))
         bundle.writestr("checklist.json", json.dumps([dict(row) for row in checklist], ensure_ascii=False, indent=2))
         bundle.writestr("handover-acts.json", json.dumps([dict(row) for row in acts], ensure_ascii=False, indent=2))
         upload_dir = current_app.config["UPLOAD_DIR"].resolve()
@@ -589,6 +698,20 @@ def export_object(object_id: int):
             bundle.writestr(member, content)
             manifest["files"].append({
                 "document_id": document["id"], "path": member,
+                "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
+            })
+        for letter in letters:
+            stored_name = letter["stored_filename"]
+            candidate = Path(stored_name) if stored_name else None
+            path = (upload_dir / candidate).resolve() if candidate else None
+            if path is None or candidate.is_absolute() or candidate.name != stored_name or path.parent != upload_dir or not path.is_file():
+                manifest["files"].append({"correspondence_id": letter["id"], "missing": True})
+                continue
+            member = f"correspondence/{letter['id']}-{path.name}"
+            content = path.read_bytes()
+            bundle.writestr(member, content)
+            manifest["files"].append({
+                "correspondence_id": letter["id"], "path": member,
                 "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
             })
         acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
@@ -641,6 +764,8 @@ def update_template(template_id: int):
     name, description = request.form.get("name", "").strip(), request.form.get("description", "").strip()
     if not name or not ChecklistRepository().update_template(template_id, name, description):
         abort(400)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
     return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
 
 
@@ -800,6 +925,94 @@ def _combine_image_uploads(sources, output_path: Path) -> None:
     finally:
         for page in pages:
             page.close()
+
+
+def _extract_correspondence_fields(text: str) -> dict[str, str]:
+    """Extract letter metadata without applying IRD validity or expiry rules."""
+    values = {"number": "", "letter_date": "", "sender": "", "recipient": "", "subject": "", "summary": ""}
+    cleaned = text.strip()
+    if not cleaned:
+        return values
+
+    if current_app.config.get("USE_AI") and current_app.config.get("OPENAI_API_KEY"):
+        try:
+            from openai import OpenAI
+
+            schema = {
+                "type": "object",
+                "properties": {key: {"type": "string"} for key in values},
+                "required": list(values),
+                "additionalProperties": False,
+            }
+            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
+                model=current_app.config["OPENAI_MODEL"],
+                instructions=(
+                    "Извлеки реквизиты делового письма на русском языке. Верни только данные самого письма: "
+                    "номер, дату письма в ISO YYYY-MM-DD, полное наименование отправителя, получателя, "
+                    "тему и краткое содержание в 1-3 предложениях. Учитывай шапку, исходящий номер и дату, "
+                    "адресата и подпись/организацию автора. Не выдумывай отсутствующие значения; тогда верни пустую строку. "
+                    "Срок действия документа не извлекай."
+                ),
+                input=cleaned[:24000],
+                text={"format": {"type": "json_schema", "name": "correspondence_fields", "schema": schema, "strict": True}},
+            )
+            extracted = json.loads(response.output_text)
+            for key in values:
+                if isinstance(extracted.get(key), str):
+                    values[key] = extracted[key].strip()
+            values["letter_date"] = _normalize_letter_date(values["letter_date"])
+        except Exception:
+            logger.exception("AI correspondence extraction failed; using local extraction")
+
+    date_pattern = r"(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:19|20)\d{2}"
+    if not values["letter_date"]:
+        match = re.search(rf"(?:от\s*)?({date_pattern})", cleaned, re.IGNORECASE)
+        if match:
+            values["letter_date"] = _normalize_letter_date(match.group(1))
+    if not values["number"]:
+        match = re.search(r"(?:№|N(?:o|º|°)?)\s*([\wА-Яа-яЁё./-]{1,40})", cleaned, re.IGNORECASE)
+        if match:
+            values["number"] = match.group(1).strip(" .,:;-")
+    lines = [re.sub(r"\s+", " ", line).strip(" \t\r\n:;—-") for line in cleaned.splitlines()]
+    lines = [line for line in lines if line]
+    if not values["recipient"]:
+        match = re.search(r"(?:^|\n)\s*((?:Директору|Руководителю|Начальнику|Кому)\b[^\n]{0,250})", cleaned, re.IGNORECASE)
+        if match:
+            values["recipient"] = re.sub(r"\s+", " ", match.group(1)).strip()
+    if not values["sender"]:
+        match = re.search(r"((?:РУП|ОАО|ОДО|ООО|УП|ЗАО|Государственн\w+ предприятие)[^\n]{3,180}?)\s+(?:просит|просим|сообщает|сообщаем|направляет|направляем|информирует|информируем)\b", cleaned, re.IGNORECASE)
+        if match:
+            values["sender"] = re.sub(r"\s+", " ", match.group(1)).strip(" ,.;")
+    if not values["subject"]:
+        for i, line in enumerate(lines[:40]):
+            if re.search(r"^(?:о\s+|тема\s*:|касательно\s+|по вопросу\s+)", line, re.IGNORECASE) and len(line) < 220:
+                values["subject"] = re.sub(r"^тема\s*:\s*", "", line, flags=re.IGNORECASE)
+                break
+    if not values["summary"]:
+        body = re.sub(r"\s+", " ", cleaned)
+        # Skip letterhead and address fragments where possible.
+        for marker in ("просит ", "просим ", "сообщает ", "сообщаем ", "направляет ", "информирует ", "информируем "):
+            start = body.lower().find(marker)
+            if start >= 0:
+                body = body[start:]
+                break
+        values["summary"] = body[:600].strip()
+    values["letter_date"] = _normalize_letter_date(values["letter_date"])
+    return values
+
+
+def _normalize_letter_date(value: str) -> str:
+    value = (value or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return value
+    match = re.search(r"((?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:19|20)\d{2})", value)
+    if not match:
+        return ""
+    day, month, year = re.split(r"[./-]", match.group(1))
+    try:
+        return date(int(year), int(month), int(day)).isoformat()
+    except ValueError:
+        return ""
 
 
 def _optional_int(value):

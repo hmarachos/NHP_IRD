@@ -2,32 +2,47 @@
 {% block title %}Шаблоны · Архив ИРД{% endblock %}
 {% block content %}
 <div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><span>Шаблоны списков</span></div>
-<section class="page-heading"><div><p class="eyebrow">ПОВТОРНОЕ ИСПОЛЬЗОВАНИЕ</p><h1>Шаблоны документов</h1><p class="subheading">Создавайте и настраивайте отдельные перечни для разных типов проектов.</p></div></section>
-<section class="panel create-template"><h2>Новый шаблон</h2><form action="{{ url_for('web.create_template') }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="name" placeholder="Название шаблона" required><input name="description" placeholder="Краткое описание"><button type="submit">Создать</button></form></section>
+<section class="page-heading template-page-heading"><div><p class="eyebrow">ПОВТОРНОЕ ИСПОЛЬЗОВАНИЕ</p><h1>Шаблоны документов</h1><p class="subheading">Создавайте и настраивайте отдельные перечни для разных типов проектов.</p></div><button class="template-create-trigger" type="button" data-open-template-dialog><i class="bi bi-plus-lg" aria-hidden="true"></i><span>Новый шаблон</span></button></section>
+<dialog class="template-create-dialog" aria-labelledby="new-template-title" data-template-dialog>
+    <div class="template-dialog-heading"><div><p class="eyebrow">НОВЫЙ СПИСОК</p><h2 id="new-template-title">Создать шаблон</h2></div><button class="template-dialog-close" type="button" aria-label="Закрыть" data-close-template-dialog><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+    <form action="{{ url_for('web.create_template') }}" method="post" class="template-create-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Название<input name="name" placeholder="Например, Строительство АЗС" required autofocus></label><label>Описание <span>(необязательно)</span><textarea name="description" rows="3" placeholder="Кратко опишите, для каких проектов предназначен список"></textarea></label><div class="template-dialog-actions"><button class="secondary-button" type="button" data-close-template-dialog>Отмена</button><button type="submit"><i class="bi bi-plus-lg" aria-hidden="true"></i> Создать шаблон</button></div></form>
+</dialog>
 <div class="template-list">
 {% for entry in templates %}
 <section class="panel template-card" id="template-{{ entry.template.id }}">
-    <form action="{{ url_for('web.update_template', template_id=entry.template.id) }}" method="post" class="template-header">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label><span>Название шаблона</span><input name="name" value="{{ entry.template.name }}" required></label>
-        <label><span>Описание</span><input name="description" value="{{ entry.template.description }}"></label>
-        <button class="secondary-button" type="submit">Сохранить</button>
-    </form>
-    <div class="section-title template-card-title">
-        <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
-        <div class="template-card-actions">
-            <form action="{{ url_for('web.copy_template', template_id=entry.template.id) }}" method="post" class="copy-template-form">
+    <header class="template-card-header">
+        <div class="template-card-identity">
+            <h2 data-template-name>{{ entry.template.name }}</h2>
+            <p data-template-description>{{ entry.template.description or 'Без описания' }}</p>
+            <form action="{{ url_for('web.update_template', template_id=entry.template.id) }}" method="post" class="template-header template-edit-form" hidden>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input name="name" value="{{ entry.template.name }} — копия" aria-label="Название копии шаблона" required>
-                <button class="secondary-button" type="submit">Скопировать</button>
-            </form>
-            <form action="{{ url_for('web.delete_template', template_id=entry.template.id) }}" method="post" onsubmit="return confirm('Удалить шаблон? Списки уже созданных проектов сохранятся.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit">Удалить шаблон</button>
+                <label><span>Название шаблона</span><input name="name" value="{{ entry.template.name }}" required data-template-meta-autosave></label>
+                <label><span>Описание</span><input name="description" value="{{ entry.template.description }}" data-template-meta-autosave></label>
+                <span class="template-save-status" aria-live="polite"></span>
             </form>
         </div>
+        <details class="template-menu">
+            <summary aria-label="Действия с шаблоном" title="Действия с шаблоном"><i class="bi bi-list" aria-hidden="true"></i></summary>
+            <div class="template-menu-panel">
+                <button type="button" data-template-edit-toggle><i class="bi bi-pencil-square" aria-hidden="true"></i><span>Изменить шаблон</span></button>
+                <form action="{{ url_for('web.copy_template', template_id=entry.template.id) }}" method="post" data-template-copy-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="name" value="{{ entry.template.name }} — копия">
+                    <button type="submit"><i class="bi bi-copy" aria-hidden="true"></i><span>Дублировать</span></button>
+                </form>
+                <form action="{{ url_for('web.delete_template', template_id=entry.template.id) }}" method="post" onsubmit="return confirm('Удалить шаблон? Списки уже созданных проектов сохранятся.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="is-danger" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i><span>Удалить шаблон</span></button>
+                </form>
+            </div>
+        </details>
+    </header>
+    <div class="section-title template-card-title">
+        <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
     </div>
-    <details class="template-edit-list"{% if request.args.get('edit', '') == entry.template.id|string %} open{% endif %}>
-        <summary>Редактировать документы</summary>
+    <ul class="template-items-readonly" data-template-items-readonly>
+        {% for item in entry['items'] %}<li>{{ item.title }}{% if item.description %}<small>{{ item.description }}</small>{% endif %}</li>{% endfor %}
+    </ul>
+    <div class="template-edit-list" data-template-items-edit hidden>
         <div class="template-items">
             {% for item in entry['items'] %}
             <div class="template-item">
@@ -44,8 +59,8 @@
             </div>
             {% endfor %}
         </div>
-    </details>
-    <form action="{{ url_for('web.add_template_item', template_id=entry.template.id) }}" method="post" class="inline-form add-item">
+    </div>
+    <form action="{{ url_for('web.add_template_item', template_id=entry.template.id) }}" method="post" class="inline-form add-item" data-template-add-item hidden>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="title" placeholder="Название нового документа" required><input name="description" placeholder="Пояснение (необязательно)"><button class="secondary-button" type="submit">Добавить документ</button>
     </form>
 </section>
@@ -55,8 +70,96 @@
 </div>
 <script>
 (() => {
+    const createDialog = document.querySelector('[data-template-dialog]');
+    document.querySelector('[data-open-template-dialog]')?.addEventListener('click', () => {
+        createDialog?.showModal();
+        createDialog?.querySelector('[name="name"]')?.focus();
+    });
+    createDialog?.querySelectorAll('[data-close-template-dialog]').forEach((button) => button.addEventListener('click', () => createDialog.close()));
+    createDialog?.addEventListener('click', (event) => { if (event.target === createDialog) createDialog.close(); });
+
+    document.querySelectorAll('.template-card').forEach((card) => {
+        const form = card.querySelector('.template-edit-form');
+        const menu = card.querySelector('.template-menu');
+        const toggle = card.querySelector('[data-template-edit-toggle]');
+        const readonlyItems = card.querySelector('[data-template-items-readonly]');
+        const editableItems = card.querySelector('[data-template-items-edit]');
+        const addItemForm = card.querySelector('[data-template-add-item]');
+        const status = form.querySelector('.template-save-status');
+        const nameInput = form.elements.name;
+        const descriptionInput = form.elements.description;
+        const displayedName = card.querySelector('[data-template-name]');
+        const displayedDescription = card.querySelector('[data-template-description]');
+        const copyForm = card.querySelector('[data-template-copy-form]');
+        let timer;
+        let controller;
+        let revision = 0;
+        const save = async () => {
+            const name = nameInput.value.trim();
+            if (!name) { status.textContent = 'Введите название'; return; }
+            const savedRevision = revision;
+            controller?.abort();
+            controller = new AbortController();
+            status.textContent = 'Сохраняем…';
+            status.className = 'template-save-status is-saving';
+            try {
+                const response = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal, keepalive: true, headers: {'X-Requested-With': 'fetch'}});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                displayedName.textContent = name;
+                displayedDescription.textContent = descriptionInput.value.trim() || 'Без описания';
+                copyForm.elements.name.value = `${name} — копия`;
+                if (savedRevision === revision) {
+                    status.textContent = 'Сохранено';
+                    status.className = 'template-save-status is-saved';
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                status.textContent = 'Не сохранено';
+                status.className = 'template-save-status is-save-error';
+            }
+        };
+        toggle.addEventListener('click', () => {
+            const opening = form.hidden;
+            if (!opening) {
+                window.clearTimeout(timer);
+                save();
+            }
+            form.hidden = !opening;
+            readonlyItems.hidden = opening;
+            editableItems.hidden = !opening;
+            addItemForm.hidden = !opening;
+            toggle.querySelector('span').textContent = opening ? 'Завершить редактирование' : 'Изменить шаблон';
+            menu.open = false;
+            if (opening) nameInput.focus();
+        });
+        form.querySelectorAll('[data-template-meta-autosave]').forEach((input) => {
+            input.addEventListener('input', () => {
+                revision += 1;
+                window.clearTimeout(timer);
+                timer = window.setTimeout(save, 450);
+            });
+            input.addEventListener('change', () => {
+                revision += 1;
+                window.clearTimeout(timer);
+                save();
+            });
+        });
+        form.addEventListener('submit', (event) => { event.preventDefault(); window.clearTimeout(timer); save(); });
+        copyForm.addEventListener('submit', () => { copyForm.elements.name.value = `${nameInput.value.trim() || displayedName.textContent.trim()} — копия`; });
+    });
+    document.addEventListener('click', (event) => {
+        document.querySelectorAll('.template-menu[open]').forEach((menu) => {
+            if (!menu.contains(event.target)) menu.open = false;
+        });
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') document.querySelectorAll('.template-menu[open]').forEach((menu) => { menu.open = false; });
+    });
     document.querySelectorAll('.template-item-edit').forEach((form) => {
         const status = form.querySelector('.template-save-status');
+        const card = form.closest('.template-card');
+        const itemIndex = Array.from(card.querySelectorAll('.template-item-edit')).indexOf(form);
+        const readonlyItem = card.querySelectorAll('[data-template-items-readonly] li')[itemIndex];
         let timer;
         let controller;
         const save = async () => {
@@ -75,6 +178,12 @@
                     headers: {'X-Requested-With': 'fetch'}
                 });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                readonlyItem.textContent = title;
+                if (form.elements.description.value.trim()) {
+                    const description = document.createElement('small');
+                    description.textContent = form.elements.description.value.trim();
+                    readonlyItem.append(description);
+                }
                 status.textContent = 'Сохранено';
                 status.className = 'template-save-status is-saved';
             } catch (error) {

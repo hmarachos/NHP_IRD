@@ -32,6 +32,14 @@
 
         <section class="workspace-tab-panel" data-workspace-panel="tools" hidden><div class="document-tools panel"><div><p class="eyebrow">ОФОРМЛЕНИЕ</p><h2>Документы по проекту</h2><p>Подготовьте документы Word по данным архива и статусам комплектности.</p></div><div class="document-tools-actions"><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='inventory') }}">Создать опись документов</a><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='request') }}">Запрос недостающих исходных данных</a><a class="secondary-button" href="{{ url_for('web.project_document_form', object_id=object.id, kind='handover') }}">Создать акт приёма-передачи ИРД</a></div></div></section>
 
+        <section class="workspace-tab-panel section-block" data-workspace-panel="correspondence" hidden>
+            <div class="section-title"><div><p class="eyebrow">ПИСЬМА ПРОЕКТА</p><h2>Переписка</h2><p>Входящие и исходящие письма отдельно от перечня ИРД · {{ correspondence|length }} в архиве</p></div></div>
+            <div class="upload-panel panel"><div class="section-title"><span class="icon-badge"><i class="bi bi-envelope-plus"></i></span><div><h2>Добавить письмо</h2><p>Загрузите PDF или фото страниц — распознавание заполнит реквизиты, их можно будет уточнить.</p></div></div>
+                <form action="{{ url_for('web.upload_correspondence', object_id=object.id) }}" method="post" enctype="multipart/form-data" class="upload-form correspondence-upload-form" data-correspondence-upload><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="file-picker"><input type="file" name="files" accept="application/pdf,image/*,.heic,.heif" multiple required><span class="upload-symbol">＋</span><strong>Выбрать PDF или фото</strong><small>Можно добавить несколько фото страниц</small></label><div class="upload-controls"><label><span>Направление письма</span><select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><button type="submit" data-correspondence-upload-submit>Загрузить и распознать письмо →</button><div class="upload-feedback" data-correspondence-upload-feedback aria-live="polite" hidden></div></div><div class="selected-files" data-correspondence-selected-files hidden></div></form>
+            </div>
+            {% if correspondence %}<div class="correspondence-list">{% for letter in correspondence %}<article class="panel correspondence-card"><div class="correspondence-card-heading"><span class="status-chip status-{{ letter.status }}">{{ 'Входящее' if letter.direction == 'incoming' else 'Исходящее' }}</span><strong>{{ letter.subject or 'Тема не распознана' }}</strong><small>{{ letter.letter_date or 'Дата не указана' }}{% if letter.number %} · № {{ letter.number }}{% endif %}</small></div><form action="{{ url_for('web.update_correspondence', object_id=object.id, letter_id=letter.id) }}" method="post" class="fields-grid correspondence-fields" data-correspondence-autosave><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Тип письма<select name="direction"><option value="incoming" {% if letter.direction == 'incoming' %}selected{% endif %}>Входящее</option><option value="outgoing" {% if letter.direction == 'outgoing' %}selected{% endif %}>Исходящее</option></select></label><label>Номер<input name="number" value="{{ letter.number }}"></label><label>Дата письма<input type="date" name="letter_date" value="{{ letter.letter_date }}"></label><label>Отправитель<input name="sender" value="{{ letter.sender }}"></label><label>Получатель<input name="recipient" value="{{ letter.recipient }}"></label><label class="correspondence-wide">Тема<input name="subject" value="{{ letter.subject }}"></label><label class="correspondence-wide">Кратко о письме<textarea name="summary" rows="2">{{ letter.summary }}</textarea></label><span class="autosave-indicator correspondence-save-indicator" aria-live="polite"></span>{% if letter.stored_filename %}<a class="secondary-button" target="_blank" href="{{ url_for('web.correspondence_file', letter_id=letter.id) }}">Открыть оригинал</a>{% endif %}</form>{% if letter.error %}<p class="notice notice-error">Распознавание: {{ letter.error }}</p>{% endif %}</article>{% endfor %}</div>{% else %}<div class="empty-state compact-empty"><p>Писем пока нет. Добавьте первое письмо выше.</p></div>{% endif %}
+        </section>
+
         {% if archived_documents %}<section class="workspace-tab-panel" data-workspace-panel="removed" hidden><div class="section-title"><div><p class="eyebrow">АРХИВ</p><h2>Убранные документы</h2><p>Исходные файлы сохранены и могут быть возвращены в проект.</p></div></div><div class="archive-list">{% for document in archived_documents %}<div class="panel"><span><strong>{{ document.working_title or document.original_filename or 'Документ' }}</strong><small>Оригинал сохранён · {{ document.archived_at[:10] }}</small></span><form action="{{ url_for('web.restore_document', document_id=document.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form></div>{% endfor %}</div></section>{% endif %}
     </div>
 </div>
@@ -89,6 +97,34 @@
             submit.innerHTML = '<span class="spinner" aria-hidden="true"></span> Загружаем и распознаём…';
             feedback.hidden = false;
             feedback.textContent = `Загружаем ${input.files.length} ${input.files.length === 1 ? 'файл' : 'файла'} и распознаём. Это может занять некоторое время.`;
+            feedback.classList.add('is-working');
+        });
+    }
+    const correspondenceUpload = document.querySelector('[data-correspondence-upload]');
+    if (correspondenceUpload) {
+        const input = correspondenceUpload.querySelector('input[type="file"]');
+        const list = correspondenceUpload.querySelector('[data-correspondence-selected-files]');
+        const feedback = correspondenceUpload.querySelector('[data-correspondence-upload-feedback]');
+        const submit = correspondenceUpload.querySelector('[data-correspondence-upload-submit]');
+        input.addEventListener('change', () => {
+            list.replaceChildren();
+            const files = Array.from(input.files || []);
+            list.hidden = files.length === 0;
+            files.forEach((file) => {
+                const row = document.createElement('div'); row.className = 'selected-file';
+                const icon = document.createElement('span'); icon.className = 'selected-file-icon'; icon.textContent = file.type === 'application/pdf' ? 'PDF' : 'ФОТО';
+                const name = document.createElement('span'); name.className = 'selected-file-name'; name.textContent = file.name;
+                const size = document.createElement('small'); size.textContent = `${(file.size / 1024 / 1024).toFixed(1)} МБ`;
+                row.append(icon, name, size); list.append(row);
+            });
+            feedback.hidden = true;
+        });
+        correspondenceUpload.addEventListener('submit', () => {
+            if (!input.files.length) return;
+            submit.disabled = true;
+            submit.innerHTML = '<span class="spinner" aria-hidden="true"></span> Распознаём письмо…';
+            feedback.hidden = false;
+            feedback.textContent = `Загружаем ${input.files.length} ${input.files.length === 1 ? 'файл' : 'файла'} и распознаём письмо.`;
             feedback.classList.add('is-working');
         });
     }
@@ -180,6 +216,26 @@
         };
         statusUI.addEventListener('change', () => { form.querySelector('[data-status-value]').value = statusUI.value; updateRow(); window.clearTimeout(timer); timer = window.setTimeout(save, 250); });
         documentUI.addEventListener('change', () => { form.querySelector('[data-document-value]').value = documentUI.value; if (documentUI.value && statusUI.value === 'missing') { statusUI.value = 'received'; form.querySelector('[data-status-value]').value = 'received'; } updateRow(); window.clearTimeout(timer); timer = window.setTimeout(save, 250); });
+    });
+
+    document.querySelectorAll('[data-correspondence-autosave]').forEach((form) => {
+        let timer; let controller;
+        const indicator = form.querySelector('.correspondence-save-indicator');
+        const save = async () => {
+            controller?.abort(); controller = new AbortController();
+            indicator.textContent = 'Сохраняем…'; indicator.classList.add('is-saving');
+            try {
+                const response = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal, headers: {'X-Requested-With': 'fetch'}});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                indicator.textContent = 'Сохранено'; indicator.classList.remove('is-saving'); indicator.classList.add('is-saved');
+                window.setTimeout(() => { indicator.textContent = ''; indicator.classList.remove('is-saved'); }, 1600);
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                indicator.textContent = 'Не сохранено'; indicator.classList.remove('is-saving', 'is-saved'); indicator.classList.add('is-save-error');
+            }
+        };
+        form.addEventListener('input', () => { window.clearTimeout(timer); timer = window.setTimeout(save, 500); });
+        form.addEventListener('change', () => { window.clearTimeout(timer); timer = window.setTimeout(save, 250); });
     });
 
     const documentSelects = Array.from(document.querySelectorAll('[data-document-ui]'));
