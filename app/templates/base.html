@@ -11,7 +11,7 @@
 <body>
     {% set active_project = object if object is defined and object else (project if project is defined and project else none) %}
     <div class="app-layout">
-        <aside class="project-sidebar app-sidebar">
+        <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <a class="brand app-sidebar-brand" href="{{ url_for('web.index') }}"><span class="brand-mark">И</span><span>Архив ИРД<small>Проектные документы</small></span></a>
             {% if active_project %}
             <div class="project-sidebar-identity"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><span class="project-sidebar-contract">Договор {{ active_project.contract_number }}</span></div>
@@ -28,6 +28,7 @@
                     <button type="button" class="project-nav-item" data-workspace-tab="documents" aria-selected="false"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span><small>{{ documents|length }}</small></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="upload" aria-selected="false"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></button>
                     <button type="button" class="project-nav-item" data-workspace-tab="tools" aria-selected="false"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></button>
+                    <a class="project-nav-item" href="{{ url_for('web.project_acts', object_id=active_project.id) }}"><i class="project-nav-icon bi bi-envelope-paper" aria-hidden="true"></i><span>Акты приёма-передачи</span></a>
                     {% if archived_documents %}<button type="button" class="project-nav-item" data-workspace-tab="removed" aria-selected="false"><i class="project-nav-icon bi bi-clock-history" aria-hidden="true"></i><span>Убранные документы</span><small>{{ archived_documents|length }}</small></button>{% endif %}
                     {% else %}
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='overview') }}"><i class="project-nav-icon bi bi-house" aria-hidden="true"></i><span>Сводка</span></a>
@@ -35,13 +36,16 @@
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='documents') }}"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='upload') }}"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></a>
                     <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='tools') }}"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></a>
+                    <a class="project-nav-item{% if request.endpoint in ['web.project_acts', 'web.download_handover_act'] %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) }}"{% if request.endpoint in ['web.project_acts', 'web.download_handover_act'] %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-envelope-paper" aria-hidden="true"></i><span>Акты приёма-передачи</span></a>
                     {% endif %}
                 </div>
                 {% endif %}
             </nav>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
         </aside>
+        <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>
         <main class="page app-main">
+            <div class="mobile-menu-row"><button class="mobile-sidebar-toggle" type="button" aria-label="Открыть меню" aria-controls="app-sidebar" aria-expanded="false" data-sidebar-toggle><i class="bi bi-list" aria-hidden="true"></i></button></div>
             {% if active_project %}<header class="project-topbar"><div class="project-topbar-context"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><small>Договор {{ active_project.contract_number }}</small></div><a class="project-topbar-add" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='upload') }}"><i class="bi bi-file-earmark-plus" aria-hidden="true"></i><span>Добавить документ</span></a></header>{% endif %}
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% for category, message in messages %}<p class="notice notice-{{ category }}">{{ message }}</p>{% endfor %}
@@ -49,5 +53,27 @@
             {% block content %}{% endblock %}
         </main>
     </div>
+    <script>
+        (() => {
+            const toggle = document.querySelector('[data-sidebar-toggle]');
+            const sidebar = document.getElementById('app-sidebar');
+            if (!toggle || !sidebar) return;
+            const setOpen = (open) => {
+                document.body.classList.toggle('sidebar-open', open);
+                toggle.setAttribute('aria-expanded', String(open));
+                toggle.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+                toggle.querySelector('i').className = `bi ${open ? 'bi-x-lg' : 'bi-list'}`;
+            };
+            toggle.addEventListener('click', () => setOpen(!document.body.classList.contains('sidebar-open')));
+            document.querySelector('[data-sidebar-close]')?.addEventListener('click', () => setOpen(false));
+            sidebar.addEventListener('click', (event) => {
+                if (event.target.closest('a, [data-workspace-tab]')) setOpen(false);
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') setOpen(false);
+            });
+            window.matchMedia('(min-width: 761px)').addEventListener('change', () => setOpen(false));
+        })();
+    </script>
 </body>
 </html>

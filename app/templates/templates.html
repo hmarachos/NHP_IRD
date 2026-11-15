@@ -26,16 +26,17 @@
             </form>
         </div>
     </div>
-    <details class="template-edit-list">
+    <details class="template-edit-list"{% if request.args.get('edit', '') == entry.template.id|string %} open{% endif %}>
         <summary>Редактировать документы</summary>
         <div class="template-items">
             {% for item in entry['items'] %}
             <div class="template-item">
                 <form action="{{ url_for('web.update_template_item', item_id=item.id) }}" method="post" class="template-item-edit">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input name="title" value="{{ item.title }}" required aria-label="Документ">
-                    <input name="description" value="{{ item.description }}" placeholder="Пояснение (необязательно)" aria-label="Пояснение">
-                    <button class="icon-button" type="submit" title="Сохранить документ">✓</button>
+                    <input type="hidden" name="template_id" value="{{ entry.template.id }}">
+                    <input name="title" value="{{ item.title }}" required aria-label="Документ" data-template-autosave>
+                    <input name="description" value="{{ item.description }}" placeholder="Пояснение (необязательно)" aria-label="Пояснение" data-template-autosave>
+                    <span class="template-save-status" aria-live="polite"></span>
                 </form>
                 <form action="{{ url_for('web.delete_template_item', item_id=item.id) }}" method="post" onsubmit="return confirm('Удалить документ из шаблона?');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit" aria-label="Удалить пункт">Удалить</button>
@@ -52,4 +53,52 @@
 <div class="empty-state"><h3>Шаблонов пока нет</h3><p>Создайте первый перечень выше.</p></div>
 {% endfor %}
 </div>
+<script>
+(() => {
+    document.querySelectorAll('.template-item-edit').forEach((form) => {
+        const status = form.querySelector('.template-save-status');
+        let timer;
+        let controller;
+        const save = async () => {
+            const title = form.elements.title.value.trim();
+            if (!title) { status.textContent = 'Введите название'; return; }
+            controller?.abort();
+            controller = new AbortController();
+            status.textContent = 'Сохраняем…';
+            status.className = 'template-save-status is-saving';
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    signal: controller.signal,
+                    keepalive: true,
+                    headers: {'X-Requested-With': 'fetch'}
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                status.textContent = 'Сохранено';
+                status.className = 'template-save-status is-saved';
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                status.textContent = 'Не сохранено';
+                status.className = 'template-save-status is-save-error';
+            }
+        };
+        form.querySelectorAll('[data-template-autosave]').forEach((input) => {
+            input.addEventListener('input', () => {
+                window.clearTimeout(timer);
+                timer = window.setTimeout(save, 450);
+            });
+            input.addEventListener('change', () => {
+                window.clearTimeout(timer);
+                save();
+            });
+        });
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            window.clearTimeout(timer);
+            save();
+        });
+    });
+})();
+</script>
 {% endblock %}

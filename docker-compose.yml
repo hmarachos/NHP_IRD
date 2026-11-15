@@ -11,3 +11,14 @@ services:
       - ./instance:/app/instance
       - ./uploads:/app/instance/uploads
     restart: unless-stopped
+  scheduler:
+    build: .
+    command: ["python", "-m", "app.scheduler"]
+    env_file:
+      - .env
+    volumes:
+      - ./instance:/app/instance
+      - ./uploads:/app/instance/uploads
+    depends_on:
+      - web
+    restart: unless-stopped

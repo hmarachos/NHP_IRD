@@ -21,6 +21,7 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
     DATABASE_PATH = resolve_project_path(os.getenv("DATABASE_PATH", BASE_DIR / "instance" / "documents.db"))
     UPLOAD_DIR = resolve_project_path(os.getenv("UPLOAD_DIR", BASE_DIR / "instance" / "uploads"))
+    ACTS_DIR = resolve_project_path(os.getenv("ACTS_DIR", BASE_DIR / "instance" / "acts"))
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(25 * 1024 * 1024)))
     MAX_UPLOAD_FILE_SIZE = int(os.getenv("MAX_UPLOAD_FILE_SIZE", str(25 * 1024 * 1024)))
 
@@ -32,9 +33,19 @@ class Config:
     OCR_DPI = int(os.getenv("OCR_DPI", "300"))
     EXPIRY_WARNING_DAYS = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
 
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_APP_PASSWORD = os.getenv("MAIL_APP_PASSWORD", "")
+    MAIL_FROM = os.getenv("MAIL_FROM", "") or MAIL_USERNAME
+    MAIL_RECIPIENT = os.getenv("MAIL_RECIPIENT", "a.kazantsev@beloil.by")
+    MAIL_TIMEZONE = os.getenv("MAIL_TIMEZONE", "Europe/Minsk")
+    MAIL_SEND_HOUR = int(os.getenv("MAIL_SEND_HOUR", "8"))
+
     DOCUMENT_TYPES = DOCUMENT_TYPES
 
     @classmethod
     def ensure_directories(cls) -> None:
         cls.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
         cls.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        cls.ACTS_DIR.mkdir(parents=True, exist_ok=True)

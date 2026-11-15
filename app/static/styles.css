@@ -130,3 +130,92 @@
 .project-topbar-add i{font-size:15px}
 @media(max-width:760px){.project-topbar{min-height:62px;margin-bottom:12px;padding:9px 0}.project-topbar-add{min-height:36px;padding:6px 10px;font-size:11px}}
 @media(max-width:460px){.project-topbar-context small{display:none}.project-topbar-context strong{max-width:52vw;font-size:13px}.project-topbar-add{gap:5px;padding:6px 8px;font-size:10px}}
+
+/* Keep checklist cards usable on narrow phone screens. */
+.checklist-mobile-field{display:contents}
+@media(max-width:760px){
+    .workspace-tab-panel .checklist.panel{max-height:none;overflow:visible}
+    .checklist-table-header,.checklist-row{width:100%;min-width:0;grid-template-columns:30px minmax(0,1fr);gap:8px 10px}
+    .checklist-table-header{padding:10px 12px}
+    .checklist-table-header>span:nth-child(n+3){display:none}
+    .checklist-row{align-items:start;padding:13px 12px}
+    .checklist-number{grid-column:1;grid-row:1;padding-top:7px}
+    .checklist-name{grid-column:2;grid-row:1;overflow-wrap:anywhere}
+    .checklist-name strong,.checklist-name>a{display:block;overflow-wrap:anywhere;word-break:normal;white-space:normal}
+    .checklist-name small{overflow-wrap:anywhere}
+    .checklist-file-form{align-items:flex-start}
+    .checklist-file-pick span{display:inline-flex;max-width:100%;align-items:center;justify-content:center;text-align:center;line-height:1.3}
+    .checklist-edit-row{display:grid;grid-column:2;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
+    .checklist-mobile-field{display:grid;gap:3px;min-width:0}
+    .checklist-mobile-field>span{color:var(--muted);font-size:10px;font-weight:700}
+    .checklist-edit-row select{width:100%;min-width:0}
+    .checklist-edit-row .autosave-indicator{grid-column:1;min-height:0}
+}
+
+/* On phones, keep navigation docked to the left and reveal it as a drawer. */
+.mobile-menu-row,.mobile-sidebar-toggle,.sidebar-backdrop{display:none}
+@media(max-width:760px){
+    .app-layout{display:block;width:100%;min-height:100vh;margin:0}
+    .app-sidebar{position:fixed;inset:0 auto 0 0;z-index:1200;width:min(280px,86vw);height:100vh;height:100dvh;min-height:0;margin:0;padding:16px 13px;border:0;border-right:1px solid #3a4149;border-radius:0;box-shadow:8px 0 28px rgba(15,19,23,.24);transform:translateX(-102%);transition:transform .22s ease;overflow-y:auto;overscroll-behavior:contain}
+    body.sidebar-open .app-sidebar{transform:translateX(0)}
+    .app-sidebar-brand{padding:4px 7px 14px;margin:0 0 14px}
+    .app-sidebar .project-sidebar-identity{grid-template-columns:minmax(0,1fr);align-items:start;gap:5px;padding:5px 8px 16px}
+    .app-sidebar .project-sidebar-identity .eyebrow{grid-column:auto}
+    .app-sidebar .project-sidebar-identity strong{font-size:14px;overflow-wrap:anywhere}
+    .app-sidebar .project-sidebar-contract{grid-column:auto;grid-row:auto}
+    .app-sidebar .project-side-nav{display:grid;gap:17px;overflow:visible;padding:16px 0}
+    .app-sidebar .project-nav-group{display:grid;gap:4px}
+    .app-sidebar .project-nav-caption{display:block}
+    .app-sidebar .project-nav-item{width:100%;min-height:40px;flex:initial;gap:10px;padding:8px 10px;font-size:12px;white-space:normal}
+    .app-sidebar .project-nav-item small{min-width:24px}
+    .app-sidebar .project-nav-icon{font-size:17px}
+    .app-sidebar .project-sidebar-download{display:flex}
+    .app-main.page,.app-main.page:has(.project-workspace){width:100%;margin:0!important;padding:0 12px 45px}
+    .app-main .page-heading{margin-top:4px}
+    .mobile-menu-row{display:flex;height:48px;align-items:center}
+    .mobile-sidebar-toggle{display:grid;width:40px;height:40px;place-items:center;padding:0;border:1px solid #9b6f4f;border-radius:9px;background:#805a3e;color:#fff;box-shadow:0 3px 12px rgba(30,25,21,.2);font-size:22px;line-height:1;cursor:pointer}
+    .mobile-sidebar-toggle:focus-visible{outline:2px solid #c49a76;outline-offset:2px}
+    .sidebar-backdrop{position:fixed;inset:0;z-index:1190;display:block;width:100%;height:100%;padding:0;border:0;background:rgba(18,22,26,.42);opacity:0;pointer-events:none;transition:opacity .22s ease}
+    body.sidebar-open .sidebar-backdrop{opacity:1;pointer-events:auto}
+}
+@media(prefers-reduced-motion:reduce){.app-sidebar,.sidebar-backdrop{transition:none}}
+
+.act-archive-note{display:flex;align-items:flex-start;gap:13px;padding:16px 18px;margin-bottom:16px;background:#fffdfb}
+.act-archive-note>i{flex:0 0 auto;color:var(--accent);font-size:20px}
+.act-archive-note strong{font-size:13px}
+.act-archive-note p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.act-archive-list{display:grid;gap:10px}
+.handover-act-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 17px}
+.handover-act-info{display:grid;min-width:0;gap:3px}
+.handover-act-info>strong{font-size:13px}
+.handover-act-info>span,.handover-act-info>small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.act-state{flex:0 0 auto;font-size:11px;font-weight:700}
+.act-state-sent{color:#31704f}
+.act-state-manual{color:var(--muted)}
+.act-state-pending{color:var(--warning)}
+.handover-act-card .secondary-button{gap:6px}
+@media(max-width:640px){.handover-act-card{align-items:flex-start;flex-direction:column;gap:9px;padding:13px}.act-archive-note{padding:13px}}
+
+/* Project accent: terracotta. */
+:root{--accent:#D9763A;--accent-dark:#A64E1C;--soft:#F8EAE1}
+.brand-mark{background:#D9763A}
+.app-sidebar .project-nav-item.is-active::before,.app-sidebar .project-nav-item[aria-current="page"]::before,.app-sidebar .project-nav-item[aria-selected="true"]::before{background:#D9763A}
+.app-sidebar .project-nav-item:is(:hover,.is-active,[aria-current="page"],[aria-selected="true"]) .project-nav-icon{color:#D9763A}
+.app-sidebar .project-sidebar-download{color:#E49A6D}
+.app-sidebar .project-sidebar-download:hover{color:#F0B18C}
+.stack-form button,.inline-form button,.upload-controls button,.new-project>summary,.new-project-form button,.generation-actions button{background:#D9763A}
+.stack-form button:hover,.inline-form button:hover,.upload-controls button:hover,.new-project-form button:hover,.generation-actions button:hover{background:#B65A25}
+.app-sidebar-add,.project-sidebar-add,.project-topbar-add,.mobile-sidebar-toggle{border-color:#D9763A;background:#D9763A}
+.project-sidebar-add:hover,.project-topbar-add:hover,.mobile-sidebar-toggle:hover{border-color:#B65A25;background:#B65A25}
+.alert-ribbon-track{scrollbar-color:#D9763A #F1E7E0}
+.alert-ribbon-track::-webkit-scrollbar-thumb{background:#D9763A}
+.template-item-edit{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto}
+.template-save-status{min-width:66px;color:var(--muted);font-size:10px}
+.template-save-status.is-saving{color:var(--warning)}
+.template-save-status.is-saved{color:#31704f}
+.template-save-status.is-save-error{color:var(--danger)}
+.special-expiry-date{min-height:36px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;background:#fff;color:var(--text)}
+.special-expiry-date{width:100%}
+.checklist-row[data-expiry="expired"] [data-expiry-display]{color:var(--danger);font-weight:750}
+.checklist-row[data-expiry="expiring"] [data-expiry-display]{color:var(--warning);font-weight:750}
+@media(max-width:640px){.template-item-edit{grid-template-columns:minmax(0,1fr)}.template-save-status{min-height:14px}.template-item-edit input:nth-of-type(2){grid-column:auto}.template-item-edit button{grid-column:auto;grid-row:auto}}

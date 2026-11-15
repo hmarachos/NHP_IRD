@@ -15,11 +15,11 @@
 
         <section class="workspace-tab-panel section-block" id="checklist" data-workspace-panel="checklist" hidden><div class="section-title"><div><p class="eyebrow">КОНТРОЛЬ КОМПЛЕКТНОСТИ</p><h2>Список документов</h2><p>{{ received_count }} получено · {{ missing_count }} ожидается</p></div><form action="{{ url_for('web.apply_template', object_id=object.id) }}" method="post" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="template_id" aria-label="Шаблон">{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select><button class="secondary-button" type="submit">Применить шаблон</button></form></div>
             {% if checklist %}<div class="checklist panel"><div class="checklist-table-header" aria-hidden="true"><span>№</span><span>Документ</span><span>Статус</span><span>Исходный документ</span><span></span></div>
-                {% for item in checklist %}{% set linked = (documents + archived_documents)|selectattr('id', 'equalto', item.document_id)|first if item.document_id else none %}{% set expiry = linked.expiry if linked else none %}<div class="checklist-row" data-checklist-row data-title="{{ item.title|lower }}" data-status="{{ item.status }}" data-linked="{{ (linked.working_title or linked.original_filename)|lower if linked else '' }}" data-expiry="{{ expiry.key if expiry else '' }}" data-expiry-date="{{ linked.valid_until or '' if linked else '' }}">
-                    <span class="checklist-number">{{ loop.index }}</span><div class="checklist-name">{% if linked and not linked.archived_at %}<a class="checklist-document-link" href="{{ url_for('web.document_detail', document_id=linked.id) }}">{{ item.title }}</a>{% else %}<strong>{{ item.title }}</strong>{% endif %}{% if item.description %}<small>{{ item.description }}</small>{% endif %}
-                        {% if linked and item.status == 'received' %}<small data-expiry-display>{% if expiry.key == 'expired' %}<a class="checklist-expiry expiry-expired" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Просрочен · до {{ linked.valid_until }}</a>{% elif expiry.key == 'expiring' %}<a class="checklist-expiry expiry-expiring" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Истекает · до {{ linked.valid_until }}</a>{% elif expiry.key == 'valid' %}<a class="checklist-expiry expiry-valid" href="{{ url_for('web.document_detail', document_id=linked.id) }}">До {{ linked.valid_until }}</a>{% elif expiry.key == 'unlimited' %}Без срока{% else %}Срок не указан{% endif %}</small>{% else %}<small data-expiry-display hidden></small>{% endif %}
-                        {% if not linked or linked.archived_at %}<form class="checklist-file-form" action="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" method="post" enctype="multipart/form-data" data-checklist-upload><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="checklist-file-pick"><input class="visually-hidden" type="file" name="files" accept="application/pdf,image/*,.heic,.heif" multiple required data-checklist-files><span>＋ Добавить PDF или фото</span></label><span class="checklist-file-names" data-checklist-file-names></span><button type="submit" disabled hidden data-checklist-upload-button>Прикрепить выбранное</button></form>{% endif %}</div>
-                    <form class="checklist-edit-row" action="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" method="post" data-autosave-form><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="{{ item.status }}" data-status-value><input type="hidden" name="document_id" value="{{ item.document_id or '' }}" data-document-value><select name="_status_ui" aria-label="Статус документа" data-status-ui><option value="missing" {% if item.status == 'missing' %}selected{% endif %}>Ожидается</option><option value="received" {% if item.status == 'received' %}selected{% endif %}>Получен</option><option value="not_required" {% if item.status == 'not_required' %}selected{% endif %}>Не требуется</option></select><select name="_document_ui" aria-label="Исходный документ" data-document-ui><option value="" data-title="" data-expiry="" data-valid-until="">Выберите исходный документ</option>{% set linked_ids = checklist|map(attribute='document_id')|list %}{% for document in documents %}{% if document.id == item.document_id or document.id not in linked_ids %}<option value="{{ document.id }}" data-title="{{ document.working_title or document.original_filename }}" data-expiry="{{ document.expiry.key }}" data-valid-until="{{ document.valid_until or '' }}" data-url="{{ url_for('web.document_detail', document_id=document.id) }}" {% if item.document_id == document.id %}selected{% endif %}>{{ document.working_title or document.original_filename }}</option>{% endif %}{% endfor %}</select><span class="autosave-indicator" aria-live="polite"></span></form>
+                {% for item in checklist %}{% set special_expiry = item.validity_years|int > 0 %}{% set linked = (documents + archived_documents)|selectattr('id', 'equalto', item.document_id)|first if item.document_id else none %}{% set expiry = item.expiry if special_expiry else (linked.expiry if linked else none) %}<div class="checklist-row" data-checklist-row data-title="{{ item.title|lower }}" data-status="{{ item.status }}" data-document-id="{{ item.document_id if linked and not linked.archived_at else '' }}" data-sort-order="{{ item.sort_order }}" data-sort-id="{{ item.id }}" data-linked="{{ (linked.working_title or linked.original_filename)|lower if linked else '' }}" data-expiry="{{ expiry.key if expiry else '' }}" data-expiry-date="{{ item.valid_until if special_expiry else (linked.valid_until or '' if linked else '') }}" data-special-date="{{ item.issue_date if special_expiry else '' }}">
+                    <span class="checklist-number">{{ loop.index }}</span><div class="checklist-name">{% if linked and not linked.archived_at and not special_expiry %}<a class="checklist-document-link" href="{{ url_for('web.document_detail', document_id=linked.id) }}">{{ item.title }}</a>{% else %}<strong>{{ item.title }}</strong>{% endif %}{% if item.description %}<small>{{ item.description }}</small>{% endif %}
+                        {% if special_expiry and item.issue_date %}<small data-expiry-display>Дата изысканий: {{ item.issue_date }} · {{ expiry.label }} · до {{ item.valid_until }}</small>{% elif linked and item.status == 'received' %}<small data-expiry-display>{% if expiry.key == 'expired' %}<a class="checklist-expiry expiry-expired" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Просрочен · до {{ linked.valid_until }}</a>{% elif expiry.key == 'expiring' %}<a class="checklist-expiry expiry-expiring" href="{{ url_for('web.document_detail', document_id=linked.id) }}">Истекает · до {{ linked.valid_until }}</a>{% elif expiry.key == 'valid' %}<a class="checklist-expiry expiry-valid" href="{{ url_for('web.document_detail', document_id=linked.id) }}">До {{ linked.valid_until }}</a>{% elif expiry.key == 'unlimited' %}Без срока{% else %}Срок не указан{% endif %}</small>{% else %}<small data-expiry-display hidden></small>{% endif %}
+                        {% if not special_expiry and (not linked or linked.archived_at) %}<form class="checklist-file-form" action="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" method="post" enctype="multipart/form-data" data-checklist-upload><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="checklist-file-pick"><input class="visually-hidden" type="file" name="files" accept="application/pdf,image/*,.heic,.heif" multiple required data-checklist-files><span>＋ Добавить PDF или фото</span></label><span class="checklist-file-names" data-checklist-file-names></span><button type="submit" disabled hidden data-checklist-upload-button>Прикрепить выбранное</button></form>{% endif %}</div>
+                    <form class="checklist-edit-row" action="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" method="post" data-autosave-form{% if special_expiry %} data-special-expiry{% endif %}><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="{{ item.status }}" data-status-value><input type="hidden" name="document_id" value="{{ item.document_id or '' }}" data-document-value>{% if special_expiry %}<label class="checklist-mobile-field"><span>Дата изысканий · срок 2 года</span><input class="special-expiry-date" type="date" name="issue_date" value="{{ item.issue_date }}" aria-label="Дата инженерно-геодезических изысканий"></label>{% else %}<label class="checklist-mobile-field"><span>Статус</span><select name="_status_ui" aria-label="Статус документа" data-status-ui><option value="missing" {% if item.status == 'missing' %}selected{% endif %}>Ожидается</option><option value="received" {% if item.status == 'received' %}selected{% endif %}>Получен</option><option value="not_required" {% if item.status == 'not_required' %}selected{% endif %}>Не требуется</option></select></label><label class="checklist-mobile-field"><span>Исходный документ</span><select name="_document_ui" aria-label="Исходный документ" data-document-ui><option value="" data-title="" data-expiry="" data-valid-until="">Выберите исходный документ</option>{% set linked_ids = checklist|map(attribute='document_id')|list %}{% for document in documents %}{% if document.id == item.document_id or document.id not in linked_ids %}<option value="{{ document.id }}" data-title="{{ document.working_title or document.original_filename }}" data-expiry="{{ document.expiry.key }}" data-valid-until="{{ document.valid_until or '' }}" data-url="{{ url_for('web.document_detail', document_id=document.id) }}" {% if item.document_id == document.id %}selected{% endif %}>{{ document.working_title or document.original_filename }}</option>{% endif %}{% endfor %}</select></label>{% endif %}<span class="autosave-indicator" aria-live="polite"></span></form>
                 </div>{% endfor %}
             </div>{% else %}<div class="empty-state compact-empty"><p>Для проекта пока нет списка документов.</p><p>Примените шаблон или создайте свой в разделе «Шаблоны».</p></div>{% endif %}
         </section>
@@ -92,6 +92,21 @@
             feedback.classList.add('is-working');
         });
     }
+    const sortChecklistRows = () => {
+        const checklist = document.querySelector('.checklist.panel');
+        if (!checklist) return;
+        const priority = (row) => row.dataset.status === 'received' ? 0 : row.dataset.documentId ? 2 : 1;
+        const rows = Array.from(checklist.querySelectorAll('[data-checklist-row]'));
+        rows.sort((left, right) => priority(left) - priority(right)
+            || Number(left.dataset.sortOrder) - Number(right.dataset.sortOrder)
+            || Number(left.dataset.sortId) - Number(right.dataset.sortId));
+        rows.forEach((row, index) => {
+            checklist.append(row);
+            row.querySelector('.checklist-number').textContent = String(index + 1);
+        });
+    };
+    sortChecklistRows();
+
     document.querySelectorAll('[data-autosave-form]').forEach((form) => {
         let timer; let controller;
         const indicator = form.querySelector('.autosave-indicator');
@@ -112,15 +127,49 @@
         const statusUI = form.querySelector('[data-status-ui]');
         const documentUI = form.querySelector('[data-document-ui]');
         const row = form.closest('[data-checklist-row]');
+        if (form.hasAttribute('data-special-expiry')) {
+            const dateInput = form.querySelector('[name="issue_date"]');
+            const updateSpecialDate = () => {
+                const issueDate = dateInput.value;
+                const cell = row.querySelector('[data-expiry-display]');
+                row.dataset.specialDate = issueDate;
+                row.dataset.status = issueDate ? 'received' : 'missing';
+                form.querySelector('[data-status-value]').value = row.dataset.status;
+                if (!issueDate) {
+                    row.dataset.expiry = '';
+                    row.dataset.expiryDate = '';
+                    cell.hidden = true;
+                    cell.textContent = '';
+                    sortChecklistRows();
+                    return;
+                }
+                const [year, month, day] = issueDate.split('-').map(Number);
+                const expires = new Date(year + 2, month - 1, day);
+                if (expires.getMonth() !== month - 1) expires.setDate(0);
+                const validUntil = `${expires.getFullYear()}-${String(expires.getMonth() + 1).padStart(2, '0')}-${String(expires.getDate()).padStart(2, '0')}`;
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const daysLeft = Math.round((expires - today) / 86400000);
+                const expiry = daysLeft < 0 ? 'expired' : (daysLeft <= 30 ? 'expiring' : 'valid');
+                const expiryLabel = daysLeft < 0 ? `Просрочен на ${Math.abs(daysLeft)} дн.` : (daysLeft <= 30 ? `Истекает через ${daysLeft} дн.` : 'Действует');
+                row.dataset.expiry = expiry;
+                row.dataset.expiryDate = validUntil;
+                cell.hidden = false;
+                cell.textContent = `Дата изысканий: ${issueDate} · ${expiryLabel} · до ${validUntil}`;
+                sortChecklistRows();
+            };
+            dateInput.addEventListener('change', () => { updateSpecialDate(); save(); });
+            return;
+        }
         const updateRow = () => {
             const option = documentUI.selectedOptions[0];
             const status = statusUI.value;
             const expiry = option.dataset.expiry || '';
             const linkedTitle = option.dataset.title || '';
             const validUntil = option.dataset.validUntil || '';
-            row.dataset.status = status; row.dataset.linked = linkedTitle.toLowerCase();
+            row.dataset.status = status; row.dataset.documentId = documentUI.value; row.dataset.linked = linkedTitle.toLowerCase();
             row.dataset.expiry = expiry; row.dataset.expiryDate = validUntil;
             const cell = row.querySelector('[data-expiry-display]'); cell.replaceChildren();
+            sortChecklistRows();
             if (status !== 'received' || !documentUI.value) { cell.hidden = true; return; }
             cell.hidden = false;
             const labels = {expired: `Просрочен · до ${validUntil}`, expiring: `Истекает · до ${validUntil}`, valid: `До ${validUntil}`, unlimited: 'Без срока', unknown: 'Срок не указан'};

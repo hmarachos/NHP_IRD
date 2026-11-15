@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Акты приёма-передачи · {{ project.name }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+    <p class="eyebrow">АРХИВ ПРОЕКТА</p>
+    <h1>Акты приёма-передачи</h1>
+    <p class="subheading">Сохранённые акты по проекту «{{ project.name }}».</p>
+</section>
+
+<section class="act-archive-note panel">
+    <i class="bi bi-envelope-paper" aria-hidden="true"></i>
+    <div>
+        <strong>Ежедневная отправка</strong>
+        <p>Акт формируется по новым документам с момента предыдущего отправленного акта. Если новых документов нет, пустое письмо не отправляется.</p>
+    </div>
+</section>
+
+{% if acts %}
+<section class="act-archive-list" aria-label="Список актов проекта">
+    {% for act in acts %}
+    <article class="handover-act-card panel">
+        <div class="handover-act-info">
+            <strong>Акт приёма-передачи ИРД</strong>
+            <span>Период: {{ act.period_start }} — {{ act.period_end }} UTC</span>
+            <small>Сохранён: {{ act.created_at }} UTC</small>
+        </div>
+        {% if act.source == 'manual' %}
+            <span class="act-state act-state-manual">Создан вручную</span>
+        {% elif act.sent_at %}
+            <span class="act-state act-state-sent">Отправлен · {{ act.sent_at }} UTC</span>
+        {% elif not mail_configured %}
+            <span class="act-state act-state-pending">Ожидает настройки почты</span>
+        {% elif act.email_error %}
+            <span class="act-state act-state-pending">Не отправлен · будет повторная попытка</span>
+        {% else %}
+            <span class="act-state act-state-pending">Ожидает отправки</span>
+        {% endif %}
+        <a class="secondary-button" href="{{ url_for('web.download_handover_act', object_id=project.id, act_id=act.id) }}"><i class="bi bi-download" aria-hidden="true"></i> Скачать акт</a>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<div class="empty-state compact-empty">
+    <span class="empty-icon"><i class="bi bi-file-earmark-text" aria-hidden="true"></i></span>
+    <h3>Актов пока нет</h3>
+    <p>Созданные вручную и отправленные автоматически акты будут храниться здесь.</p>
+</div>
+{% endif %}
+{% endblock %}

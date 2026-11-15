@@ -21,6 +21,17 @@ def iso_date(value: str | None) -> str:
     return parsed.isoformat() if parsed else ""
 
 
+def add_years(value: str | None, years: int) -> str:
+    parsed = parse_document_date(value)
+    if parsed is None:
+        return ""
+    try:
+        return parsed.replace(year=parsed.year + years).isoformat()
+    except ValueError:
+        # Keep leap-day issue dates on the last valid day of February.
+        return parsed.replace(year=parsed.year + years, day=28).isoformat()
+
+
 def expiry_state(document, warning_days: int = 30, today: date | None = None) -> dict:
     if document["no_expiration"]:
         return {"key": "unlimited", "label": "Без срока", "days_left": None}

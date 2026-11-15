@@ -2,6 +2,7 @@ from sqlite3 import Row
 
 from app.database import get_db
 from app.models import ParsedDocument
+from app.services.expiry import add_years, iso_date
 
 
 class ObjectRepository:
@@ -40,6 +41,20 @@ class ObjectRepository:
                 "SELECT * FROM objects WHERE archived_at IS NOT NULL ORDER BY archived_at DESC"
             )
         )
+
+    def list_customers(self) -> list[str]:
+        return [
+            row["customer"]
+            for row in get_db().execute(
+                """
+                SELECT MIN(TRIM(customer)) AS customer
+                FROM objects
+                WHERE TRIM(customer) <> ''
+                GROUP BY LOWER(TRIM(customer))
+                ORDER BY LOWER(MIN(TRIM(customer)))
+                """
+            )
+        ]
 
     def get(self, object_id: int) -> Row | None:
         return get_db().execute(
@@ -209,6 +224,53 @@ class DocumentRepository:
             )
         )
 
+    def list_received_in_period(self, object_id: int, start: str, end: str) -> list[Row]:
+        return list(
+            get_db().execute(
+                """
+                SELECT * FROM documents
+                WHERE object_id = ? AND archived_at IS NULL AND stored_filename <> ''
+                  AND created_at >= ? AND created_at < ?
+                ORDER BY created_at, id
+                """,
+                (object_id, start, end),
+            )
+        )
+
+    def list_expiring_within(self, today: str, cutoff: str) -> list[Row]:
+        return list(
+            get_db().execute(
+                """
+                SELECT documents.*,
+                       objects.name AS notification_project_name,
+                       objects.contract_number AS notification_contract_number
+                FROM documents
+                JOIN objects ON objects.id = documents.object_id
+                WHERE documents.archived_at IS NULL
+                  AND objects.archived_at IS NULL
+                  AND documents.no_expiration = 0
+                  AND documents.valid_until <> ''
+                  AND date(documents.valid_until) > date(?)
+                  AND date(documents.valid_until) <= date(?)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM expiry_notifications
+                      WHERE expiry_notifications.document_id = documents.id
+                        AND expiry_notifications.notification_type = ('expiry_30_days:' || documents.valid_until)
+                  )
+                ORDER BY date(documents.valid_until), objects.name, documents.id
+                """,
+                (today, cutoff),
+            )
+        )
+
+    def mark_expiry_notifications_sent(self, documents: list[Row]) -> None:
+        db = get_db()
+        db.executemany(
+            "INSERT OR IGNORE INTO expiry_notifications (document_id, notification_type) VALUES (?, ?)",
+            [(row["id"], f"expiry_30_days:{row['valid_until']}") for row in documents],
+        )
+        db.commit()
+
     def get(self, document_id: int) -> Row | None:
         return get_db().execute(
             "SELECT * FROM documents WHERE id = ?", (document_id,)
@@ -296,6 +358,44 @@ class DocumentRepository:
 
 
 class ChecklistRepository:
+    def list_expiring_within(self, today: str, cutoff: str) -> list[Row]:
+        return list(get_db().execute(
+            """
+            SELECT checklist.id AS checklist_item_id,
+                   checklist.title AS working_title,
+                   checklist.title AS official_title,
+                   checklist.title AS original_filename,
+                   '' AS issuer,
+                   checklist.issue_date,
+                   checklist.valid_until,
+                   objects.name AS notification_project_name,
+                   objects.contract_number AS notification_contract_number
+            FROM project_checklist_items AS checklist
+            JOIN objects ON objects.id = checklist.object_id
+            WHERE checklist.validity_years > 0
+              AND checklist.issue_date <> ''
+              AND checklist.valid_until <> ''
+              AND objects.archived_at IS NULL
+              AND date(checklist.valid_until) > date(?)
+              AND date(checklist.valid_until) <= date(?)
+              AND NOT EXISTS (
+                  SELECT 1 FROM checklist_expiry_notifications AS sent
+                  WHERE sent.checklist_item_id = checklist.id
+                    AND sent.valid_until = checklist.valid_until
+              )
+            ORDER BY date(checklist.valid_until), objects.name, checklist.id
+            """,
+            (today, cutoff),
+        ))
+
+    def mark_expiry_notifications_sent(self, items: list[Row]) -> None:
+        db = get_db()
+        db.executemany(
+            "INSERT OR IGNORE INTO checklist_expiry_notifications (checklist_item_id, valid_until) VALUES (?, ?)",
+            [(row["checklist_item_id"], row["valid_until"]) for row in items],
+        )
+        db.commit()
+
     def list_templates(self) -> list[Row]:
         return list(
             get_db().execute(
@@ -338,8 +438,8 @@ class ChecklistRepository:
         )
         copied_id = int(cursor.lastrowid)
         db.execute(
-            "INSERT INTO checklist_template_items (template_id, title, description, sort_order) "
-            "SELECT ?, title, description, sort_order FROM checklist_template_items "
+            "INSERT INTO checklist_template_items (template_id, title, description, sort_order, validity_years) "
+            "SELECT ?, title, description, sort_order, validity_years FROM checklist_template_items "
             "WHERE template_id = ? ORDER BY sort_order, id",
             (copied_id, template_id),
         )
@@ -367,9 +467,10 @@ class ChecklistRepository:
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM checklist_template_items WHERE template_id = ?",
             (template_id,),
         ).fetchone()[0]
+        validity_years = 2 if title.strip() == "Инженерно-геодезические изыскания" else 0
         cursor = db.execute(
-            "INSERT INTO checklist_template_items (template_id, title, description, sort_order) VALUES (?, ?, ?, ?)",
-            (template_id, title, description, next_order),
+            "INSERT INTO checklist_template_items (template_id, title, description, sort_order, validity_years) VALUES (?, ?, ?, ?, ?)",
+            (template_id, title, description, next_order, validity_years),
         )
         db.commit()
         return cursor.rowcount > 0
@@ -406,8 +507,8 @@ class ChecklistRepository:
             if key in existing:
                 continue
             db.execute(
-                "INSERT INTO project_checklist_items (object_id, source_template_item_id, title, description, sort_order) VALUES (?, ?, ?, ?, ?)",
-                (object_id, item["id"], item["title"], item["description"], item["sort_order"]),
+                "INSERT INTO project_checklist_items (object_id, source_template_item_id, title, description, sort_order, validity_years) VALUES (?, ?, ?, ?, ?, ?)",
+                (object_id, item["id"], item["title"], item["description"], item["sort_order"], item["validity_years"]),
             )
             existing.add(key)
             added += 1
@@ -419,22 +520,46 @@ class ChecklistRepository:
         return list(
             get_db().execute(
                 """
-                SELECT checklist.*, documents.working_title AS linked_document_title
+                SELECT checklist.*, documents.working_title AS linked_document_title,
+                       documents.archived_at AS linked_document_archived_at
                 FROM project_checklist_items AS checklist
                 LEFT JOIN documents ON documents.id = checklist.document_id
                 WHERE checklist.object_id = ?
-                ORDER BY checklist.sort_order, checklist.id
+                ORDER BY
+                    CASE
+                        WHEN checklist.status = 'received' THEN 0
+                        WHEN documents.id IS NULL OR documents.archived_at IS NOT NULL THEN 1
+                        ELSE 2
+                    END,
+                    checklist.sort_order,
+                    checklist.id
                 """,
                 (object_id,),
             )
         )
 
     def update_project_item(
-        self, object_id: int, item_id: int, status: str, document_id: int | None = None
+        self, object_id: int, item_id: int, status: str, document_id: int | None = None,
+        issue_date: str | None = None,
     ) -> bool:
         if status not in {"missing", "received", "not_required"}:
             return False
         db = get_db()
+        item = db.execute(
+            "SELECT validity_years FROM project_checklist_items WHERE id = ? AND object_id = ?",
+            (item_id, object_id),
+        ).fetchone()
+        if item is None:
+            return False
+        if item["validity_years"] > 0:
+            normalized_date = iso_date(issue_date or "")
+            valid_until = add_years(normalized_date, item["validity_years"])
+            cursor = db.execute(
+                "UPDATE project_checklist_items SET issue_date = ?, valid_until = ?, status = ?, document_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+                (normalized_date, valid_until, "received" if normalized_date else "missing", item_id, object_id),
+            )
+            db.commit()
+            return cursor.rowcount > 0
         if document_id is not None:
             linked = db.execute(
                 "SELECT id FROM documents WHERE id = ? AND object_id = ?",
@@ -459,7 +584,7 @@ class ChecklistRepository:
             return
         db = get_db()
         for row in db.execute(
-            "SELECT id, title, status FROM project_checklist_items WHERE object_id = ? AND status = 'missing' ORDER BY id",
+            "SELECT id, title, status FROM project_checklist_items WHERE object_id = ? AND status = 'missing' AND validity_years = 0 ORDER BY id",
             (object_id,),
         ):
             if self._normalize(row["title"]) == normalized:
@@ -480,3 +605,89 @@ class ChecklistRepository:
     @staticmethod
     def _normalize(value: str) -> str:
         return " ".join((value or "").casefold().split())
+
+
+class HandoverActRepository:
+    def list_by_object(self, object_id: int) -> list[Row]:
+        return list(
+            get_db().execute(
+                "SELECT * FROM handover_acts WHERE object_id = ? ORDER BY period_end DESC, id DESC",
+                (object_id,),
+            )
+        )
+
+    def last_sent(self, object_id: int) -> Row | None:
+        return get_db().execute(
+            "SELECT * FROM handover_acts WHERE object_id = ? AND sent_at IS NOT NULL ORDER BY period_end DESC, id DESC LIMIT 1",
+            (object_id,),
+        ).fetchone()
+
+    def pending(self, object_id: int) -> Row | None:
+        return get_db().execute(
+            "SELECT * FROM handover_acts WHERE object_id = ? AND sent_at IS NULL AND source = 'automatic' ORDER BY id DESC LIMIT 1",
+            (object_id,),
+        ).fetchone()
+
+    def save_pending(
+        self, object_id: int, period_start: str, period_end: str, stored_filename: str
+    ) -> Row:
+        db = get_db()
+        current = self.pending(object_id)
+        if current:
+            db.execute(
+                "UPDATE handover_acts SET period_start = ?, period_end = ?, stored_filename = ?, email_error = NULL WHERE id = ?",
+                (period_start, period_end, stored_filename, current["id"]),
+            )
+            act_id = current["id"]
+        else:
+            cursor = db.execute(
+                "INSERT INTO handover_acts (object_id, period_start, period_end, stored_filename) VALUES (?, ?, ?, ?)",
+                (object_id, period_start, period_end, stored_filename),
+            )
+            act_id = cursor.lastrowid
+        db.commit()
+        return db.execute("SELECT * FROM handover_acts WHERE id = ?", (act_id,)).fetchone()
+
+    def create_manual(
+        self, object_id: int, period_start: str, period_end: str, stored_filename: str
+    ) -> int:
+        db = get_db()
+        cursor = db.execute(
+            "INSERT INTO handover_acts (object_id, period_start, period_end, stored_filename, source) VALUES (?, ?, ?, ?, 'manual')",
+            (object_id, period_start, period_end, stored_filename),
+        )
+        db.commit()
+        return int(cursor.lastrowid)
+
+    def mark_sent(self, act_id: int, sent_at: str) -> None:
+        db = get_db()
+        db.execute(
+            "UPDATE handover_acts SET sent_at = ?, email_error = NULL WHERE id = ?",
+            (sent_at, act_id),
+        )
+        db.commit()
+
+    def mark_error(self, act_id: int, message: str) -> None:
+        db = get_db()
+        db.execute(
+            "UPDATE handover_acts SET email_error = ? WHERE id = ?",
+            (message[:1000], act_id),
+        )
+        db.commit()
+
+    def filenames_for_object(self, object_id: int) -> list[str]:
+        return [
+            row["stored_filename"]
+            for row in get_db().execute(
+                "SELECT stored_filename FROM handover_acts WHERE object_id = ?",
+                (object_id,),
+            )
+        ]
+
+
+class AppSettingsRepository:
+    def get(self, key: str) -> str | None:
+        row = get_db().execute(
+            "SELECT value FROM app_settings WHERE key = ?", (key,)
+        ).fetchone()
+        return row["value"] if row else None

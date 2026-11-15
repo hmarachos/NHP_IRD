@@ -3,17 +3,18 @@ import io
 import json
 import re
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
 from app.models import ParsedDocument
-from app.repositories import ChecklistRepository, DocumentRepository, ObjectRepository
+from app.repositories import ChecklistRepository, DocumentRepository, HandoverActRepository, ObjectRepository
 from app.services.expiry import attach_expiry, expiry_state, iso_date
 from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
 from app.services.pipeline import DocumentProcessingPipeline
@@ -26,6 +27,7 @@ bp = Blueprint("web", __name__)
 @bp.get("/")
 def index():
     warning_days = current_app.config["EXPIRY_WARNING_DAYS"]
+    object_repository = ObjectRepository()
     documents = DocumentRepository().list_all()
     alerts = [
         {"document": document, "expiry": state}
@@ -34,8 +36,9 @@ def index():
     ]
     return render_template(
         "index.html",
-        objects=ObjectRepository().list_all(),
-        archived_objects=ObjectRepository().list_archived(),
+        objects=object_repository.list_all(),
+        archived_objects=object_repository.list_archived(),
+        customers=object_repository.list_customers(),
         templates=ChecklistRepository().list_templates(),
         alerts=alerts,
         warning_days=warning_days,
@@ -88,6 +91,7 @@ def restore_object(object_id: int):
 
 @bp.post("/objects/<int:object_id>/delete")
 def delete_object(object_id: int):
+    act_filenames = HandoverActRepository().filenames_for_object(object_id)
     stored_filenames = ObjectRepository().permanently_delete(object_id)
     if stored_filenames is None:
         abort(404)
@@ -104,6 +108,25 @@ def delete_object(object_id: int):
             path.unlink(missing_ok=True)
         except OSError:
             cleanup_failed = True
+
+    acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
+    project_acts_dir = (acts_root / str(object_id)).resolve()
+    if project_acts_dir.parent != acts_root:
+        cleanup_failed = True
+    for stored_name in act_filenames:
+        candidate = Path(stored_name)
+        path = (project_acts_dir / candidate).resolve()
+        if candidate.is_absolute() or candidate.name != stored_name or project_acts_dir.parent != acts_root or path.parent != project_acts_dir:
+            cleanup_failed = True
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            cleanup_failed = True
+    try:
+        project_acts_dir.rmdir()
+    except OSError:
+        pass
 
     if cleanup_failed:
         flash("Проект удалён. Некоторые исходные файлы не удалось очистить автоматически.", "error")
@@ -122,6 +145,7 @@ def object_workspace(object_id: int):
     checklist_repository = ChecklistRepository()
     checklist_repository.sync_documents_to_checklist(object_id, documents)
     checklist = checklist_repository.list_project_items(object_id)
+    checklist = _attach_checklist_expiry(checklist, warning_days)
     archived_documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_archived_by_object(object_id)]
     alerts = [
         {"document": row, "expiry": row["expiry"]}
@@ -186,8 +210,65 @@ def download_project_document(object_id: int, kind: str):
     content = generate_project_document(kind, project, documents, checklist, fields)
     project_slug = secure_filename(project["name"]) or f"project-{object_id}"
     filename = f"{DOCUMENT_TYPES[kind]['filename']}_{project_slug}.docx"
+    if kind == "handover":
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        local_stamp = now.astimezone(ZoneInfo(current_app.config["MAIL_TIMEZONE"]))
+        filename = f"Akt_IRD_manual_{local_stamp:%Y%m%d_%H%M%S}_{uuid4().hex[:8]}_{project_slug}.docx"
+        project_dir = Path(current_app.config["ACTS_DIR"]) / str(object_id)
+        project_dir.mkdir(parents=True, exist_ok=True)
+        target = project_dir / filename
+        temp = project_dir / f".{filename}.tmp"
+        temp.write_bytes(content)
+        temp.replace(target)
+        HandoverActRepository().create_manual(object_id, stamp, stamp, filename)
+        return send_file(
+            target,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            as_attachment=True,
+            download_name=filename,
+        )
     return send_file(
         io.BytesIO(content),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@bp.get("/objects/<int:object_id>/acts")
+def project_acts(object_id: int):
+    project = ObjectRepository().get(object_id)
+    if project is None or project["archived_at"]:
+        abort(404)
+    return render_template(
+        "project_acts.html",
+        project=project,
+        acts=HandoverActRepository().list_by_object(object_id),
+        mail_configured=bool(
+            current_app.config["MAIL_USERNAME"]
+            and current_app.config["MAIL_APP_PASSWORD"]
+        ),
+    )
+
+
+@bp.get("/objects/<int:object_id>/acts/<int:act_id>")
+def download_handover_act(object_id: int, act_id: int):
+    project = ObjectRepository().get(object_id)
+    act = next(
+        (row for row in HandoverActRepository().list_by_object(object_id) if row["id"] == act_id),
+        None,
+    )
+    if project is None or act is None:
+        abort(404)
+    acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
+    project_dir = (acts_root / str(object_id)).resolve()
+    filename = act["stored_filename"]
+    candidate = (project_dir / filename).resolve()
+    if Path(filename).name != filename or candidate.parent != project_dir or not candidate.is_file():
+        abort(404)
+    return send_file(
+        candidate,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         as_attachment=True,
         download_name=filename,
@@ -211,7 +292,8 @@ def apply_template(object_id: int):
 def update_checklist_item(object_id: int, item_id: int):
     status = request.form.get("status", "missing")
     document_id = _optional_int(request.form.get("document_id"))
-    if not ChecklistRepository().update_project_item(object_id, item_id, status, document_id):
+    issue_date = request.form.get("issue_date") if "issue_date" in request.form else None
+    if not ChecklistRepository().update_project_item(object_id, item_id, status, document_id, issue_date):
         abort(404)
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
@@ -486,12 +568,14 @@ def export_object(object_id: int):
         abort(404)
     documents = DocumentRepository().list_by_object(object_id, include_archived=True)
     checklist = ChecklistRepository().list_project_items(object_id)
+    acts = HandoverActRepository().list_by_object(object_id)
     archive = io.BytesIO()
     manifest = {"created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "files": []}
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         bundle.writestr("project.json", json.dumps(dict(obj), ensure_ascii=False, indent=2))
         bundle.writestr("documents.json", json.dumps([dict(row) for row in documents], ensure_ascii=False, indent=2))
         bundle.writestr("checklist.json", json.dumps([dict(row) for row in checklist], ensure_ascii=False, indent=2))
+        bundle.writestr("handover-acts.json", json.dumps([dict(row) for row in acts], ensure_ascii=False, indent=2))
         upload_dir = current_app.config["UPLOAD_DIR"].resolve()
         for document in documents:
             stored_name = document["stored_filename"]
@@ -505,6 +589,22 @@ def export_object(object_id: int):
             bundle.writestr(member, content)
             manifest["files"].append({
                 "document_id": document["id"], "path": member,
+                "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
+            })
+        acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
+        acts_dir = (acts_root / str(object_id)).resolve()
+        for act in acts:
+            stored_name = act["stored_filename"]
+            candidate = Path(stored_name)
+            path = (acts_dir / candidate).resolve()
+            if candidate.is_absolute() or candidate.name != stored_name or acts_dir.parent != acts_root or path.parent != acts_dir or not path.is_file():
+                manifest["files"].append({"act_id": act["id"], "missing": True})
+                continue
+            member = f"handover-acts/{act['id']}-{path.name}"
+            content = path.read_bytes()
+            bundle.writestr(member, content)
+            manifest["files"].append({
+                "act_id": act["id"], "path": member,
                 "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
             })
         bundle.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
@@ -588,7 +688,11 @@ def update_template_item(item_id: int):
     title, description = request.form.get("title", "").strip(), request.form.get("description", "").strip()
     if not title or not ChecklistRepository().update_template_item(item_id, title, description):
         abort(400)
-    return redirect(url_for("web.manage_templates"))
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    template_id = request.form.get("template_id", "").strip()
+    suffix = f"?edit={template_id}#template-{template_id}" if template_id.isdigit() else ""
+    return redirect(url_for("web.manage_templates") + suffix)
 
 
 @bp.post("/templates/items/<int:item_id>/delete")
@@ -603,17 +707,31 @@ def _index_error(message: str):
     documents = DocumentRepository().list_all()
     alerts = [{"document": row, "expiry": expiry_state(row, warning_days)} for row in documents]
     alerts = [row for row in alerts if row["expiry"]["key"] in {"expired", "expiring"}]
-    return render_template("index.html", objects=ObjectRepository().list_all(), archived_objects=ObjectRepository().list_archived(), templates=ChecklistRepository().list_templates(), alerts=alerts, warning_days=warning_days, error=message), 400
+    object_repository = ObjectRepository()
+    return render_template("index.html", objects=object_repository.list_all(), archived_objects=object_repository.list_archived(), customers=object_repository.list_customers(), templates=ChecklistRepository().list_templates(), alerts=alerts, warning_days=warning_days, error=message), 400
 
 
 def _object_error(object_id: int, message: str):
     repo = ChecklistRepository()
-    checklist = repo.list_project_items(object_id)
     warning_days = current_app.config["EXPIRY_WARNING_DAYS"]
+    checklist = _attach_checklist_expiry(repo.list_project_items(object_id), warning_days)
     documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_by_object(object_id)]
     archived_documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_archived_by_object(object_id)]
     alerts = [{"document": row, "expiry": row["expiry"]} for row in documents if row["expiry"]["key"] in {"expired", "expiring"}]
     return render_template("object.html", object=ObjectRepository().get(object_id), documents=documents, archived_documents=archived_documents, checklist=checklist, templates=repo.list_templates(), alerts=alerts, missing_count=sum(row["status"] == "missing" for row in checklist), received_count=sum(row["status"] == "received" for row in checklist), warning_days=warning_days, error=message), 400
+
+
+def _attach_checklist_expiry(items, warning_days: int):
+    result = []
+    for row in items:
+        item = dict(row)
+        if item.get("validity_years", 0):
+            item["expiry"] = expiry_state(
+                {"no_expiration": 0, "valid_until": item.get("valid_until", "")},
+                warning_days,
+            )
+        result.append(item)
+    return result
 
 
 def _find_duplicate_document(repository: DocumentRepository, object_id: int, parsed: ParsedDocument):
