@@ -35,8 +35,12 @@ class DocumentProcessingPipeline:
         elif not parsed.validity_text and fallback_parsed.validity_text:
             parsed.validity_text = fallback_parsed.validity_text
             parsed.no_expiration = fallback_parsed.no_expiration
+        explicit_title = self.classifier.classify_explicit_title(text)
         rule_title = self.classifier.classify_by_rule(text, parsed.official_title)
-        if rule_title:
+        if explicit_title:
+            parsed.working_title = explicit_title
+            parsed.official_title = explicit_title
+        elif rule_title:
             parsed.working_title = rule_title
         elif not parsed.working_title or parsed.working_title == "Неопределенный документ":
             parsed.working_title = self.classifier.classify(text, parsed.official_title)

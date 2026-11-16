@@ -5,6 +5,7 @@ from app.models import ParsedDocument
 
 
 DATE_RE = re.compile(r"(?<!\d)([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})(?!\d)")
+MONTHS_RU = {"января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6, "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12}
 ORG_KEYWORDS = (
     "государственное учреждение",
     "республиканское унитарное предприятие",
@@ -60,6 +61,9 @@ class RegexFieldExtractor:
 
     def _extract_title(self, text: str) -> str:
         lines = [line.strip(" .,:;") for line in text.splitlines() if line.strip()]
+        for line in lines[:35]:
+            if re.match(r"^архитектурно[\s-]+планировочное\s+задание\b", line, re.IGNORECASE):
+                return "Архитектурно-планировочное задание"
         for line in lines[:25]:
             if re.match(r"^(?:технические условия|технические требования|решение)\b", line, re.IGNORECASE) and 10 <= len(line) <= 220:
                 return line
@@ -203,6 +207,9 @@ class RegexFieldExtractor:
                 match = DATE_RE.search(line)
                 if match:
                     return self._format_date(match.group(1))
+                textual = re.search(r"[«\"]?([0-3]?\d)[»\"]?\s+([а-яё]+)\s+((?:19|20)\d{2})\s*г", line, re.I)
+                if textual and textual.group(2).lower() in MONTHS_RU:
+                    return f"{int(textual.group(3)):04d}-{MONTHS_RU[textual.group(2).lower()]:02d}-{int(textual.group(1)):02d}"
 
         for pattern in (
             r"(?:^|\n)\s*(?:от|выдан[ао]?)\s*[:№\-]*\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})",
@@ -250,6 +257,7 @@ class RegexFieldExtractor:
     def _extract_duration_years(self, text: str) -> int:
         patterns = (
             r"срок\s+действия[^.\n]{0,120}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
+            r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+|[а-яё]+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
             r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
             r"в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?[^.\n]{0,220}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
             r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+|[а-яё]+)\s+лет?",

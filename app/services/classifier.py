@@ -69,7 +69,11 @@ RULES = (
     ),
     (
         "Технические условия на благоустройство",
-        ("технические условия на благоустройство", "благоустройств"),
+        (
+            "технические условия на благоустройство",
+            "технические условия по благоустройству",
+            "технические условия для благоустройства",
+        ),
     ),
 )
 
@@ -79,6 +83,9 @@ class DocumentClassifier:
         self.document_types = document_types
 
     def classify(self, text: str, official_title: str = "") -> str:
+        explicit_title = self.classify_explicit_title(text)
+        if explicit_title:
+            return explicit_title
         haystack = self._normalize(f"{official_title}\n{text[:8000]}")
         rule_match = self._classify_by_rules(haystack)
         if rule_match:
@@ -101,7 +108,36 @@ class DocumentClassifier:
 
     def classify_by_rule(self, text: str, official_title: str = "") -> str:
         """Return a deterministic explicit-marker match, without fuzzy fallback."""
+        explicit_title = self.classify_explicit_title(text)
+        if explicit_title:
+            return explicit_title
         return self._classify_by_rules(self._normalize(f"{official_title}\n{text[:8000]}"))
+
+    def classify_explicit_title(self, text: str) -> str:
+        """Recognize a clearly printed document title near the start of page one."""
+        first_page = text.split("--- page 2 ---", 1)[0]
+        title_area = self._normalize("\n".join(first_page.splitlines()[:35])[:2400])
+        apz = "Архитектурно-планировочное задание"
+        if apz in self.document_types and "архитектурно планировочное задание" in title_area:
+            return apz
+        eroks = "Копия регистрационной карточки в ЕРОКС"
+        if eroks in self.document_types and any(
+            marker in title_area
+            for marker in (
+                "регистрационная карточка окс",
+                "регистрационная карточка okc",
+                "регистрационная карточка 0кс",
+                "регистрационная карточка объекта капитального строительства",
+            )
+        ):
+            return eroks
+        # OCR often confuses the Cyrillic О in ОКС with a zero or drops
+        # characters in the heading; the distinctive second word still helps.
+        if eroks in self.document_types and "регистрационная карточка" in title_area and any(
+            marker in title_area for marker in ("окс", "okc", "0кс")
+        ):
+            return eroks
+        return ""
 
     def _classify_by_rules(self, haystack: str) -> str:
         # Prefer the most specific rule: broad markers such as "ТКО" may

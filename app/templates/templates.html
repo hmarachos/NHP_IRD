@@ -40,7 +40,7 @@
         <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
     </div>
     <ul class="template-items-readonly" data-template-items-readonly>
-        {% for item in entry['items'] %}<li>{{ item.title }}{% if item.description %}<small>{{ item.description }}</small>{% endif %}</li>{% endfor %}
+        {% for item in entry['items'] %}<li><span class="template-item-title">{{ item.title }}</span>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</li>{% endfor %}
     </ul>
     <div class="template-edit-list" data-template-items-edit hidden>
         <div class="template-items">

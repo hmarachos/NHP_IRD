@@ -299,6 +299,15 @@ class DocumentRepository:
             "UPDATE documents SET archived_at = CURRENT_TIMESTAMP WHERE id = ? AND archived_at IS NULL",
             (document_id,),
         )
+        if cursor.rowcount:
+            db.execute(
+                """
+                UPDATE project_checklist_items
+                SET status = 'missing', document_id = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE document_id = ? AND validity_years = 0
+                """,
+                (document_id,),
+            )
         db.commit()
         return cursor.rowcount > 0
 
@@ -342,7 +351,7 @@ class DocumentRepository:
     def update_fields(self, document_id: int, values: dict[str, object]) -> bool:
         allowed = {
             "working_title", "official_title", "issuer", "issue_date",
-            "valid_until", "no_expiration",
+            "valid_until", "no_expiration", "document_number",
         }
         updates = {key: value for key, value in values.items() if key in allowed}
         if not updates:
@@ -517,8 +526,27 @@ class ChecklistRepository:
         return added
 
     def list_project_items(self, object_id: int) -> list[Row]:
+        db = get_db()
+        # A received checklist item must point to a live project document.
+        # Clear stale links left by older versions or by externally removed files.
+        db.execute(
+            """
+            UPDATE project_checklist_items
+            SET status = 'missing', document_id = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE object_id = ?
+              AND status = 'received'
+              AND validity_years = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM documents
+                  WHERE documents.id = project_checklist_items.document_id
+                    AND documents.archived_at IS NULL
+              )
+            """,
+            (object_id,),
+        )
+        db.commit()
         return list(
-            get_db().execute(
+            db.execute(
                 """
                 SELECT checklist.*, documents.working_title AS linked_document_title,
                        documents.archived_at AS linked_document_archived_at
@@ -562,7 +590,7 @@ class ChecklistRepository:
             return cursor.rowcount > 0
         if document_id is not None:
             linked = db.execute(
-                "SELECT id FROM documents WHERE id = ? AND object_id = ?",
+                "SELECT id FROM documents WHERE id = ? AND object_id = ? AND archived_at IS NULL",
                 (document_id, object_id),
             ).fetchone()
             if linked is None:
@@ -583,6 +611,12 @@ class ChecklistRepository:
         if not normalized:
             return
         db = get_db()
+        active_document = db.execute(
+            "SELECT 1 FROM documents WHERE id = ? AND object_id = ? AND archived_at IS NULL",
+            (document_id, object_id),
+        ).fetchone()
+        if active_document is None:
+            return
         for row in db.execute(
             "SELECT id, title, status FROM project_checklist_items WHERE object_id = ? AND status = 'missing' AND validity_years = 0 ORDER BY id",
             (object_id,),
@@ -694,21 +728,27 @@ class AppSettingsRepository:
 
 
 class CorrespondenceRepository:
-    def list_by_object(self, object_id: int):
-        return list(get_db().execute("SELECT * FROM correspondence WHERE object_id = ? ORDER BY COALESCE(letter_date, '' ) DESC, id DESC", (object_id,)))
+    def list_by_object(self, object_id: int, record_type: str = "correspondence"):
+        return list(get_db().execute("SELECT * FROM correspondence WHERE object_id = ? AND record_type = ? ORDER BY COALESCE(letter_date, '' ) DESC, id DESC", (object_id, record_type)))
 
     def get(self, letter_id: int):
         return get_db().execute("SELECT * FROM correspondence WHERE id = ?", (letter_id,)).fetchone()
 
     def create(self, **values) -> int:
         db = get_db()
-        fields = ('object_id','direction','number','letter_date','sender','recipient','subject','summary','original_filename','stored_filename','mime_type','raw_text','status','error')
+        fields = ('object_id','direction','number','letter_date','sender','recipient','subject','summary','original_filename','stored_filename','mime_type','raw_text','status','error','record_type','valid_until')
         cur = db.execute(f"INSERT INTO correspondence ({','.join(fields)}) VALUES ({','.join('?' for _ in fields)})", tuple(values.get(k, '') for k in fields))
         db.commit()
         return int(cur.lastrowid)
 
     def update(self, letter_id: int, **values) -> bool:
-        keys = ('direction','number','letter_date','sender','recipient','subject','summary')
+        keys = ('direction','number','letter_date','sender','recipient','subject','summary','valid_until')
         cur = get_db().execute('UPDATE correspondence SET ' + ', '.join(f'{k} = ?' for k in keys) + ' WHERE id = ?', tuple(values.get(k, '') for k in keys) + (letter_id,))
         get_db().commit()
+        return cur.rowcount > 0
+
+    def delete(self, letter_id: int) -> bool:
+        db = get_db()
+        cur = db.execute("DELETE FROM correspondence WHERE id = ?", (letter_id,))
+        db.commit()
         return cur.rowcount > 0

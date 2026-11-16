@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS correspondence (
     raw_text TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'processed',
     error TEXT NOT NULL DEFAULT '',
+    record_type TEXT NOT NULL DEFAULT 'correspondence',
+    valid_until TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(object_id) REFERENCES objects(id) ON DELETE CASCADE
 );
@@ -163,7 +165,10 @@ def init_db() -> None:
     ensure_column(db, "documents", "object_id", "INTEGER")
     ensure_column(db, "documents", "note", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "documents", "mime_type", "TEXT NOT NULL DEFAULT 'application/pdf'")
+    ensure_column(db, "documents", "document_number", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "documents", "archived_at", "TEXT")
+    ensure_column(db, "correspondence", "record_type", "TEXT NOT NULL DEFAULT 'correspondence'")
+    ensure_column(db, "correspondence", "valid_until", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "checklist_template_items", "validity_years", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(db, "project_checklist_items", "validity_years", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(db, "project_checklist_items", "issue_date", "TEXT NOT NULL DEFAULT ''")

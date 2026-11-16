@@ -8,6 +8,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app import create_app
 from app.services.email_notifications import run_daily_notifications
+from app.services.document_jobs import run_pending_document_jobs
 
 
 def main() -> None:
@@ -22,6 +23,21 @@ def main() -> None:
     def run_in_context() -> None:
         with app.app_context():
             run_daily_notifications()
+
+    def process_uploads() -> None:
+        with app.app_context():
+            count = run_pending_document_jobs()
+            if count:
+                logging.getLogger(__name__).info("Обработано загруженных документов: %d", count)
+
+    scheduler.add_job(
+        process_uploads,
+        "interval",
+        seconds=3,
+        id="document-upload-processing",
+        max_instances=1,
+        coalesce=True,
+    )
 
     scheduler.add_job(
         run_in_context,

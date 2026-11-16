@@ -18,9 +18,16 @@ from app.models import ParsedDocument
 from app.repositories import ChecklistRepository, CorrespondenceRepository, DocumentRepository, HandoverActRepository, ObjectRepository
 from app.services.expiry import attach_expiry, expiry_state, iso_date
 from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
-from app.services.pipeline import DocumentProcessingPipeline
 from app.services.pdf_text import PdfTextExtractor
 from app.services.storage import StorageService
+
+
+def _archive_name(value: str, fallback: str) -> str:
+    """Make a short, readable Unicode path component for a project ZIP."""
+    value = re.sub(r"[<>:\\|?*/\"\x00-\x1f]", " ", value or "")
+    value = re.sub(r"\s+", "_", value.strip(" ._"))
+    value = re.sub(r"_+", "_", value)[:72].rstrip(" ._")
+    return value or fallback
 
 
 bp = Blueprint("web", __name__)
@@ -95,7 +102,8 @@ def restore_object(object_id: int):
 @bp.post("/objects/<int:object_id>/delete")
 def delete_object(object_id: int):
     act_filenames = HandoverActRepository().filenames_for_object(object_id)
-    correspondence_filenames = [row["stored_filename"] for row in CorrespondenceRepository().list_by_object(object_id)]
+    correspondence_repo = CorrespondenceRepository()
+    correspondence_filenames = [row["stored_filename"] for kind in ("correspondence", "approval") for row in correspondence_repo.list_by_object(object_id, kind)]
     stored_filenames = ObjectRepository().permanently_delete(object_id)
     if stored_filenames is None:
         abort(404)
@@ -168,6 +176,7 @@ def object_workspace(object_id: int):
         received_count=sum(row["status"] == "received" for row in checklist),
         warning_days=warning_days,
         correspondence=CorrespondenceRepository().list_by_object(object_id),
+        approvals=CorrespondenceRepository().list_by_object(object_id, "approval"),
     )
 
 
@@ -318,7 +327,6 @@ def upload_checklist_document(object_id: int, item_id: int):
         return redirect(url_for("web.object_workspace", object_id=object_id) + "#checklist")
 
     storage = StorageService(current_app.config["UPLOAD_DIR"], max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"])
-    pipeline = DocumentProcessingPipeline(document_types=current_app.config["DOCUMENT_TYPES"], tesseract_lang=current_app.config["TESSERACT_LANG"], ocr_dpi=current_app.config["OCR_DPI"])
     saved_sources = []
     final_path = None
     final_stored = ""
@@ -357,29 +365,28 @@ def upload_checklist_document(object_id: int, item_id: int):
         flash(str(exc) if isinstance(exc, ValueError) else "Не удалось подготовить страницы документа.", "error")
         return redirect(url_for("web.object_workspace", object_id=object_id) + "#checklist")
 
-    parsed = ParsedDocument()
-    status, error = "processed", ""
-    try:
-        parsed = pipeline.process(final_path)
-    except Exception as exc:
-        status, error = "error", str(exc)
     repository = DocumentRepository()
-    if status == "processed":
-        duplicate = _find_duplicate_document(repository, object_id, parsed)
-        if duplicate:
-            final_path.unlink(missing_ok=True)
-            flash("Похожий документ уже есть в проекте: повторная копия не сохранена.", "error")
-            return redirect(url_for("web.document_detail", document_id=duplicate["id"]))
+    if final_path and final_path.is_file():
+        uploaded_hash = hashlib.sha256(final_path.read_bytes()).digest()
+        for existing in repository.list_by_object(object_id):
+            if (existing["original_filename"] or "").casefold() != final_name.casefold():
+                continue
+            stored_name = existing["stored_filename"] or ""
+            if not stored_name or Path(stored_name).name != stored_name:
+                continue
+            existing_path = Path(current_app.config["UPLOAD_DIR"]) / stored_name
+            if existing_path.is_file() and hashlib.sha256(existing_path.read_bytes()).digest() == uploaded_hash:
+                final_path.unlink(missing_ok=True)
+                ChecklistRepository().update_project_item(object_id, item_id, "received", existing["id"])
+                flash("Такой файл уже был загружен. Существующий документ привязан к строке комплектности.", "success")
+                return redirect(url_for("web.document_detail", document_id=existing["id"]))
     document_id = repository.create(
         object_id=object_id, contract_number=obj["contract_number"], object_name=obj["name"],
         original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
-        parsed=parsed, note="", status=status, error=error,
+        parsed=ParsedDocument(), note="", status="queued", error="",
     )
     ChecklistRepository().update_project_item(object_id, item_id, "received", document_id)
-    if status == "error":
-        flash(f"Файл прикреплён, но распознать его не удалось: {error}", "error")
-    else:
-        flash(f"Документ «{item['title']}» загружен и привязан к чек-листу.", "success")
+    flash(f"Файл «{item['title']}» принят. Распознавание выполняется в фоне.", "success")
     return redirect(url_for("web.document_detail", document_id=document_id))
 
 
@@ -401,13 +408,7 @@ def upload_documents(object_id: int):
         max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"],
     )
     repository = DocumentRepository()
-    pipeline = DocumentProcessingPipeline(
-        document_types=current_app.config["DOCUMENT_TYPES"],
-        tesseract_lang=current_app.config["TESSERACT_LANG"],
-        ocr_dpi=current_app.config["OCR_DPI"],
-    )
     created = []
-    duplicates = []
     photo_sources = []
     groups = []
     note = request.form.get("note", "").strip()
@@ -433,51 +434,24 @@ def upload_documents(object_id: int):
             for _name, _stored, source_path, _mime in photo_sources:
                 source_path.unlink(missing_ok=True)
 
-    for original_name, stored_name, path, mime_type in groups:
-        parsed = ParsedDocument()
-        try:
-            parsed = pipeline.process(path)
-            duplicate = _find_duplicate_document(repository, object_id, parsed)
-            if duplicate:
-                path.unlink(missing_ok=True)
-                duplicates.append(duplicate)
-                continue
-            document_id = repository.create(
-                object_id=object_id,
-                contract_number=obj["contract_number"],
-                object_name=obj["name"],
-                original_filename=original_name,
-                stored_filename=stored_name,
-                mime_type=mime_type,
-                parsed=parsed,
-                note=note,
-            )
-        except Exception as exc:
-            # Keep the original PDF even when OCR or extraction fails.
-            document_id = repository.create(
-                object_id=object_id,
-                contract_number=obj["contract_number"],
-                object_name=obj["name"],
-                original_filename=original_name,
-                stored_filename=stored_name,
-                mime_type=mime_type,
-                parsed=parsed,
-                note=note,
-                status="error",
-                error=str(exc),
-            )
+    for original_name, stored_name, _path, mime_type in groups:
+        document_id = repository.create(
+            object_id=object_id,
+            contract_number=obj["contract_number"],
+            object_name=obj["name"],
+            original_filename=original_name,
+            stored_filename=stored_name,
+            mime_type=mime_type,
+            parsed=ParsedDocument(),
+            note=note,
+            status="queued",
+        )
         created.append(document_id)
-    if len(created) == 1 and not duplicates:
+    if len(created) == 1:
         return redirect(url_for("web.document_detail", document_id=created[0]))
     if created:
-        flash(f"Добавлено файлов: {len(created)}.", "success")
-    if duplicates:
-        unique_duplicates = {row["id"]: row for row in duplicates}
-        names = ", ".join(row["working_title"] or row["original_filename"] for row in unique_duplicates.values())
-        flash(f"Повторная загрузка не сохранена: найдено совпадение по номеру, дате, названию и организации — {names}.", "error")
-        if not created and len(unique_duplicates) == 1:
-            return redirect(url_for("web.document_detail", document_id=next(iter(unique_duplicates))))
-    return redirect(url_for("web.object_workspace", object_id=object_id))
+        flash(f"Файлы приняты: {len(created)}. Распознавание выполняется в фоне.", "success")
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="documents"))
 
 
 @bp.post("/objects/<int:object_id>/correspondence")
@@ -485,13 +459,17 @@ def upload_correspondence(object_id: int):
     obj = ObjectRepository().get(object_id)
     if obj is None or obj["archived_at"]:
         abort(404)
+    record_type = request.form.get("record_type", "correspondence")
+    if record_type not in {"correspondence", "approval"}:
+        record_type = "correspondence"
+    target_tab = "approvals" if record_type == "approval" else "correspondence"
     direction = request.form.get("direction", "incoming")
     if direction not in {"incoming", "outgoing"}:
         direction = "incoming"
     files = [file for file in request.files.getlist("files") if file and file.filename]
     if not files:
         flash("Выберите PDF или фотографии страниц письма.", "error")
-        return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+        return redirect(url_for("web.object_workspace", object_id=object_id, tab=target_tab))
 
     storage = StorageService(current_app.config["UPLOAD_DIR"], max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"])
     saved_files = []
@@ -532,12 +510,12 @@ def upload_correspondence(object_id: int):
         repository.create(
             object_id=object_id, **values, original_filename=original_name,
             stored_filename=stored_name, mime_type=mime_type, raw_text=raw_text,
-            status=status, error=error,
+            status=status, error=error, record_type=record_type,
         )
         created += 1
     if created:
         flash(f"Добавлено писем: {created}. Проверьте распознанные реквизиты.", "success")
-    return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab=target_tab))
 
 
 @bp.post("/objects/<int:object_id>/correspondence/<int:letter_id>")
@@ -558,7 +536,24 @@ def update_correspondence(object_id: int, letter_id: int):
         recipient=request.form.get("recipient", "").strip()[:500],
         subject=request.form.get("subject", "").strip()[:500],
         summary=request.form.get("summary", "").strip()[:4000],
+        valid_until=request.form.get("valid_until", "").strip()[:20],
     )
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
+
+
+@bp.post("/objects/<int:object_id>/correspondence/<int:letter_id>/delete")
+def delete_correspondence(object_id: int, letter_id: int):
+    repo = CorrespondenceRepository()
+    letter = repo.get(letter_id)
+    if letter is None or letter["object_id"] != object_id:
+        abort(404)
+    stored = letter["stored_filename"]
+    if not repo.delete(letter_id):
+        abort(404)
+    if stored and Path(stored).name == stored:
+        (Path(current_app.config["UPLOAD_DIR"]) / stored).unlink(missing_ok=True)
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
     return redirect(url_for("web.object_workspace", object_id=object_id, tab="correspondence"))
@@ -606,6 +601,7 @@ def update_document_fields(document_id: int):
         "working_title": request.form.get("working_title", "").strip(),
         "official_title": request.form.get("official_title", "").strip(),
         "issuer": request.form.get("issuer", "").strip(),
+        "document_number": request.form.get("document_number", "").strip(),
         "issue_date": request.form.get("issue_date", "").strip(),
         "valid_until": "" if no_expiration else request.form.get("valid_until", "").strip(),
         "no_expiration": int(no_expiration),
@@ -674,17 +670,20 @@ def export_object(object_id: int):
     if obj is None:
         abort(404)
     documents = DocumentRepository().list_by_object(object_id, include_archived=True)
-    letters = CorrespondenceRepository().list_by_object(object_id)
+    correspondence_repo = CorrespondenceRepository()
+    letters = correspondence_repo.list_by_object(object_id)
+    approvals = correspondence_repo.list_by_object(object_id, "approval")
     checklist = ChecklistRepository().list_project_items(object_id)
     acts = HandoverActRepository().list_by_object(object_id)
     archive = io.BytesIO()
     manifest = {"created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "files": []}
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr("project.json", json.dumps(dict(obj), ensure_ascii=False, indent=2))
-        bundle.writestr("documents.json", json.dumps([dict(row) for row in documents], ensure_ascii=False, indent=2))
-        bundle.writestr("correspondence.json", json.dumps([dict(row) for row in letters], ensure_ascii=False, indent=2))
-        bundle.writestr("checklist.json", json.dumps([dict(row) for row in checklist], ensure_ascii=False, indent=2))
-        bundle.writestr("handover-acts.json", json.dumps([dict(row) for row in acts], ensure_ascii=False, indent=2))
+        bundle.writestr("Проект.json", json.dumps(dict(obj), ensure_ascii=False, indent=2))
+        bundle.writestr("Перечень_ИРД.json", json.dumps([dict(row) for row in documents], ensure_ascii=False, indent=2))
+        bundle.writestr("Переписка.json", json.dumps([dict(row) for row in letters], ensure_ascii=False, indent=2))
+        bundle.writestr("Согласования.json", json.dumps([dict(row) for row in approvals], ensure_ascii=False, indent=2))
+        bundle.writestr("Комплектность.json", json.dumps([dict(row) for row in checklist], ensure_ascii=False, indent=2))
+        bundle.writestr("Акты_приёма-передачи.json", json.dumps([dict(row) for row in acts], ensure_ascii=False, indent=2))
         upload_dir = current_app.config["UPLOAD_DIR"].resolve()
         for document in documents:
             stored_name = document["stored_filename"]
@@ -693,7 +692,9 @@ def export_object(object_id: int):
             if path is None or candidate.is_absolute() or candidate.name != stored_name or path.parent != upload_dir or not path.is_file():
                 manifest["files"].append({"document_id": document["id"], "missing": True})
                 continue
-            member = f"originals/{document['id']}-{path.name}"
+            short_title = _archive_name(document["working_title"] or document["official_title"] or document["original_filename"], "Документ")
+            extension = Path(document["original_filename"] or path.name).suffix or path.suffix
+            member = f"01_ИРД/{document['id']:03d}_{short_title}{extension}"
             content = path.read_bytes()
             bundle.writestr(member, content)
             manifest["files"].append({
@@ -707,13 +708,28 @@ def export_object(object_id: int):
             if path is None or candidate.is_absolute() or candidate.name != stored_name or path.parent != upload_dir or not path.is_file():
                 manifest["files"].append({"correspondence_id": letter["id"], "missing": True})
                 continue
-            member = f"correspondence/{letter['id']}-{path.name}"
+            short_title = _archive_name(letter["subject"] or letter["sender"] or "Письмо", "Письмо")
+            date_part = _archive_name(letter["letter_date"] or "без_даты", "без_даты")
+            member = f"02_Переписка/{letter['id']:03d}_{date_part}_{short_title}{path.suffix}"
             content = path.read_bytes()
             bundle.writestr(member, content)
             manifest["files"].append({
                 "correspondence_id": letter["id"], "path": member,
                 "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
             })
+        for letter in approvals:
+            stored_name = letter["stored_filename"]
+            candidate = Path(stored_name) if stored_name else None
+            path = (upload_dir / candidate).resolve() if candidate else None
+            if path is None or candidate.is_absolute() or candidate.name != stored_name or path.parent != upload_dir or not path.is_file():
+                manifest["files"].append({"approval_id": letter["id"], "missing": True})
+                continue
+            short_title = _archive_name(letter["subject"] or letter["sender"] or "Согласование", "Согласование")
+            date_part = _archive_name(letter["letter_date"] or "без_даты", "без_даты")
+            member = f"03_Согласования/{letter['id']:03d}_{date_part}_{short_title}{path.suffix}"
+            content = path.read_bytes()
+            bundle.writestr(member, content)
+            manifest["files"].append({"approval_id": letter["id"], "path": member, "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)})
         acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
         acts_dir = (acts_root / str(object_id)).resolve()
         for act in acts:
@@ -723,7 +739,8 @@ def export_object(object_id: int):
             if candidate.is_absolute() or candidate.name != stored_name or acts_dir.parent != acts_root or path.parent != acts_dir or not path.is_file():
                 manifest["files"].append({"act_id": act["id"], "missing": True})
                 continue
-            member = f"handover-acts/{act['id']}-{path.name}"
+            period = _archive_name(act["period_end"] or act["created_at"][:10], "акт")
+            member = f"04_Акты_приёма-передачи/{act['id']:03d}_Акт_за_период_до_{period}{path.suffix}"
             content = path.read_bytes()
             bundle.writestr(member, content)
             manifest["files"].append({
@@ -732,9 +749,9 @@ def export_object(object_id: int):
             })
         bundle.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     response = make_response(archive.getvalue())
-    filename = secure_filename(obj["name"]) or f"project-{object_id}"
+    filename = _archive_name(obj["name"], f"Проект_{object_id}")
     response.headers["Content-Type"] = "application/zip"
-    response.headers["Content-Disposition"] = f'attachment; filename="NHP_IRD-{filename}.zip"'
+    response.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote('Архив_проекта_' + filename + '.zip')}"
     return response
 
 
