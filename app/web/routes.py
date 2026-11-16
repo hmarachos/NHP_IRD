@@ -14,12 +14,17 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
+from app.database import get_db
 from app.models import ParsedDocument
 from app.repositories import ChecklistRepository, CorrespondenceRepository, DocumentRepository, HandoverActRepository, ObjectRepository
 from app.services.expiry import attach_expiry, expiry_state, iso_date
+from app.services.checklist_document_fields import project_assignment_fields
+from app.services.field_extractor import RegexFieldExtractor
+from app.services.pipeline import DocumentProcessingPipeline
 from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
 from app.services.pdf_text import PdfTextExtractor
 from app.services.storage import StorageService
+from app.services.word_documents import WORD_MIME_TYPES, is_word_document, remove_word_preview, word_preview_path
 
 
 def _archive_name(value: str, fallback: str) -> str:
@@ -159,19 +164,25 @@ def object_workspace(object_id: int):
     checklist_repository.sync_documents_to_checklist(object_id, documents)
     checklist = checklist_repository.list_project_items(object_id)
     checklist = _attach_checklist_expiry(checklist, warning_days)
+    documents_by_id = {document["id"]: document for document in documents}
+    checklist_documents = {}
+    for link in checklist_repository.list_linked_documents(object_id):
+        document = documents_by_id.get(link["document_id"])
+        if document is not None:
+            checklist_documents.setdefault(link["checklist_item_id"], []).append(document)
+    multi_document_item_ids = {
+        row["id"] for row in checklist
+        if checklist_repository.allows_multiple_documents(row["title"])
+    }
     archived_documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_archived_by_object(object_id)]
-    alerts = [
-        {"document": row, "expiry": row["expiry"]}
-        for row in documents if row["expiry"]["key"] in {"expired", "expiring"}
-    ]
     return render_template(
         "object.html",
         object=obj,
         documents=documents,
         archived_documents=archived_documents,
         checklist=checklist,
-        templates=ChecklistRepository().list_templates(),
-        alerts=alerts,
+        checklist_documents=checklist_documents,
+        multi_document_item_ids=multi_document_item_ids,
         missing_count=sum(row["status"] == "missing" for row in checklist),
         received_count=sum(row["status"] == "received" for row in checklist),
         warning_days=warning_days,
@@ -189,14 +200,17 @@ def project_document_form(object_id: int, kind: str):
         abort(404)
     checklist = ChecklistRepository().list_project_items(object_id)
     documents = DocumentRepository().list_by_object(object_id)
+    template = "document_generation_fragment.html" if request.args.get("partial") == "1" else "document_generation.html"
     return render_template(
-        "document_generation.html",
+        template,
         project=project,
         kind=kind,
         spec=DOCUMENT_TYPES[kind],
         checklist=checklist,
         documents=documents,
         missing_count=sum(item["status"] == "missing" for item in checklist),
+        replacement_count=sum(bool(item["replacement_required"]) for item in checklist),
+        in_modal=False,
     )
 
 
@@ -211,8 +225,9 @@ def download_project_document(object_id: int, kind: str):
     checklist = ChecklistRepository().list_project_items(object_id)
     documents = DocumentRepository().list_by_object(object_id)
     missing_count = sum(item["status"] == "missing" for item in checklist)
-    if kind == "request" and missing_count == 0:
-        flash("В чек-листе проекта нет недостающих документов для запроса.", "error")
+    replacement_count = sum(bool(item["replacement_required"]) for item in checklist)
+    if kind == "request" and missing_count == 0 and replacement_count == 0:
+        flash("В чек-листе проекта нет недостающих документов или документов, требующих замены.", "error")
         return redirect(url_for("web.project_document_form", object_id=object_id, kind=kind))
     if kind == "handover" and not documents:
         flash("Добавьте документы проекта перед созданием акта приёма-передачи.", "error")
@@ -290,17 +305,113 @@ def download_handover_act(object_id: int, act_id: int):
     )
 
 
-@bp.post("/objects/<int:object_id>/template")
-def apply_template(object_id: int):
-    if ObjectRepository().get(object_id) is None:
+@bp.get("/templates")
+def manage_templates():
+    repo = ChecklistRepository()
+    templates = [{"template": row, "items": repo.list_template_items(row["id"])} for row in repo.list_templates()]
+    return render_template("templates.html", templates=templates)
+
+
+@bp.post("/templates")
+def create_template():
+    name = request.form.get("name", "").strip()
+    description = request.form.get("description", "").strip()
+    if not name:
+        flash("Укажите название шаблона.", "error")
+        return redirect(url_for("web.manage_templates"))
+    try:
+        template_id = ChecklistRepository().create_template(name, description)
+    except Exception:
+        flash("Шаблон с таким названием уже существует.", "error")
+        return redirect(url_for("web.manage_templates"))
+    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
+
+
+@bp.post("/templates/<int:template_id>/update")
+def update_template(template_id: int):
+    name = request.form.get("name", "").strip()
+    description = request.form.get("description", "").strip()
+    if not name or not ChecklistRepository().update_template(template_id, name, description):
+        abort(400)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
+
+
+@bp.post("/templates/<int:template_id>/copy")
+def copy_template(template_id: int):
+    repo = ChecklistRepository()
+    source = repo.get_template(template_id)
+    if source is None:
         abort(404)
-    template_id = _optional_int(request.form.get("template_id"))
-    if not template_id or ChecklistRepository().get_template(template_id) is None:
-        flash("Выберите существующий шаблон.", "error")
-        return redirect(url_for("web.object_workspace", object_id=object_id))
-    added = ChecklistRepository().apply_template(object_id, template_id)
-    flash(f"Шаблон применён: добавлено новых пунктов — {added}.", "success")
-    return redirect(url_for("web.object_workspace", object_id=object_id))
+    name = request.form.get("name", "").strip() or f"{source['name']} — копия"
+    try:
+        copied_id = repo.copy_template(template_id, name)
+    except Exception:
+        flash("Шаблон с таким названием уже существует. Укажите другое название.", "error")
+        return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
+    flash("Шаблон скопирован вместе со списком документов.", "success")
+    return redirect(url_for("web.manage_templates") + f"#template-{copied_id}")
+
+
+@bp.post("/templates/<int:template_id>/delete")
+def delete_template(template_id: int):
+    if not ChecklistRepository().delete_template(template_id):
+        abort(404)
+    flash("Шаблон удалён. Уже созданные списки проектов сохранены.", "success")
+    return redirect(url_for("web.manage_templates"))
+
+
+@bp.post("/templates/<int:template_id>/items")
+def add_template_item(template_id: int):
+    repo = ChecklistRepository()
+    if repo.get_template(template_id) is None:
+        abort(404)
+    title = request.form.get("title", "").strip()
+    if title:
+        repo.add_template_item(template_id, title, request.form.get("description", "").strip())
+    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
+
+
+@bp.post("/templates/items/<int:item_id>/update")
+def update_template_item(item_id: int):
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    if not title or not ChecklistRepository().update_template_item(item_id, title, description):
+        abort(400)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    template_id = request.form.get("template_id", "").strip()
+    suffix = f"?edit={template_id}#template-{template_id}" if template_id.isdigit() else ""
+    return redirect(url_for("web.manage_templates") + suffix)
+
+
+@bp.post("/templates/items/<int:item_id>/delete")
+def delete_template_item(item_id: int):
+    if not ChecklistRepository().delete_template_item(item_id):
+        abort(404)
+    return redirect(url_for("web.manage_templates"))
+
+
+@bp.post("/objects/<int:object_id>/acts/<int:act_id>/delete")
+def delete_handover_act(object_id: int, act_id: int):
+    project = ObjectRepository().get(object_id)
+    repository = HandoverActRepository()
+    act = repository.get(object_id, act_id)
+    if project is None or act is None:
+        abort(404)
+
+    acts_root = Path(current_app.config["ACTS_DIR"]).resolve()
+    project_dir = (acts_root / str(object_id)).resolve()
+    filename = act["stored_filename"]
+    candidate = (project_dir / filename).resolve()
+    if Path(filename).name != filename or project_dir.parent != acts_root or candidate.parent != project_dir:
+        abort(404)
+    candidate.unlink(missing_ok=True)
+    if not repository.delete(object_id, act_id):
+        abort(404)
+    flash("Акт удалён вместе с файлом.", "success")
+    return redirect(url_for("web.project_acts", object_id=object_id))
 
 
 @bp.post("/objects/<int:object_id>/checklist/<int:item_id>")
@@ -308,11 +419,59 @@ def update_checklist_item(object_id: int, item_id: int):
     status = request.form.get("status", "missing")
     document_id = _optional_int(request.form.get("document_id"))
     issue_date = request.form.get("issue_date") if "issue_date" in request.form else None
-    if not ChecklistRepository().update_project_item(object_id, item_id, status, document_id, issue_date):
+    note = request.form.get("note") if "note" in request.form else None
+    if not ChecklistRepository().update_project_item(object_id, item_id, status, document_id, issue_date, note):
         abort(404)
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
     return redirect(url_for("web.object_workspace", object_id=object_id) + "#checklist")
+
+
+@bp.post("/objects/<int:object_id>/checklist/<int:item_id>/replacement")
+def update_checklist_replacement(object_id: int, item_id: int):
+    required = request.form.get("required") == "1"
+    if not ChecklistRepository().update_replacement_required(object_id, item_id, required):
+        abort(404)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return redirect(url_for("web.object_workspace", object_id=object_id) + "#checklist")
+
+
+@bp.post("/objects/<int:object_id>/checklist/add")
+def add_checklist_item(object_id: int):
+    obj = ObjectRepository().get(object_id)
+    title = request.form.get("title", "").strip()[:300]
+    note = request.form.get("note", "").strip()[:2000]
+    if obj is None or obj["archived_at"]:
+        abort(404)
+    if not title:
+        flash("Укажите название документа.", "error")
+    elif ChecklistRepository().add_project_item(object_id, title, note) is None:
+        flash("Документ с таким названием уже есть в списке.", "error")
+    else:
+        flash("Документ добавлен в комплектность проекта.", "success")
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
+
+
+@bp.post("/objects/<int:object_id>/checklist/<int:item_id>/delete")
+def delete_checklist_item(object_id: int, item_id: int):
+    if ObjectRepository().get(object_id) is None or not ChecklistRepository().delete_project_item(object_id, item_id):
+        abort(404)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    flash("Пункт убран из списка проекта. Загруженные документы сохранены в архиве.", "success")
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
+
+
+@bp.post("/objects/<int:object_id>/checklist/<int:item_id>/note")
+def update_checklist_note(object_id: int, item_id: int):
+    if ObjectRepository().get(object_id) is None or not ChecklistRepository().update_project_note(
+        object_id, item_id, request.form.get("note", "")
+    ):
+        abort(404)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist") + "#checklist")
 
 
 @bp.post("/objects/<int:object_id>/checklist/<int:item_id>/upload")
@@ -323,7 +482,7 @@ def upload_checklist_document(object_id: int, item_id: int):
         abort(404)
     files = [file for file in request.files.getlist("files") if file and file.filename]
     if not files:
-        flash("Выберите PDF или фотографии страниц документа.", "error")
+        flash("Выберите PDF, Word-файл или фотографии страниц документа.", "error")
         return redirect(url_for("web.object_workspace", object_id=object_id) + "#checklist")
 
     storage = StorageService(current_app.config["UPLOAD_DIR"], max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"])
@@ -335,11 +494,13 @@ def upload_checklist_document(object_id: int, item_id: int):
     try:
         saved = [storage.save_upload(file) for file in files]
         saved_sources = [(name, stored, path, mime) for name, stored, path, mime in saved]
-        if len(saved) == 1 and saved[0][3] == "application/pdf":
+        if len(saved) == 1 and saved[0][3] in {"application/pdf", *WORD_MIME_TYPES.values()}:
             final_name, final_stored, final_path, final_mime = saved[0]
         else:
+            if any(mime in WORD_MIME_TYPES.values() for _name, _stored, _path, mime in saved):
+                raise ValueError("Загружайте Word-документ отдельно, по одному файлу.")
             if any(not mime.startswith("image/") for _name, _stored, _path, mime in saved):
-                raise ValueError("Для многостраничного документа выберите несколько фотографий или один PDF.")
+                raise ValueError("Для многостраничного документа выберите один PDF, один файл Word или несколько фотографий.")
             from PIL import Image, ImageOps
             if any(Path(name).suffix.lower() in {".heic", ".heif"} for name, *_rest in saved):
                 import pillow_heif
@@ -377,17 +538,65 @@ def upload_checklist_document(object_id: int, item_id: int):
             existing_path = Path(current_app.config["UPLOAD_DIR"]) / stored_name
             if existing_path.is_file() and hashlib.sha256(existing_path.read_bytes()).digest() == uploaded_hash:
                 final_path.unlink(missing_ok=True)
-                ChecklistRepository().update_project_item(object_id, item_id, "received", existing["id"])
+                manual_assignment = project_assignment_fields(item["title"], obj["customer"] or "")
+                if manual_assignment is not None:
+                    repository.update_fields(existing["id"], {
+                        "working_title": manual_assignment.working_title,
+                        "official_title": "",
+                        "issuer": manual_assignment.issuer,
+                        "document_number": "",
+                        "issue_date": "",
+                        "valid_until": "",
+                        "no_expiration": 0,
+                    })
+                    repository.update_note(existing["id"], "")
+                ChecklistRepository().link_document(object_id, item_id, existing["id"])
                 flash("Такой файл уже был загружен. Существующий документ привязан к строке комплектности.", "success")
-                return redirect(url_for("web.document_detail", document_id=existing["id"]))
+                return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
+    if request.headers.get("X-IRD-Analyze") == "1":
+        try:
+            parsed = project_assignment_fields(item["title"], obj["customer"] or "")
+            if parsed is None:
+                pipeline = DocumentProcessingPipeline(
+                    document_types=current_app.config["DOCUMENT_TYPES"],
+                    tesseract_lang=current_app.config["TESSERACT_LANG"],
+                    ocr_dpi=current_app.config["OCR_DPI"],
+                )
+                parsed = pipeline.process(final_path)
+                _apply_checklist_document_title(parsed, item["title"])
+            document_id = repository.create(
+                object_id=object_id, contract_number=obj["contract_number"], object_name=obj["name"],
+                original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
+                parsed=parsed, note="", status="processed", error="",
+            )
+            ChecklistRepository().link_document(object_id, item_id, document_id)
+            first_page = parsed.raw_text.split("--- page 2 ---", 1)[0]
+            number_match = None
+            is_eroks_card = parsed.working_title == "Копия регистрационной карточки в ЕРОКС"
+            is_beltelecom = RegexFieldExtractor._is_beltelecom_technical_conditions(parsed.raw_text)
+            is_minskenergo = RegexFieldExtractor._is_minskenergo_electrical_conditions(parsed.raw_text)
+            header_number = "" if (is_eroks_card or is_beltelecom or is_minskenergo) else RegexFieldExtractor._extract_committee_decision_number(first_page)
+            if not number_match and not (is_eroks_card or is_beltelecom or is_minskenergo):
+                number_match = re.search(r"(?:№|N\s*|номер\s*)\s*([А-ЯЁA-Z0-9][А-ЯЁA-Z0-9./-]{1,30})", first_page, re.I)
+            return {"id": document_id, "preview": url_for("web.document_viewer", document_id=document_id),
+                    "fields": {"working_title": parsed.working_title or item["title"], "official_title": parsed.official_title, "issuer": parsed.issuer,
+                               "document_number": "" if is_eroks_card else (parsed.document_number if (is_beltelecom or is_minskenergo) else (header_number or parsed.document_number or (number_match.group(1) if number_match else ""))), "issue_date": iso_date(parsed.issue_date),
+                               "valid_until": iso_date(parsed.valid_until), "no_expiration": parsed.no_expiration}}
+        except Exception as exc:
+            logger.exception("Checklist document extraction failed")
+            for _name, _stored, source_path, _mime in saved_sources:
+                source_path.unlink(missing_ok=True)
+            if final_path:
+                final_path.unlink(missing_ok=True)
+            return {"error": str(exc)[:500] or "Не удалось распознать документ."}, 422
     document_id = repository.create(
         object_id=object_id, contract_number=obj["contract_number"], object_name=obj["name"],
         original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
         parsed=ParsedDocument(), note="", status="queued", error="",
     )
-    ChecklistRepository().update_project_item(object_id, item_id, "received", document_id)
+    ChecklistRepository().link_document(object_id, item_id, document_id)
     flash(f"Файл «{item['title']}» принят. Распознавание выполняется в фоне.", "success")
-    return redirect(url_for("web.document_detail", document_id=document_id))
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
 
 
 @bp.post("/objects/<int:object_id>/documents")
@@ -451,7 +660,7 @@ def upload_documents(object_id: int):
         return redirect(url_for("web.document_detail", document_id=created[0]))
     if created:
         flash(f"Файлы приняты: {len(created)}. Распознавание выполняется в фоне.", "success")
-    return redirect(url_for("web.object_workspace", object_id=object_id, tab="documents"))
+    return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
 
 
 @bp.post("/objects/<int:object_id>/correspondence")
@@ -608,7 +817,7 @@ def update_document_fields(document_id: int):
     }
     if not DocumentRepository().update_fields(document_id, values):
         abort(404)
-    if document["object_id"]:
+    if document["object_id"] and request.headers.get("X-Preserve-Checklist-Link") != "1":
         ChecklistRepository().match_document(document["object_id"], document_id, values["working_title"])
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
@@ -629,14 +838,93 @@ def document_preview(document_id: int):
     document = DocumentRepository().get(document_id)
     if document is None or document["archived_at"] or not document["stored_filename"]:
         abort(404)
-    response = send_from_directory(
-        current_app.config["UPLOAD_DIR"], document["stored_filename"],
-        mimetype=document["mime_type"] or "application/pdf", as_attachment=False,
-        download_name=document["original_filename"] or document["stored_filename"],
-    )
-    response.headers["Content-Disposition"] = "inline; filename*=UTF-8''" + quote(document["original_filename"] or document["stored_filename"])
+    upload_dir = Path(current_app.config["UPLOAD_DIR"])
+    source = upload_dir / document["stored_filename"]
+    if is_word_document(source):
+        try:
+            preview = word_preview_path(source)
+        except (OSError, RuntimeError, ValueError):
+            logger.exception("Word preview conversion failed for document id=%s", document_id)
+            abort(415)
+        preview_name = f"{Path(document['original_filename'] or source.name).stem}.pdf"
+        response = send_file(preview, mimetype="application/pdf", as_attachment=False, download_name=preview_name)
+        response.headers["Content-Disposition"] = "inline; filename*=UTF-8''" + quote(preview_name)
+    else:
+        response = send_from_directory(
+            upload_dir, document["stored_filename"],
+            mimetype=document["mime_type"] or "application/pdf", as_attachment=False,
+            download_name=document["original_filename"] or document["stored_filename"],
+        )
+        response.headers["Content-Disposition"] = "inline; filename*=UTF-8''" + quote(document["original_filename"] or document["stored_filename"])
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+def _document_pdf_path(document):
+    upload_dir = Path(current_app.config["UPLOAD_DIR"])
+    source = upload_dir / document["stored_filename"]
+    if is_word_document(source):
+        try:
+            return word_preview_path(source)
+        except (OSError, RuntimeError, ValueError):
+            logger.exception("Word preview conversion failed for document id=%s", document["id"])
+            abort(415)
+    return source
+
+
+@bp.get("/documents/<int:document_id>/viewer")
+def document_viewer(document_id: int):
+    document = DocumentRepository().get(document_id)
+    if document is None or document["archived_at"] or not document["stored_filename"]:
+        abort(404)
+    pdf_path = _document_pdf_path(document)
+    try:
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        try:
+            page_count = len(pdf)
+        finally:
+            pdf.close()
+    except Exception:
+        logger.exception("Could not open PDF preview for document id=%s", document_id)
+        abort(415)
+    return render_template("document_viewer.html", document_id=document_id, page_count=page_count)
+
+
+@bp.get("/documents/<int:document_id>/viewer/pages/<int:page_index>")
+def document_viewer_page(document_id: int, page_index: int):
+    document = DocumentRepository().get(document_id)
+    if document is None or document["archived_at"] or not document["stored_filename"]:
+        abort(404)
+    pdf_path = _document_pdf_path(document)
+    thumbnail = request.args.get("thumbnail") == "1"
+    try:
+        import pypdfium2 as pdfium
+
+        stat = pdf_path.stat()
+        cache_dir = Path(current_app.instance_path) / "preview-cache" / f"{document_id}-{stat.st_mtime_ns}-{stat.st_size}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        target = cache_dir / f"{page_index}-{'thumb' if thumbnail else 'page'}.jpg"
+        if not target.is_file():
+            pdf = pdfium.PdfDocument(str(pdf_path))
+            try:
+                if page_index < 0 or page_index >= len(pdf):
+                    abort(404)
+                scale = 0.3 if thumbnail else 1.6
+                bitmap = pdf[page_index].render(scale=scale)
+                image = bitmap.to_pil().convert("RGB")
+                image.save(target, format="JPEG", quality=82 if thumbnail else 90, optimize=True)
+            finally:
+                pdf.close()
+        response = send_file(target, mimetype="image/jpeg", conditional=True, max_age=86400)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        logger.exception("Could not render PDF page %s for document id=%s", page_index, document_id)
+        abort(415)
 
 
 @bp.post("/documents/<int:document_id>/delete")
@@ -646,11 +934,23 @@ def delete_document(document_id: int):
     if document is None:
         abort(404)
     object_id = document["object_id"]
+    stored_name = document["stored_filename"] or ""
     deleted = repository.delete(document_id)
     if not deleted:
         abort(404)
+    if stored_name and Path(stored_name).name == stored_name:
+        upload_dir = Path(current_app.config["UPLOAD_DIR"]).resolve()
+        file_path = (upload_dir / stored_name).resolve()
+        if file_path.parent == upload_dir:
+            still_referenced = get_db().execute(
+                "SELECT 1 FROM documents WHERE stored_filename = ? UNION ALL SELECT 1 FROM correspondence WHERE stored_filename = ? LIMIT 1",
+                (stored_name, stored_name),
+            ).fetchone()
+            if still_referenced is None:
+                file_path.unlink(missing_ok=True)
+                remove_word_preview(file_path)
     if object_id:
-        return redirect(url_for("web.object_workspace", object_id=object_id))
+        return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
     return redirect(url_for("web.index"))
 
 
@@ -669,11 +969,15 @@ def export_object(object_id: int):
     obj = ObjectRepository().get(object_id)
     if obj is None:
         abort(404)
-    documents = DocumentRepository().list_by_object(object_id, include_archived=True)
+    documents = DocumentRepository().list_by_object(object_id)
     correspondence_repo = CorrespondenceRepository()
     letters = correspondence_repo.list_by_object(object_id)
     approvals = correspondence_repo.list_by_object(object_id, "approval")
-    checklist = ChecklistRepository().list_project_items(object_id)
+    checklist_repository = ChecklistRepository()
+    checklist = checklist_repository.list_project_items(object_id)
+    checklist_document_ids = {}
+    for link in checklist_repository.list_linked_documents(object_id):
+        checklist_document_ids.setdefault(link["checklist_item_id"], []).append(link["document_id"])
     acts = HandoverActRepository().list_by_object(object_id)
     archive = io.BytesIO()
     manifest = {"created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "files": []}
@@ -682,7 +986,11 @@ def export_object(object_id: int):
         bundle.writestr("Перечень_ИРД.json", json.dumps([dict(row) for row in documents], ensure_ascii=False, indent=2))
         bundle.writestr("Переписка.json", json.dumps([dict(row) for row in letters], ensure_ascii=False, indent=2))
         bundle.writestr("Согласования.json", json.dumps([dict(row) for row in approvals], ensure_ascii=False, indent=2))
-        bundle.writestr("Комплектность.json", json.dumps([dict(row) for row in checklist], ensure_ascii=False, indent=2))
+        checklist_export = [
+            {**dict(row), "document_ids": checklist_document_ids.get(row["id"], [])}
+            for row in checklist
+        ]
+        bundle.writestr("Комплектность.json", json.dumps(checklist_export, ensure_ascii=False, indent=2))
         bundle.writestr("Акты_приёма-передачи.json", json.dumps([dict(row) for row in acts], ensure_ascii=False, indent=2))
         upload_dir = current_app.config["UPLOAD_DIR"].resolve()
         for document in documents:
@@ -755,95 +1063,6 @@ def export_object(object_id: int):
     return response
 
 
-@bp.get("/templates")
-def manage_templates():
-    repo = ChecklistRepository()
-    templates = [{"template": row, "items": repo.list_template_items(row["id"])} for row in repo.list_templates()]
-    return render_template("templates.html", templates=templates)
-
-
-@bp.post("/templates")
-def create_template():
-    name, description = request.form.get("name", "").strip(), request.form.get("description", "").strip()
-    if not name:
-        flash("Укажите название шаблона.", "error")
-        return redirect(url_for("web.manage_templates"))
-    try:
-        template_id = ChecklistRepository().create_template(name, description)
-    except Exception:
-        flash("Шаблон с таким названием уже существует.", "error")
-        return redirect(url_for("web.manage_templates"))
-    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
-
-
-@bp.post("/templates/<int:template_id>/update")
-def update_template(template_id: int):
-    name, description = request.form.get("name", "").strip(), request.form.get("description", "").strip()
-    if not name or not ChecklistRepository().update_template(template_id, name, description):
-        abort(400)
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
-
-
-@bp.post("/templates/<int:template_id>/copy")
-def copy_template(template_id: int):
-    repo = ChecklistRepository()
-    if repo.get_template(template_id) is None:
-        abort(404)
-    name = request.form.get("name", "").strip()
-    if not name:
-        source = repo.get_template(template_id)
-        name = f"{source['name']} — копия"
-    try:
-        copied_id = repo.copy_template(template_id, name)
-    except Exception:
-        flash("Шаблон с таким названием уже существует. Укажите другое название.", "error")
-        return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
-    if copied_id is None:
-        abort(404)
-    flash("Шаблон скопирован вместе со списком документов.", "success")
-    return redirect(url_for("web.manage_templates") + f"#template-{copied_id}")
-
-
-@bp.post("/templates/<int:template_id>/delete")
-def delete_template(template_id: int):
-    if not ChecklistRepository().delete_template(template_id):
-        abort(404)
-    flash("Шаблон удалён. Уже созданные списки проектов сохранены.", "success")
-    return redirect(url_for("web.manage_templates"))
-
-
-@bp.post("/templates/<int:template_id>/items")
-def add_template_item(template_id: int):
-    repo = ChecklistRepository()
-    if repo.get_template(template_id) is None:
-        abort(404)
-    title = request.form.get("title", "").strip()
-    if title:
-        repo.add_template_item(template_id, title, request.form.get("description", "").strip())
-    return redirect(url_for("web.manage_templates") + f"#template-{template_id}")
-
-
-@bp.post("/templates/items/<int:item_id>/update")
-def update_template_item(item_id: int):
-    title, description = request.form.get("title", "").strip(), request.form.get("description", "").strip()
-    if not title or not ChecklistRepository().update_template_item(item_id, title, description):
-        abort(400)
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    template_id = request.form.get("template_id", "").strip()
-    suffix = f"?edit={template_id}#template-{template_id}" if template_id.isdigit() else ""
-    return redirect(url_for("web.manage_templates") + suffix)
-
-
-@bp.post("/templates/items/<int:item_id>/delete")
-def delete_template_item(item_id: int):
-    if not ChecklistRepository().delete_template_item(item_id):
-        abort(404)
-    return redirect(url_for("web.manage_templates"))
-
-
 def _index_error(message: str):
     warning_days = current_app.config["EXPIRY_WARNING_DAYS"]
     documents = DocumentRepository().list_all()
@@ -858,9 +1077,14 @@ def _object_error(object_id: int, message: str):
     warning_days = current_app.config["EXPIRY_WARNING_DAYS"]
     checklist = _attach_checklist_expiry(repo.list_project_items(object_id), warning_days)
     documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_by_object(object_id)]
+    documents_by_id = {document["id"]: document for document in documents}
+    checklist_documents = {}
+    for link in repo.list_linked_documents(object_id):
+        document = documents_by_id.get(link["document_id"])
+        if document is not None:
+            checklist_documents.setdefault(link["checklist_item_id"], []).append(document)
     archived_documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_archived_by_object(object_id)]
-    alerts = [{"document": row, "expiry": row["expiry"]} for row in documents if row["expiry"]["key"] in {"expired", "expiring"}]
-    return render_template("object.html", object=ObjectRepository().get(object_id), documents=documents, archived_documents=archived_documents, checklist=checklist, templates=repo.list_templates(), alerts=alerts, missing_count=sum(row["status"] == "missing" for row in checklist), received_count=sum(row["status"] == "received" for row in checklist), warning_days=warning_days, error=message), 400
+    return render_template("object.html", object=ObjectRepository().get(object_id), documents=documents, archived_documents=archived_documents, checklist=checklist, checklist_documents=checklist_documents, multi_document_item_ids={row["id"] for row in checklist if repo.allows_multiple_documents(row["title"])}, missing_count=sum(row["status"] == "missing" for row in checklist), received_count=sum(row["status"] == "received" for row in checklist), warning_days=warning_days, error=message), 400
 
 
 def _attach_checklist_expiry(items, warning_days: int):
@@ -1016,6 +1240,54 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
         values["summary"] = body[:600].strip()
     values["letter_date"] = _normalize_letter_date(values["letter_date"])
     return values
+
+
+def _apply_checklist_letter_subject(parsed: ParsedDocument, item_title: str) -> bool:
+    """Use the document's explicit subject in the checklist's letter rows."""
+    uses_estimate_letter = ChecklistRepository.uses_customer_letter_subject(item_title)
+    uses_contract_letter = ChecklistRepository._normalize(item_title) == ChecklistRepository._normalize(
+        "Письмо заказчика о заключении договора"
+    )
+    if not (uses_estimate_letter or uses_contract_letter):
+        return False
+    subject = _extract_explicit_subject(parsed.raw_text)
+    if uses_estimate_letter and not subject:
+        subject = _extract_correspondence_fields(parsed.raw_text).get("subject", "").strip()
+    if subject:
+        if uses_contract_letter:
+            subject = re.sub(r"^письмо\s+", "", subject, flags=re.IGNORECASE).strip()
+            if subject[:3].casefold() == "об ":
+                subject = "об " + subject[3:]
+            elif subject[:2].casefold() == "о ":
+                subject = "о " + subject[2:]
+            elif re.match(r"^(?:по\s+вопросу|касательно)\b", subject, re.IGNORECASE):
+                subject = subject[:1].lower() + subject[1:]
+            else:
+                subject = "о " + subject[:1].lower() + subject[1:]
+            parsed.working_title = f"Письмо {subject}"[:300]
+        else:
+            parsed.working_title = subject[:300]
+            parsed.official_title = subject[:300]
+        return True
+    return False
+
+
+def _apply_checklist_document_title(parsed: ParsedDocument, item_title: str) -> None:
+    """Keep the review title anchored to the checklist row the user selected."""
+    if not _apply_checklist_letter_subject(parsed, item_title):
+        parsed.working_title = item_title[:300]
+
+
+def _extract_explicit_subject(text: str) -> str:
+    """Prefer a short standalone letter subject line over issuer or document labels."""
+    for raw_line in (text or "").splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip(" \t\r\n:;—-")
+        line = re.sub(r"^(?:тема\s*:\s*)", "", line, flags=re.IGNORECASE).strip()
+        if len(line) > 220:
+            continue
+        if re.match(r"^(?:о\s+|об\s+|по\s+вопросу\s+|касательно\s+)", line, re.IGNORECASE):
+            return line.strip(" .;:—-")
+    return ""
 
 
 def _normalize_letter_date(value: str) -> str:

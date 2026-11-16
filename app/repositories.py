@@ -155,9 +155,9 @@ class DocumentRepository:
             INSERT INTO documents (
                 object_id, contract_number, object_name, original_filename, stored_filename,
                 mime_type, working_title, official_title, issuer, issue_date, valid_until,
-                validity_text, no_expiration, raw_text, note, status, error
+                validity_text, no_expiration, raw_text, note, status, error, document_number
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 object_id,
@@ -177,6 +177,7 @@ class DocumentRepository:
                 note,
                 status,
                 error,
+                parsed.document_number,
             ),
         )
         db.commit()
@@ -295,19 +296,57 @@ class DocumentRepository:
 
     def delete(self, document_id: int) -> bool:
         db = get_db()
-        cursor = db.execute(
-            "UPDATE documents SET archived_at = CURRENT_TIMESTAMP WHERE id = ? AND archived_at IS NULL",
+        links = list(db.execute(
+            """
+            SELECT checklist.id, checklist.object_id, checklist.title, checklist.document_id
+            FROM project_checklist_documents AS link
+            JOIN project_checklist_items AS checklist ON checklist.id = link.checklist_item_id
+            WHERE link.document_id = ?
+            """,
             (document_id,),
+        ))
+        for item in links:
+            if item["document_id"] != document_id:
+                continue
+            if ChecklistRepository.allows_multiple_documents(item["title"]):
+                next_document = db.execute(
+                    """
+                    SELECT link.document_id
+                    FROM project_checklist_documents AS link
+                    JOIN documents ON documents.id = link.document_id
+                    WHERE link.checklist_item_id = ? AND link.document_id <> ?
+                      AND documents.archived_at IS NULL
+                    ORDER BY link.sort_order, link.created_at, link.document_id
+                    LIMIT 1
+                    """,
+                    (item["id"], document_id),
+                ).fetchone()
+                replacement_id = next_document["document_id"] if next_document else None
+                db.execute(
+                    "UPDATE project_checklist_items SET document_id = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (replacement_id, "received" if replacement_id else "missing", item["id"]),
+                )
+            else:
+                db.execute(
+                    "UPDATE project_checklist_items SET status = 'missing', document_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (item["id"],),
+                )
+        # Also handle legacy document_id links that have not yet been copied
+        # into the association table (for example, immediately after upgrade).
+        db.execute(
+            """
+            UPDATE project_checklist_items
+            SET status = 'missing', document_id = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE document_id = ? AND validity_years = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM project_checklist_documents
+                  WHERE project_checklist_documents.checklist_item_id = project_checklist_items.id
+                    AND project_checklist_documents.document_id <> ?
+              )
+            """,
+            (document_id, document_id),
         )
-        if cursor.rowcount:
-            db.execute(
-                """
-                UPDATE project_checklist_items
-                SET status = 'missing', document_id = NULL, updated_at = CURRENT_TIMESTAMP
-                WHERE document_id = ? AND validity_years = 0
-                """,
-                (document_id,),
-            )
+        cursor = db.execute("DELETE FROM documents WHERE id = ?", (document_id,))
         db.commit()
         return cursor.rowcount > 0
 
@@ -318,8 +357,9 @@ class DocumentRepository:
             (document_id,),
         ).fetchone()
         had_checklist_link = db.execute(
-            "SELECT 1 FROM project_checklist_items WHERE document_id = ? LIMIT 1",
-            (document_id,),
+            """SELECT 1 FROM project_checklist_items WHERE document_id = ?
+               UNION ALL SELECT 1 FROM project_checklist_documents WHERE document_id = ? LIMIT 1""",
+            (document_id, document_id),
         ).fetchone() is not None
         cursor = db.execute(
             "UPDATE documents SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
@@ -367,6 +407,89 @@ class DocumentRepository:
 
 
 class ChecklistRepository:
+    CUSTOMER_LETTER_ITEM_TITLE = "Сведения для разработки сметной документации (по типовой форме)"
+    PROJECT_ASSIGNMENT_ITEM_TITLE = "Задание на проектирование"
+    MULTI_DOCUMENT_ITEM_TITLES = {
+        CUSTOMER_LETTER_ITEM_TITLE,
+        PROJECT_ASSIGNMENT_ITEM_TITLE,
+    }
+
+    @classmethod
+    def allows_multiple_documents(cls, title: str) -> bool:
+        normalized = cls._normalize(title)
+        return any(normalized == cls._normalize(item) for item in cls.MULTI_DOCUMENT_ITEM_TITLES)
+
+    @classmethod
+    def uses_customer_letter_subject(cls, title: str) -> bool:
+        return cls._normalize(title) == cls._normalize(cls.CUSTOMER_LETTER_ITEM_TITLE)
+
+    def list_linked_documents(self, object_id: int) -> list[Row]:
+        return list(get_db().execute(
+            """
+            SELECT attachments.checklist_item_id, attachments.document_id
+            FROM (
+                SELECT checklist.id AS checklist_item_id, documents.id AS document_id,
+                       -1 AS sort_order, documents.created_at AS created_at
+                FROM project_checklist_items AS checklist
+                JOIN documents ON documents.id = checklist.document_id
+                WHERE checklist.object_id = ? AND documents.archived_at IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM project_checklist_documents AS existing
+                      WHERE existing.checklist_item_id = checklist.id
+                        AND existing.document_id = documents.id
+                  )
+                UNION ALL
+                SELECT link.checklist_item_id, documents.id, link.sort_order, link.created_at
+                FROM project_checklist_documents AS link
+                JOIN project_checklist_items AS checklist ON checklist.id = link.checklist_item_id
+                JOIN documents ON documents.id = link.document_id
+                WHERE checklist.object_id = ? AND documents.archived_at IS NULL
+            ) AS attachments
+            ORDER BY attachments.checklist_item_id, attachments.sort_order, attachments.created_at, attachments.document_id
+            """,
+            (object_id, object_id),
+        ))
+
+    def link_document(self, object_id: int, item_id: int, document_id: int) -> bool:
+        db = get_db()
+        item = db.execute(
+            "SELECT title, validity_years, document_id FROM project_checklist_items WHERE id = ? AND object_id = ?",
+            (item_id, object_id),
+        ).fetchone()
+        document = db.execute(
+            "SELECT id FROM documents WHERE id = ? AND object_id = ? AND archived_at IS NULL",
+            (document_id, object_id),
+        ).fetchone()
+        if item is None or document is None or item["validity_years"] > 0:
+            return False
+        if self.allows_multiple_documents(item["title"]):
+            order = db.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project_checklist_documents WHERE checklist_item_id = ?",
+                (item_id,),
+            ).fetchone()[0]
+            db.execute(
+                "INSERT OR IGNORE INTO project_checklist_documents (checklist_item_id, document_id, sort_order) VALUES (?, ?, ?)",
+                (item_id, document_id, order),
+            )
+            primary = db.execute(
+                "SELECT id FROM documents WHERE id = ? AND archived_at IS NULL",
+                (item["document_id"],),
+            ).fetchone() if item["document_id"] else None
+            primary_id = primary["id"] if primary else document_id
+        else:
+            db.execute("DELETE FROM project_checklist_documents WHERE checklist_item_id = ?", (item_id,))
+            db.execute(
+                "INSERT INTO project_checklist_documents (checklist_item_id, document_id, sort_order) VALUES (?, ?, 0)",
+                (item_id, document_id),
+            )
+            primary_id = document_id
+        cursor = db.execute(
+            "UPDATE project_checklist_items SET status = 'received', document_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+            (primary_id, item_id, object_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
     def list_expiring_within(self, today: str, cutoff: str) -> list[Row]:
         return list(get_db().execute(
             """
@@ -435,15 +558,13 @@ class ChecklistRepository:
         return int(cursor.lastrowid)
 
     def copy_template(self, template_id: int, name: str | None = None) -> int | None:
-        """Copy a template and its ordered document list."""
         db = get_db()
         source = self.get_template(template_id)
         if source is None:
             return None
-        copy_name = (name or f"{source['name']} — копия").strip()
         cursor = db.execute(
             "INSERT INTO checklist_templates (name, description) VALUES (?, ?)",
-            (copy_name, source["description"]),
+            ((name or f"{source['name']} — копия").strip(), source["description"]),
         )
         copied_id = int(cursor.lastrowid)
         db.execute(
@@ -541,6 +662,12 @@ class ChecklistRepository:
                   WHERE documents.id = project_checklist_items.document_id
                     AND documents.archived_at IS NULL
               )
+              AND NOT EXISTS (
+                  SELECT 1 FROM project_checklist_documents AS link
+                  JOIN documents ON documents.id = link.document_id
+                  WHERE link.checklist_item_id = project_checklist_items.id
+                    AND documents.archived_at IS NULL
+              )
             """,
             (object_id,),
         )
@@ -549,6 +676,12 @@ class ChecklistRepository:
             db.execute(
                 """
                 SELECT checklist.*, documents.working_title AS linked_document_title,
+                       COALESCE(NULLIF(TRIM(documents.note), ''), (
+                           SELECT group_concat(NULLIF(TRIM(linked.note), ''), '; ')
+                           FROM project_checklist_documents AS linked_documents
+                           JOIN documents AS linked ON linked.id = linked_documents.document_id
+                           WHERE linked_documents.checklist_item_id = checklist.id
+                       )) AS linked_document_note,
                        documents.archived_at AS linked_document_archived_at
                 FROM project_checklist_items AS checklist
                 LEFT JOIN documents ON documents.id = checklist.document_id
@@ -566,12 +699,32 @@ class ChecklistRepository:
             )
         )
 
+    def add_project_item(self, object_id: int, title: str, note: str = "") -> int | None:
+        db = get_db()
+        normalized = self._normalize(title)
+        if not normalized:
+            return None
+        existing_titles = db.execute(
+            "SELECT title FROM project_checklist_items WHERE object_id = ?",
+            (object_id,),
+        )
+        if any(self._normalize(row["title"]) == normalized for row in existing_titles):
+            return None
+        sort_order = db.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project_checklist_items WHERE object_id = ?",
+            (object_id,),
+        ).fetchone()[0]
+        cursor = db.execute(
+            "INSERT INTO project_checklist_items (object_id, title, note, sort_order) VALUES (?, ?, ?, ?)",
+            (object_id, title.strip(), note.strip()[:2000], sort_order),
+        )
+        db.commit()
+        return int(cursor.lastrowid)
+
     def update_project_item(
         self, object_id: int, item_id: int, status: str, document_id: int | None = None,
-        issue_date: str | None = None,
+        issue_date: str | None = None, note: str | None = None,
     ) -> bool:
-        if status not in {"missing", "received", "not_required"}:
-            return False
         db = get_db()
         item = db.execute(
             "SELECT validity_years FROM project_checklist_items WHERE id = ? AND object_id = ?",
@@ -583,8 +736,8 @@ class ChecklistRepository:
             normalized_date = iso_date(issue_date or "")
             valid_until = add_years(normalized_date, item["validity_years"])
             cursor = db.execute(
-                "UPDATE project_checklist_items SET issue_date = ?, valid_until = ?, status = ?, document_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
-                (normalized_date, valid_until, "received" if normalized_date else "missing", item_id, object_id),
+                "UPDATE project_checklist_items SET issue_date = ?, valid_until = ?, status = ?, document_id = NULL, note = COALESCE(?, note), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+                (normalized_date, valid_until, "received" if normalized_date else "missing", note[:2000] if note is not None else None, item_id, object_id),
             )
             db.commit()
             return cursor.rowcount > 0
@@ -595,13 +748,47 @@ class ChecklistRepository:
             ).fetchone()
             if linked is None:
                 document_id = None
+        db.execute("DELETE FROM project_checklist_documents WHERE checklist_item_id = ?", (item_id,))
+        if document_id is not None:
+            db.execute(
+                "INSERT INTO project_checklist_documents (checklist_item_id, document_id, sort_order) VALUES (?, ?, 0)",
+                (item_id, document_id),
+            )
+        status = "received" if document_id is not None else "missing"
         cursor = db.execute(
             """
             UPDATE project_checklist_items
-            SET status = ?, document_id = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = ?, document_id = ?, note = COALESCE(?, note), updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND object_id = ?
             """,
-            (status, document_id if status == "received" else None, item_id, object_id),
+            (status, document_id if status == "received" else None, note[:2000] if note is not None else None, item_id, object_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
+    def delete_project_item(self, object_id: int, item_id: int) -> bool:
+        db = get_db()
+        cursor = db.execute(
+            "DELETE FROM project_checklist_items WHERE id = ? AND object_id = ?",
+            (item_id, object_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
+    def update_project_note(self, object_id: int, item_id: int, note: str) -> bool:
+        db = get_db()
+        cursor = db.execute(
+            "UPDATE project_checklist_items SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+            (note.strip()[:2000], item_id, object_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
+    def update_replacement_required(self, object_id: int, item_id: int, required: bool) -> bool:
+        db = get_db()
+        cursor = db.execute(
+            "UPDATE project_checklist_items SET replacement_required = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+            (1 if required else 0, item_id, object_id),
         )
         db.commit()
         return cursor.rowcount > 0
@@ -621,6 +808,8 @@ class ChecklistRepository:
             "SELECT id, title, status FROM project_checklist_items WHERE object_id = ? AND status = 'missing' AND validity_years = 0 ORDER BY id",
             (object_id,),
         ):
+            if self.allows_multiple_documents(row["title"]):
+                continue
             if self._normalize(row["title"]) == normalized:
                 db.execute(
                     "UPDATE project_checklist_items SET status = 'received', document_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -642,6 +831,21 @@ class ChecklistRepository:
 
 
 class HandoverActRepository:
+    def get(self, object_id: int, act_id: int) -> Row | None:
+        return get_db().execute(
+            "SELECT * FROM handover_acts WHERE object_id = ? AND id = ?",
+            (object_id, act_id),
+        ).fetchone()
+
+    def delete(self, object_id: int, act_id: int) -> bool:
+        db = get_db()
+        cursor = db.execute(
+            "DELETE FROM handover_acts WHERE object_id = ? AND id = ?",
+            (object_id, act_id),
+        )
+        db.commit()
+        return cursor.rowcount > 0
+
     def list_by_object(self, object_id: int) -> list[Row]:
         return list(
             get_db().execute(

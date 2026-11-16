@@ -19,9 +19,9 @@ class StorageService:
         basename = original_name.replace("\\", "/").rsplit("/", 1)[-1]
         original_path = Path(basename)
         suffix = original_path.suffix.lower()
-        allowed = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+        allowed = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".doc", ".docx"}
         if suffix not in allowed:
-            raise ValueError("Поддерживаются PDF, JPG, PNG, WebP и HEIC.")
+            raise ValueError("Поддерживаются PDF, DOC, DOCX, JPG, PNG, WebP и HEIC.")
         safe_stem = secure_filename(original_path.stem) or "document"
         safe_name = f"{safe_stem}{suffix}"
 
@@ -45,6 +45,25 @@ class StorageService:
             if not content.lstrip().startswith(b"%PDF-"):
                 raise ValueError("Содержимое файла не похоже на PDF.")
             return "application/pdf"
+
+        if suffix == ".docx":
+            import io
+            import zipfile
+
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    if "word/document.xml" not in archive.namelist():
+                        raise ValueError("В DOCX-файле отсутствует документ Word.")
+                    if archive.testzip() is not None:
+                        raise ValueError("Файл DOCX повреждён.")
+            except zipfile.BadZipFile as exc:
+                raise ValueError("Содержимое файла не похоже на DOCX.") from exc
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+        if suffix == ".doc":
+            if content[:8] != bytes.fromhex("D0CF11E0A1B11AE1"):
+                raise ValueError("Содержимое файла не похоже на DOC.")
+            return "application/msword"
 
         try:
             from PIL import Image

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261115-template-create-modal') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261117-pdf-inner-split-v1') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
@@ -13,34 +13,26 @@
     <div class="app-layout">
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <a class="brand app-sidebar-brand" href="{{ url_for('web.index') }}"><span class="brand-mark">И</span><span>Архив ИРД<small>Проектные документы</small></span></a>
-            {% if active_project %}
-            <div class="project-sidebar-identity"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><span class="project-sidebar-contract">Договор {{ active_project.contract_number }}</span></div>
-            {% else %}
-            <div class="project-sidebar-identity"><span class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><strong>Архив исходных данных</strong><span class="project-sidebar-contract">Проектные документы</span></div>
-            {% endif %}
             <nav class="project-side-nav" aria-label="Разделы приложения">
-                <div class="project-nav-group"><span class="project-nav-caption">РАБОТА</span><a class="project-nav-item{% if request.endpoint == 'web.index' %} is-active{% endif %}" href="{{ url_for('web.index') }}"{% if request.endpoint == 'web.index' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item{% if request.endpoint == 'web.manage_templates' %} is-active{% endif %}" href="{{ url_for('web.manage_templates') }}"{% if request.endpoint == 'web.manage_templates' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div>
+                <div class="project-nav-group"><span class="project-nav-caption">ОБЩЕЕ</span><a class="project-nav-item{% if request.endpoint == 'web.index' %} is-active{% endif %}" href="{{ url_for('web.index') }}"{% if request.endpoint == 'web.index' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item{% if request.endpoint in ['web.manage_templates', 'web.create_template', 'web.update_template', 'web.copy_template', 'web.delete_template', 'web.add_template_item', 'web.update_template_item', 'web.delete_template_item'] %} is-active{% endif %}" href="{{ url_for('web.manage_templates') }}"{% if request.endpoint == 'web.manage_templates' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div>
                 {% if active_project %}
-                <div class="project-nav-group"><span class="project-nav-caption">ПРОЕКТ</span>
-                    {% if request.endpoint == 'web.object_workspace' %}
-                    <button type="button" class="project-nav-item" data-workspace-tab="overview" aria-selected="false"><i class="project-nav-icon bi bi-house" aria-hidden="true"></i><span>Сводка</span></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="checklist" aria-selected="false"><i class="project-nav-icon bi bi-list-check" aria-hidden="true"></i><span>Комплектность</span><small>{{ received_count }}/{{ checklist|length }}</small></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="correspondence" aria-selected="false"><i class="project-nav-icon bi bi-envelope" aria-hidden="true"></i><span>Переписка</span><small>{{ correspondence|default([])|length }}</small></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="approvals" aria-selected="false"><i class="project-nav-icon bi bi-patch-check" aria-hidden="true"></i><span>Согласования</span><small>{{ approvals|default([])|length }}</small></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="documents" aria-selected="false"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span><small>{{ documents|length }}</small></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="upload" aria-selected="false"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></button>
-                    <button type="button" class="project-nav-item" data-workspace-tab="tools" aria-selected="false"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></button>
-                    <a class="project-nav-item" href="{{ url_for('web.project_acts', object_id=active_project.id) }}"><i class="project-nav-icon bi bi-envelope-paper" aria-hidden="true"></i><span>Акты приёма-передачи</span></a>
+                <div class="project-nav-group"><span class="project-nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</span>
+                    {% set project_nav_items = [
+                        ('checklist', 'ИРД', 'list-check'),
+                        ('correspondence', 'Письма', 'envelope'),
+                        ('approvals', 'Согласования', 'patch-check'),
+                        ('acts', 'Запросы и отчёты', 'file-earmark-bar-graph')
+                    ] %}
+                    {% for tab, label, icon in project_nav_items %}
+                    {% set is_acts = tab == 'acts' %}
+                    {% set is_active = is_acts and request.endpoint in ['web.project_acts', 'web.download_handover_act'] %}
+                    {% set badge = (received_count|string + '/' + checklist|length|string) if tab == 'checklist' else (correspondence|default([])|length if tab == 'correspondence' else (approvals|default([])|length if tab == 'approvals' else none)) %}
+                    {% if request.endpoint == 'web.object_workspace' and not is_acts %}
+                    <button type="button" class="project-nav-item" data-workspace-tab="{{ tab }}" aria-selected="false"><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</button>
                     {% else %}
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='overview') }}"><i class="project-nav-icon bi bi-house" aria-hidden="true"></i><span>Сводка</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='checklist') }}"><i class="project-nav-icon bi bi-list-check" aria-hidden="true"></i><span>Комплектность</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='correspondence') }}"><i class="project-nav-icon bi bi-envelope" aria-hidden="true"></i><span>Переписка</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='approvals') }}"><i class="project-nav-icon bi bi-patch-check" aria-hidden="true"></i><span>Согласования</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='documents') }}"><i class="project-nav-icon bi bi-archive" aria-hidden="true"></i><span>Архив документов</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='upload') }}"><i class="project-nav-icon bi bi-cloud-arrow-up" aria-hidden="true"></i><span>Добавить файлы</span></a>
-                    <a class="project-nav-item" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='tools') }}"><i class="project-nav-icon bi bi-file-earmark-plus" aria-hidden="true"></i><span>Создать документы</span></a>
-                    <a class="project-nav-item{% if request.endpoint in ['web.project_acts', 'web.download_handover_act'] %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) }}"{% if request.endpoint in ['web.project_acts', 'web.download_handover_act'] %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-envelope-paper" aria-hidden="true"></i><span>Акты приёма-передачи</span></a>
+                    <a class="project-nav-item{% if is_active %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) if is_acts else url_for('web.object_workspace', object_id=active_project.id, tab=tab) }}"{% if is_active %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</a>
                     {% endif %}
+                    {% endfor %}
                 </div>
                 {% endif %}
             </nav>
@@ -49,7 +41,7 @@
         <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>
         <main class="page app-main">
             <div class="mobile-menu-row"><button class="mobile-sidebar-toggle" type="button" aria-label="Открыть меню" aria-controls="app-sidebar" aria-expanded="false" data-sidebar-toggle><i class="bi bi-list" aria-hidden="true"></i></button></div>
-            {% if active_project %}<header class="project-topbar"><div class="project-topbar-context"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><small>Договор {{ active_project.contract_number }}</small></div><a class="project-topbar-add" href="{{ url_for('web.object_workspace', object_id=active_project.id, tab='upload') }}"><i class="bi bi-file-earmark-plus" aria-hidden="true"></i><span>Добавить документ</span></a></header>{% endif %}
+            {% if active_project %}<header class="project-topbar"><div class="project-topbar-context"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><small>Договор {{ active_project.contract_number }}</small></div></header>{% endif %}
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% for category, message in messages %}<p class="notice notice-{{ category }}">{{ message }}</p>{% endfor %}
             {% endwith %}

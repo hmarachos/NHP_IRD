@@ -35,6 +35,7 @@ YEAR_WORDS = {
     "года": 1,
     "двух": 2,
     "два": 2,
+    "две": 2,
     "трех": 3,
     "три": 3,
     "четырех": 4,
@@ -77,6 +78,32 @@ class RegexFieldExtractor:
 
     def _extract_issuer(self, text: str) -> str:
         lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("--- page")]
+        first_page = text.split("--- page 2 ---", 1)[0]
+        environmental_examiner = re.search(
+            r"Государственное\s+учреждение\s+образования\s+[«\"]?Республиканский\s+центр\s+государственной\s+экологической\s+экспертизы\s*,?\s*подготовки\s*,?\s*повышения\s+квалификации\s+и\s+переподготовки\s+кадров[»\"]?\s+Министерства\s+природных\s+ресурсов\s+и\s+охраны\s+окружающей\s+среды\s+Республики\s+Беларусь",
+            first_page,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if environmental_examiner:
+            return self._clean_issuer(environmental_examiner.group(0))
+        if re.search(r"архитектурно[\s-]+планировочное\s+задание", first_page, re.IGNORECASE):
+            approved_block = first_page.split("УТВЕРЖДАЮ", 1)[-1].split("АРХИТЕКТУРНО", 1)[0].replace("|", " ")
+            apz_issuer = re.search(
+                r"\b([А-ЯЁ][а-яё-]+ского)\s+райис\w*кома\b",
+                approved_block,
+                re.IGNORECASE,
+            )
+            if apz_issuer:
+                district = apz_issuer.group(1).lower()
+                return f"{district[:-3].capitalize()}ий райисполком"
+        district_committee = re.search(
+            r"\b([А-ЯЁ][а-яё-]+\s+районный\s+исполнительный\s+комитет)\s+(?:решил|решила)\b",
+            text,
+            re.IGNORECASE,
+        )
+        if district_committee:
+            value = district_committee.group(1).lower()
+            return self._clean_issuer(value[:1].upper() + value[1:])
         correspondence_issuer = self._extract_correspondence_issuer(text)
         if correspondence_issuer:
             return correspondence_issuer
@@ -93,6 +120,70 @@ class RegexFieldExtractor:
 
         match = re.search(r"(?:выдан[оы]?|кем выдан[оы]?)\s*[:\-]\s*(.+)", text, re.IGNORECASE)
         return self._clean_issuer(self._prefer_russian_text(match.group(1))) if match else ""
+
+    @staticmethod
+    def _extract_ministry_technical_header(text: str) -> dict[str, str]:
+        first_page = text.split("--- page 2 ---", 1)[0]
+        if not re.search(r"учреждение\s+«?Узденский\s+районный\s+центр\s+гигиены\s+и\s+эпидемиологии", first_page, re.IGNORECASE) and "республиканский центр государственной экологической экспертизы" not in first_page.lower():
+            return {}
+        lines = [line.strip() for line in first_page.splitlines() if line.strip()]
+        for line in lines[:18]:
+            normalized = line.replace("—", "-").replace("–", "-")
+            date_match = re.search(r"(?<!\d)([0-3]?\d)[./-]([01]?\d)[./-]((?:19|20)\d{2})(?!\d)", normalized)
+            number_match = re.search(r"(?:№\s*)?(\d{1,2}[-/]\d{1,3}[-/]\d{1,4})\b", normalized)
+            if number_match or date_match:
+                result = {
+                    "document_number": number_match.group(1) if number_match else "",
+                    "issue_date": f"{int(date_match.group(3)):04d}-{int(date_match.group(2)):02d}-{int(date_match.group(1)):02d}" if date_match else "",
+                }
+                if result["document_number"] and result["issue_date"]:
+                    return result
+        return {}
+
+    @staticmethod
+    def _is_ministry_technical_requirements(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text.lower())
+        return "технические требования" in normalized and (
+            "республиканский центр государственной экологической экспертизы" in normalized
+            or "узденский районный центр гигиены и эпидемиологии" in normalized
+        )
+
+    @staticmethod
+    def _is_gai_technical_requirements(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text.lower())
+        return "технические требования" in normalized and "инспекции" in normalized and "внутренних дел" in normalized
+
+    @staticmethod
+    def _is_beltelecom_technical_conditions(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text.lower())
+        return (
+            "технические услови" in normalized
+            and "инженерно-техническое обеспечение" in normalized
+            and "белтелеком" in normalized
+        )
+
+    @staticmethod
+    def _extract_beltelecom_number(text: str) -> str:
+        first_page = text.split("--- page 2 ---", 1)[0]
+        for line in first_page.splitlines():
+            if "№" not in line:
+                continue
+            # OCR frequently attaches the form underline to the final digit
+            # (for example ``19-1-5/335_``), so a word boundary after the
+            # number is too strict here.
+            match = re.search(r"(?<!\d)(\d{1,2}-\d-\d/\d{2,})(?!\d)", line)
+            if match:
+                return match.group(1)
+        return ""
+
+    @staticmethod
+    def _is_minskenergo_electrical_conditions(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text.lower())
+        return (
+            "технические условия" in normalized
+            and "электроустановок потребителя" in normalized
+            and ("минскэнерго" in normalized or "столбцовские электрические сети" in normalized)
+        )
 
     def _extract_correspondence_issuer(self, text: str) -> str:
         organization_start = (
@@ -193,11 +284,36 @@ class RegexFieldExtractor:
         value = re.sub(r"\s+", " ", value)
         value = re.sub(r"\s+([»),.;:])", r"\1", value)
         value = re.sub(r"([«(])\s+", r"\1", value)
+        value = re.sub(
+            r"Республиканское\s+дочернее\s+унитарное\s+предприятие\s+по\s+обеспечению\s+нефтепродуктами",
+            "РУП",
+            value,
+            flags=re.IGNORECASE,
+        )
         return value.strip(" .,:;-")
 
     def _extract_issue_date(self, text: str) -> str:
         first_page = text.split("--- page 2 ---", 1)[0]
         lines = [line.strip() for line in first_page.splitlines() if line.strip()]
+        if re.search(r"районный\s+исполнительный\s+комитет", first_page, re.IGNORECASE) and re.search(r"\bрешение\b", first_page, re.IGNORECASE):
+            month_pattern = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря"
+            # Header text appears directly below the bilingual title (OCR may
+            # merge РАШЭННЕ and РЕШЕНИЕ on one line). Never use dates cited in
+            # the body as the issuance date.
+            for line in lines[:8]:
+                if re.search(rf"(?<!\d)([0-3]?\d)\s+({month_pattern})\s+((?:19|20)\d{{2}})", line, re.IGNORECASE):
+                    date_match = re.search(rf"(?<!\d)([0-3]?\d)\s+({month_pattern})\s+((?:19|20)\d{{2}})", line, re.IGNORECASE)
+                    month = MONTHS_RU[date_match.group(2).lower()]
+                    return f"{int(date_match.group(3)):04d}-{month:02d}-{int(date_match.group(1)):02d}"
+            for line in lines[:15]:
+                dated_header = re.search(
+                    rf"(?<!\d)([0-3]?\d)\s+({month_pattern})\s+((?:19|20)\d{{2}})\s*г\w*",
+                    line,
+                    re.IGNORECASE,
+                )
+                if dated_header:
+                    month = MONTHS_RU[dated_header.group(2).lower()]
+                    return f"{int(dated_header.group(3)):04d}-{month:02d}-{int(dated_header.group(1)):02d}"
         for line in lines[:45]:
             # "На № ... от ..." is a blank incoming-reference field; an
             # outgoing letterhead line "№ ... от DD.MM.YYYY" is a real date.
@@ -229,7 +345,57 @@ class RegexFieldExtractor:
             return self._format_date(standalone_dates[-1].group(1))
         return ""
 
+    @staticmethod
+    def _extract_committee_decision_number(text: str) -> str:
+        first_page = text.split("--- page 2 ---", 1)[0]
+        if not re.search(r"районный\s+исполнительный\s+комитет", first_page, re.IGNORECASE) or not re.search(r"\bрешение\b", first_page, re.IGNORECASE):
+            return ""
+        lines = [line.strip() for line in first_page.splitlines() if line.strip()]
+        header_date = re.compile(r"(?<!\d)[0-3]?\d\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+(?:19|20)\d{2}", re.IGNORECASE)
+        for index, line in enumerate(lines[:8]):
+            if header_date.search(line):
+                match = re.search(r"\b(?:г\w*\s*)?(\d{1,6})\b", line[header_date.search(line).end():], re.IGNORECASE)
+                if match:
+                    return match.group(1)
+                # In some OCR layouts the number lands on the next line.
+                if index + 1 < len(lines):
+                    next_number = re.fullmatch(r"\s*(?:№\s*)?(\d{1,6})\s*[_—-]*\s*", lines[index + 1])
+                    if next_number:
+                        return next_number.group(1)
+        return ""
+
+    @staticmethod
+    def _extract_header_document_number(text: str) -> str:
+        """Read a slash-delimited number from the outgoing header, when OCR has it."""
+        first_page = text.split("--- page 2 ---", 1)[0]
+        lines = [line.strip() for line in first_page.splitlines() if line.strip()]
+        number_pattern = re.compile(
+            r"(?:исх(?:одящий)?\.?\s*(?:№|N\s*)|(?<![\w])№\s*|(?<![\w])N(?:o|º|°)?\s*)"
+            r"([A-ZА-ЯЁ0-9]+(?:\s*[-./]\s*[A-ZА-ЯЁ0-9]+){1,5})",
+            re.IGNORECASE,
+        )
+        candidates = []
+        for line in lines[:30]:
+            if re.match(r"^на\s*(?:№|N\b)", line, re.IGNORECASE):
+                continue
+            match = number_pattern.search(line)
+            if not match:
+                continue
+            number = re.sub(r"\s*([./-])\s*", r"\1", match.group(1)).strip(" .,:;-_")
+            if not re.search(r"\d", number):
+                continue
+            priority = 2 if re.search(r"\bисх(?:одящий)?\b", line, re.IGNORECASE) else 0
+            if re.search(r"\bот\s*[«\"]?\d", line, re.IGNORECASE) or DATE_RE.search(line):
+                priority += 3
+            candidates.append((priority, lines.index(line), number))
+        if not candidates:
+            return ""
+        return max(candidates, key=lambda item: (item[0], -item[1]))[2]
+
     def _extract_valid_until(self, text: str, issue_date: str = "") -> str:
+        explicit_expiry = self._extract_explicit_valid_until(text)
+        if explicit_expiry:
+            return explicit_expiry
         patterns = (
             r"(?:срок действия|действительн[а-я ]*до|действует до)\s*[:\-]?\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})",
             r"(?:до)\s*([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})",
@@ -239,6 +405,23 @@ class RegexFieldExtractor:
             if match:
                 return self._format_date(match.group(1))
         return self._calculate_valid_until_from_duration(text, issue_date)
+
+    @staticmethod
+    def _extract_explicit_valid_until(text: str) -> str:
+        """Find an explicitly stated expiry, including dates split by OCR noise."""
+        date_pattern = r"([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})"
+        patterns = (
+            # Some scans place stamps or OCR noise between "действительны до"
+            # and the date, sometimes moving the date to the next line.
+            rf"\bдействительн[а-яё]*\s+до\b[\s\S]{{0,180}}?{date_pattern}",
+            rf"\bсрок\s+действия\s+до\b[\s\S]{{0,100}}?{date_pattern}",
+            rf"\bдействует\s+до\b[\s\S]{{0,100}}?{date_pattern}",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return RegexFieldExtractor._format_date(match.group(1))
+        return ""
 
     def _calculate_valid_until_from_duration(self, text: str, issue_date: str) -> str:
         if not issue_date:
@@ -255,17 +438,26 @@ class RegexFieldExtractor:
         return self._format_date_from_date(self._add_years(parsed_issue_date, duration_years))
 
     def _extract_duration_years(self, text: str) -> int:
+        # OCR commonly puts a short validity statement at the very bottom of
+        # a letter and splits it across visual lines. Match against a flattened
+        # copy so phrases such as "согласование действительно\nдва года" stay
+        # intact, while sentence boundaries still limit unrelated matches.
+        duration_text = re.sub(r"\s+", " ", (text or "").replace("\xa0", " "))
         patterns = (
-            r"срок\s+действия[^.\n]{0,120}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
-            r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+|[а-яё]+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
-            r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
-            r"в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?[^.\n]{0,220}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
-            r"(?:срок[^.\n]{0,120}|действ\w*[^.\n]{0,120})в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
-            r"в\s+течение\s+(\d+|[а-яё]+)\s+лет?[^.\n]{0,160}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
-            r"(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи[^.\n]{0,160}в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
+            r"срок\s+действия[^.!?]{0,160}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
+            r"(?:срок[^.!?]{0,160}|действ\w*[^.!?]{0,160})в\s+течение\s+(\d+|[а-яё]+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
+            r"(?:срок[^.!?]{0,160}|действ\w*[^.!?]{0,160})в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?",
+            r"в\s+течение\s+(\d+)\s*[-‑–—]?\s*(?:х|ых|ти)?\s+лет?[^.!?]{0,220}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
+            r"(?:срок[^.!?]{0,160}|действ\w*[^.!?]{0,160})в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
+            r"в\s+течение\s+(\d+|[а-яё]+)\s+лет?[^.!?]{0,220}(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи",
+            r"(?:согласован\w*|разрешени\w*|письм\w*|документ\w*|услови\w*)\s+(?:является\s+)?действительн\w*[^.!?]{0,120}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
+            r"\bдействительн\w*[^.!?]{0,100}?\s+(\d+|[а-яё]+)\s+(?:календарн\w*\s+)?(?:год(?:а|у|ов)?|лет)",
+            r"(?:срок[^.!?]{0,160}|действ\w*[^.!?]{0,160})в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
+            r"в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
+            r"(?:с\s+даты|со\s+дня)\s+(?:их\s+)?выдачи[^.!?]{0,220}в\s+течение\s+(\d+|[а-яё]+)\s+лет?",
         )
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, duration_text, re.IGNORECASE)
             if not match:
                 continue
             value = match.group(1).lower().replace("ё", "е")
@@ -281,7 +473,7 @@ class RegexFieldExtractor:
         for index, line in enumerate(lines):
             lowered = line.lower()
             if any(marker in lowered for marker in preferred_markers):
-                return " ".join(lines[index : index + 4])[:500]
+                return " ".join(lines[index : index + 8])[:500]
 
         for index, line in enumerate(lines):
             lowered = line.lower()
@@ -308,6 +500,8 @@ class RegexFieldExtractor:
     @staticmethod
     def _parse_date(value: str) -> date | None:
         try:
+            if re.fullmatch(r"(?:19|20)\d{2}-[01]?\d-[0-3]?\d", value.strip()):
+                return date.fromisoformat(value.strip())
             day, month, year = [int(part) for part in value.replace(".", "-").replace("/", "-").split("-")]
             return date(year, month, day)
         except ValueError:

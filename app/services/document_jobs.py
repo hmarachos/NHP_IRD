@@ -8,6 +8,7 @@ from flask import current_app
 from app.database import get_db
 from app.models import ParsedDocument
 from app.repositories import ChecklistRepository, DocumentRepository
+from app.services.checklist_document_fields import project_assignment_fields
 from app.services.pipeline import DocumentProcessingPipeline
 
 logger = logging.getLogger(__name__)
@@ -38,12 +39,34 @@ def run_pending_document_jobs(limit: int = 2) -> int:
             path = Path(current_app.config["UPLOAD_DIR"]) / row["stored_filename"]
             if not path.is_file():
                 raise FileNotFoundError("Загруженный файл не найден в хранилище.")
-            pipeline = DocumentProcessingPipeline(
-                document_types=current_app.config["DOCUMENT_TYPES"],
-                tesseract_lang=current_app.config["TESSERACT_LANG"],
-                ocr_dpi=current_app.config["OCR_DPI"],
-            )
-            parsed = pipeline.process(path)
+            linked_item = db.execute(
+                """
+                SELECT checklist.title, objects.customer
+                FROM project_checklist_items AS checklist
+                JOIN objects ON objects.id = checklist.object_id
+                LEFT JOIN project_checklist_documents AS attachment
+                  ON attachment.checklist_item_id = checklist.id
+                 AND attachment.document_id = ?
+                WHERE checklist.document_id = ? OR attachment.document_id = ?
+                LIMIT 1
+                """,
+                (row["id"], row["id"], row["id"]),
+            ).fetchone()
+            if linked_item:
+                parsed = project_assignment_fields(linked_item["title"], linked_item["customer"] or "")
+            else:
+                parsed = None
+            if parsed is None:
+                pipeline = DocumentProcessingPipeline(
+                    document_types=current_app.config["DOCUMENT_TYPES"],
+                    tesseract_lang=current_app.config["TESSERACT_LANG"],
+                    ocr_dpi=current_app.config["OCR_DPI"],
+                )
+                parsed = pipeline.process(path)
+                if linked_item:
+                    from app.web.routes import _apply_checklist_document_title
+
+                    _apply_checklist_document_title(parsed, linked_item["title"])
 
             # Keep the duplicate guard used by synchronous uploads. A duplicate
             # remains attached and reviewable, with a clear explanation.
@@ -57,9 +80,9 @@ def run_pending_document_jobs(limit: int = 2) -> int:
                 error = f"Похожий документ уже есть в проекте (документ №{duplicate['id']}). Проверьте, не загружен ли он ранее."
 
             db.execute(
-                """UPDATE documents SET working_title=?, official_title=?, issuer=?, issue_date=?, valid_until=?,
+                """UPDATE documents SET working_title=?, official_title=?, issuer=?, document_number=?, issue_date=?, valid_until=?,
                    validity_text=?, no_expiration=?, raw_text=?, status=?, error=? WHERE id=?""",
-                (parsed.working_title, parsed.official_title, parsed.issuer, parsed.issue_date, parsed.valid_until,
+                (parsed.working_title, parsed.official_title, parsed.issuer, parsed.document_number, parsed.issue_date, parsed.valid_until,
                  parsed.validity_text, 1 if parsed.no_expiration else 0, parsed.raw_text, status, error, row["id"]),
             )
             db.commit()

@@ -169,7 +169,8 @@ def _add_inventory(document: Document, documents: list[Any], checklist: list[Any
 
 
 def _add_missing_data_request(document: Document, checklist: list[Any], fields: dict[str, str]) -> None:
-    missing = [item for item in checklist if item["status"] == "missing"]
+    replacements = [item for item in checklist if item["replacement_required"]]
+    missing = [item for item in checklist if item["status"] == "missing" and not item["replacement_required"]]
     if fields.get("recipient"):
         p = document.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -192,6 +193,15 @@ def _add_missing_data_request(document: Document, checklist: list[Any], fields: 
         )
     else:
         document.add_paragraph("По чек-листу проекта отсутствуют пункты со статусом «Ожидается».")
+    if replacements:
+        document.add_paragraph("Документы, требующие замены", style="Heading 2")
+        _add_table(
+            document,
+            ["№", "Наименование документа", "Комментарий"],
+            [[str(i), item["title"], item["note"] or item["linked_document_note"] or item["description"] or ""] for i, item in enumerate(replacements, start=1)],
+        )
+    elif not missing:
+        document.add_paragraph("Документов, требующих замены, нет.")
     document.add_paragraph("Просим направить документы в ответ на данный запрос или согласовать срок их предоставления.")
     document.add_paragraph("С уважением,")
     document.add_paragraph(fields.get("sender_signatory") or "____________________________")

@@ -14,6 +14,24 @@ def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
+    @app.template_filter("ru_date")
+    def russian_date(value):
+        """Render stored ISO dates in the user-facing Belarusian/Russian format."""
+        from datetime import date, datetime
+
+        if not value:
+            return ""
+        raw = str(value).strip()
+        try:
+            return date.fromisoformat(raw[:10]).strftime("%d.%m.%Y")
+        except ValueError:
+            for fmt in ("%d-%m-%Y", "%d.%m.%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(raw, fmt).strftime("%d.%m.%Y")
+                except ValueError:
+                    pass
+        return raw
+
     config_class.ensure_directories()
 
     with app.app_context():

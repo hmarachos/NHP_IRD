@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from flask import current_app, g
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 
 SCHEMA = """
@@ -94,10 +94,22 @@ CREATE TABLE IF NOT EXISTS project_checklist_items (
     validity_years INTEGER NOT NULL DEFAULT 0,
     issue_date TEXT NOT NULL DEFAULT '',
     valid_until TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    replacement_required INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE,
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_checklist_documents (
+    checklist_item_id INTEGER NOT NULL,
+    document_id INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (checklist_item_id, document_id),
+    FOREIGN KEY (checklist_item_id) REFERENCES project_checklist_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -173,11 +185,20 @@ def init_db() -> None:
     ensure_column(db, "project_checklist_items", "validity_years", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(db, "project_checklist_items", "issue_date", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "project_checklist_items", "valid_until", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(db, "project_checklist_items", "note", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(db, "project_checklist_items", "replacement_required", "INTEGER NOT NULL DEFAULT 0")
+    db.execute(
+        """
+        INSERT OR IGNORE INTO project_checklist_documents (checklist_item_id, document_id, sort_order)
+        SELECT id, document_id, 0 FROM project_checklist_items WHERE document_id IS NOT NULL
+        """
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_documents_object_date ON documents(object_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_documents_expiry ON documents(valid_until) WHERE valid_until <> '' AND no_expiration = 0")
     migrate_objects(db)
     seed_default_template(db)
     ensure_geodetic_survey_item(db)
+    ensure_azs_initial_documents(db)
     integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
     if integrity != "ok":
         raise RuntimeError(f"Database integrity check failed after migration: {integrity}")
@@ -387,6 +408,137 @@ def ensure_geodetic_survey_item(db: sqlite3.Connection) -> None:
             )
     db.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('geodetic_survey_template_migrated_v2', '1')"
+    )
+
+
+def ensure_azs_initial_documents(db: sqlite3.Connection) -> None:
+    """Keep the contract letter and project assignment first in the AZS checklist."""
+    if db.execute(
+        "SELECT 1 FROM app_settings WHERE key = 'azs_initial_documents_migrated_v1'"
+    ).fetchone():
+        return
+
+    template = db.execute(
+        "SELECT id FROM checklist_templates WHERE name IN (?, ?) "
+        "ORDER BY CASE name WHEN 'Возведение/реконструкция АЗС' THEN 0 ELSE 1 END LIMIT 1",
+        ("АЗС", "Возведение/реконструкция АЗС"),
+    ).fetchone()
+    if template is None:
+        return
+
+    template_ids = [template["id"]]
+    first_title = "Письмо заказчика о заключении договора"
+    second_title = "Задание на проектирование"
+    third_title = "Документ об утверждении ППД"
+    first_aliases = (
+        first_title,
+        'Письмо Заказчика "О заключении договора"',
+        'Письмо заказчика "О заключении договора"',
+    )
+    placeholders = ",".join("?" for _ in template_ids)
+
+    template_items = {}
+    starter_items = (
+        (first_title, first_aliases, 0),
+        (second_title, (second_title,), 1),
+        (third_title, (third_title,), 2),
+    )
+    for title, aliases, sort_order in starter_items:
+        alias_placeholders = ",".join("?" for _ in aliases)
+        item = db.execute(
+            f"SELECT id FROM checklist_template_items WHERE template_id IN ({placeholders}) "
+            f"AND title IN ({alias_placeholders}) ORDER BY CASE WHEN title = ? THEN 0 ELSE 1 END, id LIMIT 1",
+            (*template_ids, *aliases, title),
+        ).fetchone()
+        if item is None:
+            cursor = db.execute(
+                "INSERT INTO checklist_template_items (template_id, title, sort_order) VALUES (?, ?, ?)",
+                (template_ids[0], title, sort_order),
+            )
+            item_id = cursor.lastrowid
+        else:
+            item_id = item["id"]
+            db.execute(
+                "UPDATE checklist_template_items SET title = ?, sort_order = ? WHERE id = ?",
+                (title, sort_order, item_id),
+            )
+        template_items[title] = item_id
+
+    # Existing templates may have custom rows. Shift them after the three fixed rows
+    # while retaining their relative order.
+    for template_id in template_ids:
+        rows = db.execute(
+            "SELECT id, title FROM checklist_template_items WHERE template_id = ? ORDER BY sort_order, id",
+            (template_id,),
+        ).fetchall()
+        starters = [row for row in rows if row["id"] in template_items.values()]
+        remaining = [row for row in rows if row["id"] not in template_items.values()]
+        ordered = [
+            next(row for row in starters if row["id"] == template_items[first_title]),
+            next(row for row in starters if row["id"] == template_items[second_title]),
+            next(row for row in starters if row["id"] == template_items[third_title]),
+            *remaining,
+        ]
+        for sort_order, row in enumerate(ordered):
+            db.execute(
+                "UPDATE checklist_template_items SET sort_order = ? WHERE id = ?",
+                (sort_order, row["id"]),
+            )
+
+    projects = db.execute(
+        f"SELECT DISTINCT objects.id FROM objects WHERE objects.template_id IN ({placeholders}) "
+        f"OR objects.id IN (SELECT DISTINCT project_checklist_items.object_id FROM project_checklist_items "
+        f"JOIN checklist_template_items ON checklist_template_items.id = project_checklist_items.source_template_item_id "
+        f"WHERE checklist_template_items.template_id IN ({placeholders}))",
+        (*template_ids, *template_ids),
+    ).fetchall()
+    for project in projects:
+        object_id = project["id"]
+        for title, aliases, sort_order in starter_items:
+            alias_placeholders = ",".join("?" for _ in aliases)
+            existing = db.execute(
+                f"SELECT id FROM project_checklist_items WHERE object_id = ? AND "
+                f"(source_template_item_id = ? OR title IN ({alias_placeholders})) "
+                "ORDER BY CASE WHEN source_template_item_id = ? THEN 0 ELSE 1 END, id LIMIT 1",
+                (object_id, template_items[title], *aliases, template_items[title]),
+            ).fetchone()
+            if existing is None:
+                template_item = db.execute(
+                    "SELECT description, validity_years FROM checklist_template_items WHERE id = ?",
+                    (template_items[title],),
+                ).fetchone()
+                db.execute(
+                    "INSERT INTO project_checklist_items (object_id, source_template_item_id, title, description, sort_order, validity_years) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (object_id, template_items[title], title, template_item["description"], sort_order, template_item["validity_years"]),
+                )
+            else:
+                db.execute(
+                    "UPDATE project_checklist_items SET source_template_item_id = ?, title = ?, sort_order = ? WHERE id = ?",
+                    (template_items[title], title, sort_order, existing["id"]),
+                )
+
+        project_items = db.execute(
+            "SELECT id, source_template_item_id FROM project_checklist_items WHERE object_id = ? ORDER BY sort_order, id",
+            (object_id,),
+        ).fetchall()
+        starter_ids = set(template_items.values())
+        starter_rows = {row["source_template_item_id"]: row for row in project_items if row["source_template_item_id"] in starter_ids}
+        rest = [row for row in project_items if row["source_template_item_id"] not in starter_ids]
+        ordered_project_items = [
+            starter_rows[template_items[first_title]],
+            starter_rows[template_items[second_title]],
+            starter_rows[template_items[third_title]],
+            *rest,
+        ]
+        for sort_order, row in enumerate(ordered_project_items):
+            db.execute(
+                "UPDATE project_checklist_items SET sort_order = ? WHERE id = ?",
+                (sort_order, row["id"]),
+            )
+
+    db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('azs_initial_documents_migrated_v1', '1')"
     )
 
 

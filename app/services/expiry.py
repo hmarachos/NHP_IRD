@@ -34,7 +34,7 @@ def add_years(value: str | None, years: int) -> str:
 
 def expiry_state(document, warning_days: int = 30, today: date | None = None) -> dict:
     if document["no_expiration"]:
-        return {"key": "unlimited", "label": "Без срока", "days_left": None}
+        return {"key": "unlimited", "label": "До ввода в эксплуатацию", "days_left": None}
     expiration = parse_document_date(document["valid_until"])
     if expiration is None:
         return {"key": "unknown", "label": "Срок не указан", "days_left": None}

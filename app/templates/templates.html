@@ -39,9 +39,12 @@
     <div class="section-title template-card-title">
         <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
     </div>
-    <ul class="template-items-readonly" data-template-items-readonly>
-        {% for item in entry['items'] %}<li><span class="template-item-title">{{ item.title }}</span>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</li>{% endfor %}
-    </ul>
+    <div class="template-table-wrap">
+        <div class="template-items-table-head" aria-hidden="true"><span>№</span><span>Документ</span><span>Описание</span></div>
+        <ul class="template-items-readonly" data-template-items-readonly>
+            {% for item in entry['items'] %}<li><span class="template-item-number">{{ loop.index }}</span><span class="template-item-title">{{ item.title }}</span><span class="template-item-description">{{ item.description or '—' }}</span></li>{% endfor %}
+        </ul>
+    </div>
     <div class="template-edit-list" data-template-items-edit hidden>
         <div class="template-items">
             {% for item in entry['items'] %}
