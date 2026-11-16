@@ -1,4 +1,10 @@
 /.env
 /.venv
+/venv/
+__pycache__/
+*.py[cod]
 .pdf
 /instance/backups/
+/uploads
+/instance/preview-cache
+/instance
