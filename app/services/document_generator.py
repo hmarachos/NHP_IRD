@@ -50,19 +50,20 @@ def generate_project_document(
     title = DOCUMENT_TYPES[kind]["title"]
     document.core_properties.title = f"{title} — {project['name']}"
     document.core_properties.subject = f"Проект {project['contract_number']}"
-    title_paragraph = document.add_paragraph(style="Title")
-    title_run = title_paragraph.add_run(title)
-    title_run.font.name = "Times New Roman"
-    title_run.font.size = Pt(15)
-    title_run.font.bold = True
-    title_run.font.color.rgb = RGBColor(0, 0, 0)
-    _set_run_font(title_run, "Times New Roman")
-    _add_project_details(document, project)
+    if kind != "request":
+        title_paragraph = document.add_paragraph(style="Title")
+        title_run = title_paragraph.add_run(title)
+        title_run.font.name = "Times New Roman"
+        title_run.font.size = Pt(15)
+        title_run.font.bold = True
+        title_run.font.color.rgb = RGBColor(0, 0, 0)
+        _set_run_font(title_run, "Times New Roman")
+        _add_project_details(document, project)
 
     if kind == "inventory":
         _add_inventory(document, documents, checklist)
     elif kind == "request":
-        _add_missing_data_request(document, checklist, fields)
+        _add_missing_data_request(document, project, checklist, fields)
     else:
         _add_handover_act(document, documents, fields)
 
@@ -168,43 +169,127 @@ def _add_inventory(document: Document, documents: list[Any], checklist: list[Any
     document.add_paragraph(f"Всего документов: {len(documents)}.")
 
 
-def _add_missing_data_request(document: Document, checklist: list[Any], fields: dict[str, str]) -> None:
+def _add_missing_data_request(document: Document, project: Any, checklist: list[Any], fields: dict[str, str]) -> None:
     replacements = [item for item in checklist if item["replacement_required"]]
     missing = [item for item in checklist if item["status"] == "missing" and not item["replacement_required"]]
-    if fields.get("recipient"):
-        p = document.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p.add_run(fields["recipient"])
-    if fields.get("sender"):
-        p = document.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p.add_run(fields["sender"])
+    header = document.add_table(rows=1, cols=2)
+    header.alignment = WD_TABLE_ALIGNMENT.CENTER
+    header.autofit = False
+    header.columns[0].width = Cm(7.5)
+    header.columns[1].width = Cm(8.5)
+    left, right = header.rows[0].cells
+    left.width = Cm(7.5)
+    right.width = Cm(8.5)
+    left.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    right.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    outgoing_date = _date_display(fields.get("date")) or "«___» __________ 20__ г."
+    left.text = f"№ {fields.get('number') or '_______'} от {outgoing_date}\nНа № {fields.get('incoming_number') or '_______'} от {_date_display(fields.get('incoming_date')) or '__________'}"
+    recipient = fields.get("recipient") or project["customer"] or ""
+    right.text = recipient
+    for cell in (left, right):
+        _remove_cell_borders(cell)
+        for paragraph in cell.paragraphs:
+            paragraph.paragraph_format.space_after = Pt(2)
+            for run in paragraph.runs:
+                _set_run_font(run, "Times New Roman")
+                run.font.size = Pt(12)
+                run.font.color.rgb = RGBColor(0, 0, 0)
+    for paragraph in right.paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    document.add_paragraph(f"Исх. № {fields.get('number') or '________'} от {_form_date(fields.get('date'))}")
-    document.add_paragraph("О предоставлении исходных данных", style="Heading 1")
-    document.add_paragraph(
-        "Для выполнения работ по указанному проекту просим предоставить следующие исходные данные:"
-    )
+    subject = document.add_paragraph()
+    subject.paragraph_format.space_before = Pt(12)
+    subject.paragraph_format.space_after = Pt(18)
+    subject.add_run(f"О предоставлении исходных данных\n(объект №{project['contract_number']})")
+
+    greeting_name = fields.get("greeting_name", "").strip()
+    if greeting_name:
+        greeting = document.add_paragraph()
+        greeting.paragraph_format.left_indent = Cm(4)
+        greeting.paragraph_format.space_before = Pt(4)
+        greeting.paragraph_format.space_after = Pt(12)
+        salutation = greeting_name.rstrip("! .")
+        if not salutation.casefold().startswith("уважаемый"):
+            salutation = f"Уважаемый {salutation}"
+        greeting.add_run(f"{salutation}!")
+
+    contract_date = _date_display(fields.get("contract_date"))
+    contract_reference = f"договору №{project['contract_number']}"
+    if contract_date:
+        contract_reference += f" от {contract_date}"
     if missing:
-        _add_table(
-            document,
-            ["№", "Наименование документа", "Примечание"],
-            [[str(i), item["title"], item["description"] or ""] for i, item in enumerate(missing, start=1)],
+        opening_text = (
+            f"В рамках исполнения обязательств по {contract_reference} по объекту "
+            f"«{project['name']}» просим Вас предоставить следующие данные:"
         )
     else:
-        document.add_paragraph("По чек-листу проекта отсутствуют пункты со статусом «Ожидается».")
-    if replacements:
-        document.add_paragraph("Документы, требующие замены", style="Heading 2")
-        _add_table(
-            document,
-            ["№", "Наименование документа", "Комментарий"],
-            [[str(i), item["title"], item["note"] or item["linked_document_note"] or item["description"] or ""] for i, item in enumerate(replacements, start=1)],
+        opening_text = (
+            f"В рамках исполнения обязательств по {contract_reference} по объекту "
+            f"«{project['name']}» просим Вас заменить следующие документы:"
         )
-    elif not missing:
-        document.add_paragraph("Документов, требующих замены, нет.")
-    document.add_paragraph("Просим направить документы в ответ на данный запрос или согласовать срок их предоставления.")
-    document.add_paragraph("С уважением,")
-    document.add_paragraph(fields.get("sender_signatory") or "____________________________")
+    opening = document.add_paragraph(opening_text)
+    opening.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    opening.paragraph_format.first_line_indent = Cm(1.25)
+    opening.paragraph_format.space_after = Pt(5)
+
+    if missing:
+        _add_numbered_request_items(document, missing, include_notes=False)
+    if replacements:
+        heading = document.add_paragraph("Документы, требующие замены:")
+        heading.paragraph_format.space_before = Pt(8)
+        heading.paragraph_format.space_after = Pt(3)
+        _add_numbered_request_items(document, replacements, include_notes=True)
+
+    deadline = _date_display(fields.get("deadline"))
+    if deadline:
+        paragraph = document.add_paragraph(f"Информацию просим представить не позднее {deadline}.")
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        paragraph.paragraph_format.first_line_indent = Cm(1.25)
+        paragraph.paragraph_format.space_before = Pt(8)
+
+    signature = document.add_table(rows=1, cols=2)
+    signature.alignment = WD_TABLE_ALIGNMENT.CENTER
+    signature.autofit = False
+    for cell, width, value in zip(
+        signature.rows[0].cells,
+        (Cm(9), Cm(7)),
+        (fields.get("signatory_position") or "", fields.get("sender_signatory") or ""),
+    ):
+        cell.width = width
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
+        cell.text = value
+        _remove_cell_borders(cell)
+        for paragraph in cell.paragraphs:
+            paragraph.paragraph_format.space_before = Pt(18)
+            paragraph.paragraph_format.space_after = Pt(0)
+    for paragraph in signature.rows[0].cells[1].paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    if fields.get("contact_phone"):
+        phone = document.add_paragraph(fields["contact_phone"])
+        phone.paragraph_format.space_before = Pt(10)
+        phone.paragraph_format.space_after = Pt(0)
+        for run in phone.runs:
+            run.font.size = Pt(9)
+            _set_run_font(run, "Times New Roman")
+
+
+def _add_numbered_request_items(document: Document, items: list[Any], *, include_notes: bool) -> None:
+    for index, item in enumerate(items, start=1):
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        paragraph.paragraph_format.left_indent = Cm(0.8)
+        paragraph.paragraph_format.first_line_indent = Cm(-0.8)
+        paragraph.paragraph_format.space_after = Pt(3)
+        paragraph.add_run(f"{index}. {item['title']}")
+        if include_notes:
+            note = (item["note"] or item["linked_document_note"] or "").strip()
+            if note:
+                comment = document.add_paragraph()
+                comment.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                comment.paragraph_format.left_indent = Cm(1.4)
+                comment.paragraph_format.space_after = Pt(5)
+                comment.add_run(f"Примечание: {note}")
 
 
 def _add_handover_act(document: Document, documents: list[Any], fields: dict[str, str]) -> None:

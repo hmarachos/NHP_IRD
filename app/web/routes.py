@@ -244,9 +244,23 @@ def download_project_document(object_id: int, kind: str):
         flash("Добавьте документы проекта перед созданием акта приёма-передачи.", "error")
         return redirect(url_for("web.project_document_form", object_id=object_id, kind=kind))
 
+    field_limits = {
+        "recipient": 1000,
+        "sender": 250,
+        "sender_signatory": 250,
+        "signatory_position": 500,
+        "greeting_name": 120,
+        "number": 100,
+        "date": 20,
+        "incoming_number": 100,
+        "incoming_date": 20,
+        "contract_date": 20,
+        "deadline": 20,
+        "contact_phone": 100,
+    }
     fields = {
-        name: request.form.get(name, "").strip()[:250]
-        for name in ("recipient", "sender", "sender_signatory", "number", "date")
+        name: request.form.get(name, "").strip()[:limit]
+        for name, limit in field_limits.items()
     }
     content = generate_project_document(kind, project, documents, checklist, fields)
     project_slug = secure_filename(project["name"]) or f"project-{object_id}"

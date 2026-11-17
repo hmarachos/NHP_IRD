@@ -519,3 +519,5 @@
 .checklist-row[data-expiry-band="expired"],
 .checklist-row[data-replacement-required="true"]:hover,
 .checklist-row[data-expiry-band="expired"]:hover{background:#fff0ee!important;border-left:4px solid #d75b50;}
+/* Multi-line addressee in the formal source-data request form. */
+.generation-form textarea{width:100%;min-width:0;min-height:40px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--text);font:inherit;font-size:13px;resize:vertical}
