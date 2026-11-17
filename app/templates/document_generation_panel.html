@@ -16,20 +16,35 @@
     <p class="notice notice-error">В проекте пока нет загруженных документов. Добавьте их перед составлением акта.</p>
     {% endif %}
     {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
-    <form method="post" action="{% if in_modal %}{{ url_for('web.download_project_document', object_id=project.id, kind=kind, partial=1) }}{% else %}{{ url_for('web.download_project_document', object_id=project.id, kind=kind) }}{% endif %}" class="generation-form"{% if in_modal %} data-generation-form{% endif %}>
+    <form method="post" action="{% if in_modal %}{{ url_for('web.download_project_document', object_id=project.id, kind=kind, partial=1) }}{% else %}{{ url_for('web.download_project_document', object_id=project.id, kind=kind) }}{% endif %}" class="generation-form{% if kind == 'request' %} generation-form-request{% endif %}"{% if in_modal %} data-generation-form{% endif %}>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if kind == 'request' %}
-        <label><span>Адресат</span><textarea name="recipient" rows="3" placeholder="Должность, организация и Ф.И.О.">{{ project.customer }}</textarea></label>
-        <label><span>Обращение</span><input name="greeting_name" placeholder="Например: Геннадий Леонидович"></label>
-        <label><span>Исходящий номер</span><input name="number" placeholder="Номер письма"></label>
-        <label><span>Дата письма</span><input type="date" name="date"></label>
-        <label><span>Входящий номер, на который отвечаем</span><input name="incoming_number" placeholder="Необязательно"></label>
-        <label><span>Дата входящего письма</span><input type="date" name="incoming_date"></label>
-        <label><span>Дата договора</span><input type="date" name="contract_date"></label>
-        <label><span>Предельный срок предоставления</span><input type="date" name="deadline"></label>
-        <label><span>Должность подписанта</span><input name="signatory_position" placeholder="Например: Главный инженер проекта"></label>
-        <label><span>Ф.И.О. подписанта</span><input name="sender_signatory" placeholder="Фамилия И.О."></label>
-        <label><span>Контактный телефон</span><input name="contact_phone" placeholder="Необязательно"></label>
+        <fieldset class="generation-section">
+            <legend><i class="bi bi-envelope-paper" aria-hidden="true"></i> Реквизиты письма</legend>
+            <div class="generation-fields">
+                <label><span>Исходящий номер</span><input name="number" placeholder="Номер письма"></label>
+                <label><span>Дата письма</span><input type="date" name="date"></label>
+                <label class="generation-field-wide"><span>Адресат</span><textarea name="recipient" rows="3" placeholder="Должность, организация и Ф.И.О.">{{ project.customer }}</textarea></label>
+            </div>
+        </fieldset>
+        <fieldset class="generation-section">
+            <legend><i class="bi bi-link-45deg" aria-hidden="true"></i> Основание и срок ответа</legend>
+            <div class="generation-fields">
+                <label><span>Входящий номер</span><input name="incoming_number" placeholder="На какое письмо отвечаем"></label>
+                <label><span>Дата входящего письма</span><input type="date" name="incoming_date"></label>
+                <label><span>Дата договора</span><input type="date" name="contract_date"></label>
+                <label><span>Предельный срок предоставления</span><input type="date" name="deadline"></label>
+            </div>
+        </fieldset>
+        <fieldset class="generation-section">
+            <legend><i class="bi bi-person-badge" aria-hidden="true"></i> Обращение и подпись</legend>
+            <div class="generation-fields">
+                <label><span>Обращение</span><input name="greeting_name" placeholder="Например: Геннадий Леонидович"></label>
+                <label><span>Должность подписанта</span><input name="signatory_position" placeholder="Например: Главный инженер проекта"></label>
+                <label><span>Ф.И.О. подписанта</span><input name="sender_signatory" placeholder="Фамилия И.О."></label>
+                <label><span>Контактный телефон</span><input name="contact_phone" placeholder="Необязательно"></label>
+            </div>
+        </fieldset>
         {% elif kind == 'handover' %}
         <label><span>Передающая сторона</span><input name="sender" placeholder="Организация или ответственное лицо"></label>
         <label><span>Принимающая сторона</span><input name="recipient" placeholder="Организация или ответственное лицо"></label>
@@ -38,7 +53,7 @@
         {% if kind == 'handover' %}<label><span>Дата документа</span><input type="date" name="date"></label>{% endif %}
         <div class="generation-actions">
             {% if not in_modal %}<a class="secondary-button" href="{{ url_for('web.object_workspace', object_id=project.id) }}">Назад к проекту</a>{% endif %}
-            <button type="submit" {% if kind == 'request' and missing_count == 0 and replacement_count == 0 or kind == 'handover' and not documents %}disabled{% endif %}>Скачать Word</button>
+            <button type="submit" data-idle-label="{{ 'Сформировать письмо Word' if kind == 'request' else 'Скачать Word' }}" {% if kind == 'request' and missing_count == 0 and replacement_count == 0 or kind == 'handover' and not documents %}disabled{% endif %}><i class="bi bi-file-earmark-word" aria-hidden="true"></i> {{ 'Сформировать письмо Word' if kind == 'request' else 'Скачать Word' }}</button>
         </div>
     </form>
     {% if not in_modal and kind == 'inventory' %}<a class="generation-back" href="{{ url_for('web.object_workspace', object_id=project.id) }}">← Назад к проекту</a>{% endif %}
