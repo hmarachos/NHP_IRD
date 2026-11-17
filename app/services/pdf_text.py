@@ -7,17 +7,24 @@ class PdfTextExtractor:
         self.tesseract_lang = tesseract_lang
         self.dpi = dpi
 
-    def extract(self, pdf_path: Path) -> str:
+    def extract(self, pdf_path: Path, *, correspondence: bool = False) -> str:
         if pdf_path.suffix.lower() != ".pdf":
             return self._extract_image(pdf_path)
         text = self._extract_embedded_text(pdf_path)
         if self._has_enough_text(text):
-            if self._is_correspondence(text) and not self._has_numbered_date(text):
-                header = self._extract_correspondence_header(pdf_path)
-                if header:
-                    return f"{header}\n\n{text}"
+            if correspondence or self._is_correspondence(text):
+                return self._prepend_correspondence_header(pdf_path, text)
             return text
-        return self._extract_with_ocr(pdf_path)
+        text = self._extract_with_ocr(pdf_path)
+        if correspondence or self._is_correspondence(text):
+            return self._prepend_correspondence_header(pdf_path, text)
+        return text
+
+    def _prepend_correspondence_header(self, pdf_path: Path, text: str) -> str:
+        header = self._extract_correspondence_header(pdf_path)
+        if not header:
+            return text
+        return f"--- letterhead ---\n{header}\n--- document body ---\n{text}"
 
     @staticmethod
     def _is_correspondence(text: str) -> bool:
@@ -29,12 +36,13 @@ class PdfTextExtractor:
 
     @staticmethod
     def _has_numbered_date(text: str) -> bool:
-        date = r"[0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2}"
-        return bool(re.search(
-            rf"(?:№|N(?:o|º|°)?)\s*[\wА-Яа-яЁё./-]{{2,30}}\s+(?:от\s*)?{date}",
-            text,
-            re.IGNORECASE,
-        ))
+        flattened = re.sub(r"\s+", " ", text or "")
+        date = r"(?:[0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2}|(?:19|20)\d{2}[./-][01]?\d[./-][0-3]?\d)"
+        number = r"(?:№|N(?:o|º|°)?)\s*[\wА-Яа-яЁё./\\-]{1,35}"
+        return bool(
+            re.search(rf"{number}.{{0,100}}?{date}", flattened, re.IGNORECASE)
+            or re.search(rf"{date}.{{0,70}}?{number}", flattened, re.IGNORECASE)
+        )
 
     def _extract_correspondence_header(self, pdf_path: Path) -> str:
         """OCR the first-page letterhead strip when the PDF text layer omits it."""
@@ -48,15 +56,20 @@ class PdfTextExtractor:
                 return ""
             image = pdf[0].render(scale=self.dpi / 72).to_pil().convert("RGB")
             width, height = image.size
-            header_image = image.crop((0, 0, width, int(height * 0.18)))
+            header_image = image.crop((0, 0, width, int(height * 0.30)))
             header_image = ImageOps.autocontrast(ImageOps.grayscale(header_image))
-            text = pytesseract.image_to_string(
-                header_image,
-                lang=self.tesseract_lang,
-                config="--oem 1 --psm 11 -c preserve_interword_spaces=1",
-            ).strip()
-            if self._has_numbered_date(text):
-                return f"--- letterhead ---\n{text}"
+            candidates = []
+            for page_mode in (6, 11):
+                text = pytesseract.image_to_string(
+                    header_image,
+                    lang=self.tesseract_lang,
+                    config=f"--oem 1 --psm {page_mode} -c preserve_interword_spaces=1",
+                ).strip()
+                if text:
+                    score = (100 if self._has_numbered_date(text) else 0) + min(len(text), 500) / 100
+                    candidates.append((score, text))
+            if candidates:
+                return max(candidates, key=lambda candidate: candidate[0])[1]
         except Exception:
             # Letterhead OCR is a supplement; the embedded text remains usable
             # if this optional targeted pass cannot run.

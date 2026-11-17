@@ -20,6 +20,7 @@ from app.repositories import ChecklistRepository, CorrespondenceRepository, Docu
 from app.services.expiry import attach_expiry, expiry_state, iso_date
 from app.services.checklist_document_fields import project_assignment_fields
 from app.services.field_extractor import RegexFieldExtractor
+from app.services.organization_names import normalize_organization_forms
 from app.services.pipeline import DocumentProcessingPipeline
 from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
 from app.services.pdf_text import PdfTextExtractor
@@ -763,7 +764,7 @@ def upload_correspondence(object_id: int):
     status, error = "processed", ""
     try:
         extraction_path = word_preview_path(path) if is_word_document(path) else path
-        raw_text = extractor.extract(extraction_path)
+        raw_text = extractor.extract(extraction_path, correspondence=True)
         values.update(_extract_correspondence_fields(raw_text))
         if not raw_text.strip():
             status, error = "error", "Не удалось распознать текст письма. Заполните реквизиты вручную."
@@ -806,8 +807,8 @@ def update_correspondence(object_id: int, letter_id: int):
         direction=direction,
         number=request.form.get("number", "").strip()[:100],
         letter_date=_normalize_letter_date(request.form.get("letter_date", "")),
-        sender=request.form.get("sender", "").strip()[:500],
-        recipient=request.form.get("recipient", "").strip()[:500],
+        sender=normalize_organization_forms(request.form.get("sender", "").strip())[:500],
+        recipient=normalize_organization_forms(request.form.get("recipient", "").strip())[:500],
         subject=request.form.get("subject", "").strip()[:500],
         summary=request.form.get("summary", "").strip()[:4000],
         valid_until=request.form.get("valid_until", "").strip()[:20],
@@ -1268,6 +1269,13 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
     cleaned = text.strip()
     if not cleaned:
         return values
+    first_page = re.split(r"---\s*page\s+2\s*---", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
+    header_match = re.search(
+        r"---\s*letterhead\s*---\s*(.*?)\s*---\s*document body\s*---",
+        cleaned,
+        re.IGNORECASE | re.DOTALL,
+    )
+    header_fields = _extract_correspondence_header_requisites(header_match.group(1) if header_match else "")
 
     if current_app.config.get("USE_AI") and current_app.config.get("OPENAI_API_KEY"):
         try:
@@ -1283,9 +1291,13 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
                 model=current_app.config["OPENAI_MODEL"],
                 instructions=(
                     "Извлеки реквизиты делового письма на русском языке. Верни только данные самого письма: "
-                    "номер, дату письма в ISO YYYY-MM-DD, полное наименование отправителя, получателя, "
+                    "номер, дату письма в ISO YYYY-MM-DD, наименование отправителя и получателя с сокращёнными "
+                    "организационно-правовыми формами (например: унитарное предприятие — УП, "
+                    "республиканское унитарное предприятие — РУП, общество с ограниченной ответственностью — ООО), "
                     "тему и краткое содержание в 1-3 предложениях. Учитывай шапку, исходящий номер и дату, "
-                    "адресата и подпись/организацию автора. Не выдумывай отсутствующие значения; тогда верни пустую строку. "
+                    "в первую очередь проверь верхний колонтитул первой страницы: синюю строку с исходящим номером и датой. "
+                    "Номер и дату бери из одной строки, если она есть. Учитывай адресата и подпись/организацию автора. "
+                    "Не выдумывай отсутствующие значения; тогда верни пустую строку. "
                     "Срок действия документа не извлекай."
                 ),
                 input=cleaned[:24000],
@@ -1299,13 +1311,19 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
         except Exception:
             logger.exception("AI correspondence extraction failed; using local extraction")
 
+    # Read the blue outgoing number/date line in the first-page letterhead as
+    # one pair and let it override AI results that may come from body citations.
+    for key in ("number", "letter_date"):
+        if header_fields.get(key):
+            values[key] = header_fields[key]
+
     date_pattern = r"(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:19|20)\d{2}"
     if not values["letter_date"]:
-        match = re.search(rf"(?:от\s*)?({date_pattern})", cleaned, re.IGNORECASE)
+        match = re.search(rf"(?:от\s*)?({date_pattern})", first_page[:5000], re.IGNORECASE)
         if match:
             values["letter_date"] = _normalize_letter_date(match.group(1))
     if not values["number"]:
-        match = re.search(r"(?:№|N(?:o|º|°)?)\s*([\wА-Яа-яЁё./-]{1,40})", cleaned, re.IGNORECASE)
+        match = re.search(r"(?:№|N(?:o|º|°)?)\s*([\wА-Яа-яЁё./\\-]{1,40})", first_page[:5000], re.IGNORECASE)
         if match:
             values["number"] = match.group(1).strip(" .,:;-")
     lines = [re.sub(r"\s+", " ", line).strip(" \t\r\n:;—-") for line in cleaned.splitlines()]
@@ -1315,7 +1333,22 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
         if match:
             values["recipient"] = re.sub(r"\s+", " ", match.group(1)).strip()
     if not values["sender"]:
-        match = re.search(r"((?:РУП|ОАО|ОДО|ООО|УП|ЗАО|Государственн\w+ предприятие)[^\n]{3,180}?)\s+(?:просит|просим|сообщает|сообщаем|направляет|направляем|информирует|информируем)\b", cleaned, re.IGNORECASE)
+        organization_start = (
+            r"(?:РУП|ОАО|ОДО|ООО|УП|ЗАО|ЧУП|"
+            r"Республиканск\w*\s+(?:дочерн\w*\s+)?унитарн\w*\s+предприяти\w*|"
+            r"Коммунальн\w*\s+унитарн\w*\s+предприяти\w*|"
+            r"Частн\w*\s+унитарн\w*\s+предприяти\w*|"
+            r"Унитарн\w*\s+предприяти\w*|"
+            r"Обществ\w*\s+с\s+(?:ограниченной|дополнительной)\s+ответственностью|"
+            r"(?:Открытое|Закрытое)\s+акционерное\s+общество|"
+            r"Государственн\w+ предприятие)"
+        )
+        match = re.search(
+            rf"({organization_start}\b[^\n]{{3,180}}?)\s+"
+            r"(?:просит|просим|сообщает|сообщаем|направляет|направляем|информирует|информируем)\b",
+            cleaned,
+            re.IGNORECASE,
+        )
         if match:
             values["sender"] = re.sub(r"\s+", " ", match.group(1)).strip(" ,.;")
     if not values["subject"]:
@@ -1333,7 +1366,43 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
                 break
         values["summary"] = body[:600].strip()
     values["letter_date"] = _normalize_letter_date(values["letter_date"])
+    for key in ("sender", "recipient"):
+        values[key] = normalize_organization_forms(values[key])
     return values
+
+
+def _extract_correspondence_header_requisites(header: str) -> dict[str, str]:
+    """Extract the numbered date pair from the top letterhead OCR only."""
+    result = {"number": "", "letter_date": ""}
+    if not header.strip():
+        return result
+    date_pattern = re.compile(
+        r"(?<!\d)([0-3]?\d)\s*[./-]\s*([01]?\d)\s*[./-]\s*((?:19|20)\d{2})(?!\d)"
+    )
+    number_pattern = re.compile(
+        r"(?:исх(?:одящий|\.)?\s*)?(?:№|N(?:o|º|°)?|#)\s*([A-ZА-ЯЁ0-9]+(?:\s*[-./\\]\s*[A-ZА-ЯЁ0-9]+){0,6})",
+        re.IGNORECASE,
+    )
+    lines = [re.sub(r"\s+", " ", line).strip() for line in header.splitlines() if line.strip()]
+    for line in lines:
+        date_match = date_pattern.search(line)
+        number_match = number_pattern.search(line)
+        if date_match and number_match:
+            result["letter_date"] = _normalize_letter_date(
+                f"{date_match.group(1)}.{date_match.group(2)}.{date_match.group(3)}"
+            )
+            result["number"] = re.sub(r"\s+", "", number_match.group(1)).strip(" .,:;-")
+            return result
+    flattened = " ".join(lines)
+    date_match = date_pattern.search(flattened)
+    if date_match:
+        result["letter_date"] = _normalize_letter_date(
+            f"{date_match.group(1)}.{date_match.group(2)}.{date_match.group(3)}"
+        )
+    number_match = number_pattern.search(flattened)
+    if number_match:
+        result["number"] = re.sub(r"\s+", "", number_match.group(1)).strip(" .,:;-")
+    return result
 
 
 def _apply_checklist_letter_subject(parsed: ParsedDocument, item_title: str) -> bool:

@@ -6,6 +6,7 @@ from app.models import ParsedDocument
 from app.services.ai_extractor import AiFieldExtractor
 from app.services.classifier import DocumentClassifier
 from app.services.field_extractor import RegexFieldExtractor
+from app.services.organization_names import normalize_organization_forms
 from app.services.pdf_text import PdfTextExtractor
 from app.services.word_documents import is_word_document, word_preview_path
 
@@ -211,6 +212,7 @@ class DocumentProcessingPipeline:
             parsed.working_title = letter_title
             if not self._title_is_explicit(parsed.official_title, text):
                 parsed.official_title = letter_title
+        parsed.issuer = normalize_organization_forms(parsed.issuer)
         parsed.raw_text = text
         return parsed
 

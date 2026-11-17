@@ -2,6 +2,7 @@ import re
 from datetime import date
 
 from app.models import ParsedDocument
+from app.services.organization_names import normalize_organization_forms
 
 
 DATE_RE = re.compile(r"(?<!\d)([0-3]?\d[./-][01]?\d[./-](?:19|20)\d{2})(?!\d)")
@@ -290,7 +291,7 @@ class RegexFieldExtractor:
             value,
             flags=re.IGNORECASE,
         )
-        return value.strip(" .,:;-")
+        return normalize_organization_forms(value.strip(" .,:;-"))
 
     def _extract_issue_date(self, text: str) -> str:
         first_page = text.split("--- page 2 ---", 1)[0]

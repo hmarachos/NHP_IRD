@@ -49,8 +49,9 @@
         <label><span>Передающая сторона</span><input name="sender" placeholder="Организация или ответственное лицо"></label>
         <label><span>Принимающая сторона</span><input name="recipient" placeholder="Организация или ответственное лицо"></label>
         <label><span>Номер акта</span><input name="number" placeholder="Оставьте пустым для заполнения от руки"></label>
+        <label><span>Дата договора</span><input type="date" name="contract_date"></label>
         {% endif %}
-        {% if kind == 'handover' %}<label><span>Дата документа</span><input type="date" name="date"></label>{% endif %}
+        {% if kind == 'handover' %}<label><span>Дата акта</span><input type="date" name="date"></label>{% endif %}
         <div class="generation-actions">
             {% if not in_modal %}<a class="secondary-button" href="{{ url_for('web.object_workspace', object_id=project.id) }}">Назад к проекту</a>{% endif %}
             <button type="submit" data-idle-label="{{ 'Сформировать письмо Word' if kind == 'request' else 'Скачать Word' }}" {% if kind == 'request' and missing_count == 0 and replacement_count == 0 or kind == 'handover' and not documents %}disabled{% endif %}><i class="bi bi-file-earmark-word" aria-hidden="true"></i> {{ 'Сформировать письмо Word' if kind == 'request' else 'Скачать Word' }}</button>

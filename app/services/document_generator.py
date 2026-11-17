@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from docx import Document
@@ -10,6 +12,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+
+
+HANDOVER_TEMPLATE = Path(__file__).resolve().parents[1] / "document_templates" / "handover_act_template.docx"
 
 
 DOCUMENT_TYPES = {
@@ -44,6 +49,15 @@ def generate_project_document(
     if kind not in DOCUMENT_TYPES:
         raise ValueError("Неизвестный тип документа.")
     fields = fields or {}
+    if kind == "handover":
+        document = Document(str(HANDOVER_TEMPLATE))
+        document.core_properties.title = f"{DOCUMENT_TYPES[kind]['title']} — {project['name']}"
+        document.core_properties.subject = f"Проект {project['contract_number']}"
+        _populate_handover_template(document, project, documents, fields)
+        output = BytesIO()
+        document.save(output)
+        return output.getvalue()
+
     document = Document()
     _set_document_defaults(document)
 
@@ -62,10 +76,8 @@ def generate_project_document(
 
     if kind == "inventory":
         _add_inventory(document, documents, checklist)
-    elif kind == "request":
-        _add_missing_data_request(document, project, checklist, fields)
     else:
-        _add_handover_act(document, documents, fields)
+        _add_missing_data_request(document, project, checklist, fields)
 
     output = BytesIO()
     document.save(output)
@@ -298,47 +310,82 @@ def _add_numbered_request_items(document: Document, items: list[Any], *, include
                 comment.add_run(f"Примечание: {note}")
 
 
-def _add_handover_act(document: Document, documents: list[Any], fields: dict[str, str]) -> None:
-    act_date = _form_date(fields.get("date"))
-    act_number = fields.get("number") or "________"
-    document.add_paragraph(f"№ {act_number} от {act_date}")
-    document.add_paragraph(
-        f"Передающая сторона: {fields.get('sender') or '________________________________________'}"
+def _populate_handover_template(document: Document, project: Any, documents: list[Any], fields: dict[str, str]) -> None:
+    """Fill the supplied handover form while retaining its layout and styles."""
+    paragraphs = document.paragraphs
+    if len(paragraphs) < 18 or not document.tables:
+        raise ValueError("Шаблон акта приёма-передачи имеет неожиданную структуру.")
+
+    contract_date = _date_display(fields.get("contract_date"))
+    contract_date_text = contract_date or "__ _____________ 20__"
+    _replace_paragraph_text(
+        paragraphs[1],
+        f"к договору № {project['contract_number']} от {contract_date_text} г.",
     )
-    document.add_paragraph(
-        f"Принимающая сторона: {fields.get('recipient') or '________________________________________'}"
-    )
-    document.add_paragraph(
-        "Стороны составили настоящий акт о том, что передающая сторона передала, а принимающая сторона приняла перечисленные ниже исходные данные по проекту."
-    )
-    if documents:
-        _add_table(
-            document,
-            ["№", "Наименование документа", "Кем выдан", "Дата документа", "Файл"],
-            [[
-                str(i),
-                _document_title(item),
-                item["issuer"] or "",
-                _date_display(item["issue_date"]),
-                item["original_filename"] or "",
-            ] for i, item in enumerate(documents, start=1)],
-        )
-    else:
-        document.add_paragraph("Документы для передачи не указаны.")
-    document.add_paragraph("Замечания при приёме: __________________________________________________________")
-    document.add_paragraph("Настоящий акт составлен в двух экземплярах, имеющих равную силу.")
-    _add_signature_blocks(document, fields)
+    paragraphs[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    act_meta = document.add_paragraph()
+    act_meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    act_meta.paragraph_format.space_after = Pt(0)
+    run = act_meta.add_run(f"№ {fields.get('number') or '________'} от {_form_date(fields.get('date'))}")
+    _set_run_font(run, "Times New Roman")
+    run.font.size = Pt(12)
+    paragraphs[0]._p.addnext(act_meta._p)
+
+    _replace_paragraph_text(paragraphs[3], str(project["name"] or ""))
+    paragraphs[3].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _replace_paragraph_text(paragraphs[4], "")
+    sender = (fields.get("sender") or "").strip()
+    recipient = (fields.get("recipient") or "").strip()
+    if sender:
+        _replace_paragraph_text(paragraphs[10], f"Сдал: {sender}")
+    if recipient:
+        _replace_paragraph_text(paragraphs[14], f"Принял: {recipient}")
+
+    table = document.tables[0]
+    for column, width in zip(table.columns, (Cm(8.1), Cm(3.2), Cm(4.8))):
+        column.width = width
+    header = table.rows[0]
+    header_properties = header._tr.get_or_add_trPr()
+    if not header_properties.find(qn("w:tblHeader")):
+        repeat = OxmlElement("w:tblHeader")
+        repeat.set(qn("w:val"), "true")
+        header_properties.append(repeat)
+
+    for item in documents:
+        title = _document_title(item)
+        number = (item["document_number"] or "").strip()
+        issue_date = _date_display(item["issue_date"])
+        details = ", ".join(part for part in (issue_date, f"№ {number}" if number else "") if part)
+        label = f"{title} ({details})" if details else title
+        note = (item["note"] or "").strip()
+        row_xml = deepcopy(header._tr)
+        row_properties = row_xml.get_or_add_trPr()
+        repeated_header = row_properties.find(qn("w:tblHeader"))
+        if repeated_header is not None:
+            row_properties.remove(repeated_header)
+        table._tbl.append(row_xml)
+        cells = table.rows[-1].cells
+        for index, (cell, value) in enumerate(zip(cells, (label, "1", note))):
+            cell.text = value
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if index == 1 else WD_ALIGN_PARAGRAPH.LEFT
+                paragraph.paragraph_format.space_before = Pt(2)
+                paragraph.paragraph_format.space_after = Pt(2)
+                for run in paragraph.runs:
+                    _set_run_font(run, "Times New Roman")
+                    run.font.size = Pt(11)
+                    run.font.bold = False
 
 
-def _add_signature_blocks(document: Document, fields: dict[str, str]) -> None:
-    table = document.add_table(rows=1, cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    for cell, party in zip(table.rows[0].cells, (fields.get("sender") or "Передающая сторона", fields.get("recipient") or "Принимающая сторона")):
-        cell.width = Cm(7.5)
-        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-        cell.text = f"{party}\n\n________________ / __________________\n       подпись                 Ф.И.О."
-        _remove_cell_borders(cell)
+def _replace_paragraph_text(paragraph: Any, value: str) -> None:
+    if paragraph.runs:
+        paragraph.runs[0].text = value
+        for run in paragraph.runs[1:]:
+            run.text = ""
+        return
+    paragraph.add_run(value)
 
 
 def _add_table(document: Document, headings: list[str], rows: list[list[str]]) -> None:
