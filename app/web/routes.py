@@ -164,6 +164,16 @@ def object_workspace(object_id: int):
     checklist_repository.sync_documents_to_checklist(object_id, documents)
     checklist = checklist_repository.list_project_items(object_id)
     checklist = _attach_checklist_expiry(checklist, warning_days)
+    template_items = checklist_repository.list_template_items(obj["template_id"]) if obj["template_id"] else []
+    existing_template_item_ids = {
+        row["source_template_item_id"] for row in checklist if row["source_template_item_id"] is not None
+    }
+    existing_titles = {checklist_repository._normalize(row["title"]) for row in checklist}
+    template_items = [
+        {**dict(item), "already_added": item["id"] in existing_template_item_ids
+         or checklist_repository._normalize(item["title"]) in existing_titles}
+        for item in template_items
+    ]
     documents_by_id = {document["id"]: document for document in documents}
     checklist_documents = {}
     for link in checklist_repository.list_linked_documents(object_id):
@@ -181,6 +191,7 @@ def object_workspace(object_id: int):
         documents=documents,
         archived_documents=archived_documents,
         checklist=checklist,
+        template_items=template_items,
         checklist_documents=checklist_documents,
         multi_document_item_ids=multi_document_item_ids,
         missing_count=sum(row["status"] == "missing" for row in checklist),
@@ -440,13 +451,27 @@ def update_checklist_replacement(object_id: int, item_id: int):
 @bp.post("/objects/<int:object_id>/checklist/add")
 def add_checklist_item(object_id: int):
     obj = ObjectRepository().get(object_id)
+    add_mode = request.form.get("add_mode", "custom")
+    template_item_id = request.form.get("template_item_id", "").strip()
     title = request.form.get("title", "").strip()[:300]
     note = request.form.get("note", "").strip()[:2000]
     if obj is None or obj["archived_at"]:
         abort(404)
-    if not title:
+    repository = ChecklistRepository()
+    if add_mode == "template":
+        try:
+            added = repository.add_project_template_item(object_id, int(template_item_id)) if template_item_id else None
+        except (TypeError, ValueError):
+            added = None
+        if added is None:
+            flash("Пункт шаблона уже добавлен или не относится к шаблону проекта.", "error")
+        else:
+            flash("Документ из шаблона добавлен в комплектность проекта.", "success")
+    elif add_mode != "custom":
+        abort(400)
+    elif not title:
         flash("Укажите название документа.", "error")
-    elif ChecklistRepository().add_project_item(object_id, title, note) is None:
+    elif repository.add_project_item(object_id, title, note) is None:
         flash("Документ с таким названием уже есть в списке.", "error")
     else:
         flash("Документ добавлен в комплектность проекта.", "success")

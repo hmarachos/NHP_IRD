@@ -721,6 +721,55 @@ class ChecklistRepository:
         db.commit()
         return int(cursor.lastrowid)
 
+    def add_project_template_item(self, object_id: int, template_item_id: int) -> int | None:
+        """Add one item from this project's assigned template to its checklist."""
+        db = get_db()
+        template_item = db.execute(
+            """
+            SELECT template_items.*
+            FROM checklist_template_items AS template_items
+            JOIN objects ON objects.template_id = template_items.template_id
+            WHERE objects.id = ? AND template_items.id = ?
+            """,
+            (object_id, template_item_id),
+        ).fetchone()
+        if template_item is None:
+            return None
+
+        normalized_title = self._normalize(template_item["title"])
+        existing = db.execute(
+            "SELECT source_template_item_id, title FROM project_checklist_items WHERE object_id = ?",
+            (object_id,),
+        )
+        if any(
+            row["source_template_item_id"] == template_item_id
+            or self._normalize(row["title"]) == normalized_title
+            for row in existing
+        ):
+            return None
+
+        sort_order = db.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project_checklist_items WHERE object_id = ?",
+            (object_id,),
+        ).fetchone()[0]
+        cursor = db.execute(
+            """
+            INSERT INTO project_checklist_items
+                (object_id, source_template_item_id, title, description, sort_order, validity_years)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                object_id,
+                template_item_id,
+                template_item["title"],
+                template_item["description"],
+                sort_order,
+                template_item["validity_years"],
+            ),
+        )
+        db.commit()
+        return int(cursor.lastrowid)
+
     def update_project_item(
         self, object_id: int, item_id: int, status: str, document_id: int | None = None,
         issue_date: str | None = None, note: str | None = None,

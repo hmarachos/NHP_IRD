@@ -343,6 +343,11 @@
 .checklist-add-optional{color:#89969b;font-size:10px;font-weight:500}
 .checklist-add-form textarea{width:100%;min-height:44px;max-height:45vh;overflow-y:hidden;resize:none;overflow-wrap:anywhere;white-space:pre-wrap;word-break:break-word;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font:inherit;font-size:14px;line-height:1.5}
 .checklist-add-form textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);border-color:var(--accent)}
+.checklist-add-form select{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font:inherit;font-size:14px}
+.checklist-add-form select:focus{outline:2px solid color-mix(in srgb,var(--accent) 28%,transparent);border-color:var(--accent)}
+.checklist-add-custom-fields{display:grid;gap:14px}
+.checklist-add-custom-fields>label{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
+.checklist-add-custom-fields[hidden],.checklist-add-form>label[hidden]{display:none}
 @media(max-width:560px){.checklist-add-dialog{width:calc(100vw - 24px);padding:18px}}
 
 .checklist-note-display[data-note-empty="true"]{text-align:center}
