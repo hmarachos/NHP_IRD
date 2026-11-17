@@ -517,7 +517,11 @@
         let columnWidths = distributeWidths(availableWidth, defaults);
         try {
             const saved = JSON.parse(localStorage.getItem(columnStorageKey) || 'null');
-            if (Array.isArray(saved) && saved.length === defaults.length && saved.every((value) => Number.isFinite(value) && value > 0)) columnWidths = saved.map((value, index) => Math.max(minWidths[index], value));
+            if (Array.isArray(saved) && saved.length === defaults.length && saved.every((value) => Number.isFinite(value) && value > 0)) {
+                columnWidths = saved.map((value, index) => Math.max(minWidths[index], value));
+                const fixedWidth = columnWidths.slice(0, -1).reduce((sum, value) => sum + value, 0);
+                if (fixedWidth + columnWidths[columnWidths.length - 1] < availableWidth) columnWidths[columnWidths.length - 1] += availableWidth - fixedWidth - columnWidths[columnWidths.length - 1];
+            }
             else {
                 const previous = JSON.parse(localStorage.getItem('ird-checklist-column-widths-v2') || 'null');
                 if (Array.isArray(previous) && previous.length === defaults.length && previous.every((value) => Number.isFinite(value) && value > 0)) columnWidths = distributeWidths(availableWidth, previous);
