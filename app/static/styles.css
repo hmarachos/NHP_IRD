@@ -245,6 +245,8 @@
 .checklist-upload-trigger{display:grid;width:34px;height:34px;flex:0 0 auto;place-items:center;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--accent-dark);cursor:pointer}
 .checklist-upload-trigger:hover{border-color:var(--line);background:#f7f8f8}
 .checklist-upload-trigger i{font-size:17px}
+.checklist-inline-action{display:grid;width:32px;height:32px;flex:0 0 auto;place-items:center;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}
+.checklist-inline-action:hover{border-color:var(--line);background:#f7f8f8;color:var(--accent-dark)}
 .checklist-row-delete-form{margin:0}
 .checklist-row-delete{display:none;width:32px;height:32px;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--danger);font-size:15px}
 .checklist-row-delete:hover{background:#fff0ee}
