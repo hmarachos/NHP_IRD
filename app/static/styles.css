@@ -305,7 +305,8 @@
 .checklist-replacement-field.is-saving{opacity:.55}
 .checklist-replacement-field.has-save-error input{outline:2px solid var(--danger);outline-offset:2px}
 .checklist-expiry-cell strong{display:block;color:#53656a;font-size:10px;font-weight:700}
-.checklist-expiry-cell a{font-size:10px;font-weight:750;text-decoration:none}
+.checklist-expiry-cell button{padding:0;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
+.checklist-expiry-cell button:hover{text-decoration:underline}
 .checklist-note-display{min-width:0;overflow-wrap:anywhere;color:var(--muted);font-size:11px;line-height:1.4}
 .checklist-menu-action{display:flex;width:100%;min-height:38px;align-items:center;gap:9px;padding:8px 9px;border:0;border-radius:8px;background:#f6f8f8;color:var(--text);font-size:12px;font-weight:650;text-align:left;cursor:pointer}
 .checklist-menu-action:hover{background:#edf5f2;color:var(--accent-dark)}

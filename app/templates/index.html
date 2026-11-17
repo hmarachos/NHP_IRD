@@ -18,7 +18,7 @@
 </section>
 {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
 {% if alerts %}
-<section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.document_detail', document_id=alert.document.id) }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.working_title or alert.document.original_filename }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
+<section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.object_workspace', object_id=alert.document.object_id, tab='checklist', open_document=alert.document.id) }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.working_title or alert.document.original_filename }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
 {% endif %}
 <section class="project-area project-table-area">
     <div class="section-title"><div><h2>Активные проекты</h2><p>{{ objects|length }} в работе</p></div></div>

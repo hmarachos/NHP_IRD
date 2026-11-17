@@ -815,14 +815,14 @@ def document_detail(document_id: int):
     document = DocumentRepository().get(document_id)
     if document is None or document["archived_at"]:
         abort(404)
-    obj = ObjectRepository().get(document["object_id"]) if document["object_id"] else None
-    return render_template(
-        "document.html",
-        document=attach_expiry(document, current_app.config["EXPIRY_WARNING_DAYS"]),
-        object=obj,
-        issue_date_iso=iso_date(document["issue_date"]),
-        valid_until_iso=iso_date(document["valid_until"]),
-    )
+    if not document["object_id"]:
+        abort(404)
+    return redirect(url_for(
+        "web.object_workspace",
+        object_id=document["object_id"],
+        tab="checklist",
+        open_document=document_id,
+    ))
 
 
 @bp.post("/documents/<int:document_id>/fields")
