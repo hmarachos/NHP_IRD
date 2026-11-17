@@ -730,25 +730,23 @@ def upload_correspondence(object_id: int):
         word_files = [item for item in saved_files if is_word_document(item[2])]
         pdf_files = [item for item in saved_files if item[3] == "application/pdf"]
         image_files = [item for item in saved_files if item[3].startswith("image/")]
-        if word_files and len(saved_files) != 1:
-            raise ValueError("Загружайте один Word-файл за раз.")
-        if pdf_files and len(saved_files) != 1:
-            raise ValueError("Выберите один PDF либо несколько изображений страниц.")
-        if len(image_files) != len(saved_files):
-            raise ValueError("Для многостраничного письма выберите один PDF или несколько изображений страниц.")
         if word_files:
+            if len(saved_files) != 1:
+                raise ValueError("Загружайте один Word-файл за раз.")
             prepared_files = word_files
         elif pdf_files:
+            if len(saved_files) != 1:
+                raise ValueError("Выберите один PDF либо несколько изображений страниц.")
             prepared_files = pdf_files
-        else:
-            if not image_files:
-                raise ValueError("Выберите PDF, Word-файл или изображения страниц письма.")
+        elif image_files and len(image_files) == len(saved_files):
             combined_path = Path(current_app.config["UPLOAD_DIR"]) / f"{uuid4().hex}_letter-pages.pdf"
             _combine_image_uploads(image_files, combined_path)
             for _name, _stored, source_path, _mime in image_files:
                 source_path.unlink(missing_ok=True)
             prepared_files = [(f"Письмо — {len(image_files)} страниц.pdf", combined_path.name, combined_path, "application/pdf")]
             saved_files = prepared_files
+        else:
+            raise ValueError("Выберите один PDF, один Word-файл или несколько изображений страниц письма.")
     except Exception as exc:
         for _name, _stored, source_path, _mime in saved_files:
             source_path.unlink(missing_ok=True)
