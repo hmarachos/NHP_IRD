@@ -21,7 +21,12 @@ from app.services.checklist_document_fields import project_assignment_fields
 from app.services.field_extractor import RegexFieldExtractor
 from app.services.organization_names import normalize_organization_forms
 from app.services.pipeline import DocumentProcessingPipeline
-from app.services.document_generator import DOCUMENT_TYPES, generate_project_document
+from app.services.document_generator import (
+    DOCUMENT_TYPES,
+    REQUEST_TEXT_SPEC,
+    generate_missing_data_request_text,
+    generate_project_document,
+)
 from app.services.pdf_text import PdfTextExtractor
 from app.services.storage import StorageService
 from app.services.word_documents import WORD_MIME_TYPES, is_word_document, remove_word_preview, word_preview_path
@@ -187,6 +192,14 @@ def object_workspace(object_id: int):
         row["id"] for row in checklist
         if checklist_repository.allows_multiple_documents(row["title"])
     }
+    received_count = sum(
+        bool(
+            (row["id"] in multi_document_item_ids and checklist_documents.get(row["id"]))
+            or (row["validity_years"] and row["issue_date"])
+            or (row["document_id"] and row["document_id"] in documents_by_id)
+        )
+        for row in checklist
+    )
     archived_documents = [attach_expiry(row, warning_days) for row in DocumentRepository().list_archived_by_object(object_id)]
     return render_template(
         "object.html",
@@ -197,8 +210,8 @@ def object_workspace(object_id: int):
         template_items=template_items,
         checklist_documents=checklist_documents,
         multi_document_item_ids=multi_document_item_ids,
-        missing_count=sum(row["status"] == "missing" for row in checklist),
-        received_count=sum(row["status"] == "received" for row in checklist),
+        missing_count=len(checklist) - received_count,
+        received_count=received_count,
         warning_days=warning_days,
         correspondence=CorrespondenceRepository().list_by_object(object_id),
         approvals=CorrespondenceRepository().list_by_object(object_id, "approval"),
@@ -208,13 +221,25 @@ def object_workspace(object_id: int):
 
 @bp.get("/objects/<int:object_id>/documents/<kind>")
 def project_document_form(object_id: int, kind: str):
-    if kind not in DOCUMENT_TYPES:
+    if kind != "request" and kind not in DOCUMENT_TYPES:
         abort(404)
     project = ObjectRepository().get(object_id)
     if project is None or project["archived_at"]:
         abort(404)
     checklist = ChecklistRepository().list_project_items(object_id)
     documents = DocumentRepository().list_by_object(object_id)
+    if kind == "request":
+        template = "document_generation_fragment.html" if request.args.get("partial") == "1" else "document_generation.html"
+        return render_template(
+            template,
+            project=project,
+            kind=kind,
+            spec=REQUEST_TEXT_SPEC,
+            request_text=generate_missing_data_request_text(project, checklist),
+            checklist=checklist,
+            documents=documents,
+            in_modal=False,
+        )
     template = "document_generation_fragment.html" if request.args.get("partial") == "1" else "document_generation.html"
     return render_template(
         template,
@@ -223,8 +248,6 @@ def project_document_form(object_id: int, kind: str):
         spec=DOCUMENT_TYPES[kind],
         checklist=checklist,
         documents=documents,
-        missing_count=sum(item["status"] == "missing" for item in checklist),
-        replacement_count=sum(bool(item["replacement_required"]) for item in checklist),
         in_modal=False,
     )
 
@@ -239,33 +262,10 @@ def download_project_document(object_id: int, kind: str):
 
     checklist = ChecklistRepository().list_project_items(object_id)
     documents = DocumentRepository().list_by_object(object_id)
-    missing_count = sum(item["status"] == "missing" for item in checklist)
-    replacement_count = sum(bool(item["replacement_required"]) for item in checklist)
-    if kind == "request" and missing_count == 0 and replacement_count == 0:
-        flash("В чек-листе проекта нет недостающих документов или документов, требующих замены.", "error")
-        return redirect(url_for("web.project_document_form", object_id=object_id, kind=kind))
     if kind == "handover" and not documents:
         flash("Добавьте документы проекта перед созданием акта приёма-передачи.", "error")
         return redirect(url_for("web.project_document_form", object_id=object_id, kind=kind))
 
-    field_limits = {
-        "recipient": 1000,
-        "sender": 250,
-        "sender_signatory": 250,
-        "signatory_position": 500,
-        "greeting_name": 120,
-        "number": 100,
-        "date": 20,
-        "incoming_number": 100,
-        "incoming_date": 20,
-        "contract_date": 20,
-        "deadline": 20,
-        "contact_phone": 100,
-    }
-    fields = {
-        name: request.form.get(name, "").strip()[:limit]
-        for name, limit in field_limits.items()
-    }
     checklist_document_titles = {}
     if kind == "handover":
         checklist_by_id = {item["id"]: item for item in checklist}
@@ -274,7 +274,7 @@ def download_project_document(object_id: int, kind: str):
             if item and ChecklistRepository.uses_customer_letter_subject(item["title"]):
                 checklist_document_titles[link["document_id"]] = item["title"]
     content = generate_project_document(
-        kind, project, documents, checklist, fields,
+        kind, project, documents, checklist,
         checklist_document_titles=checklist_document_titles,
     )
     project_slug = secure_filename(project["name"]) or f"project-{object_id}"
@@ -325,9 +325,27 @@ def project_acts(object_id: int):
     project = ObjectRepository().get(object_id)
     if project is None or project["archived_at"]:
         abort(404)
+    checklist_repository = ChecklistRepository()
+    checklist = checklist_repository.list_project_items(object_id)
+    documents_by_id = {
+        row["id"]: row for row in DocumentRepository().list_by_object(object_id)
+    }
+    linked_item_ids = {
+        row["checklist_item_id"] for row in checklist_repository.list_linked_documents(object_id)
+    }
+    received_count = sum(
+        bool(
+            (checklist_repository.allows_multiple_documents(row["title"]) and row["id"] in linked_item_ids)
+            or (row["validity_years"] and row["issue_date"])
+            or (row["document_id"] and row["document_id"] in documents_by_id)
+        )
+        for row in checklist
+    )
     return render_template(
         "project_acts.html",
         project=project,
+        checklist=checklist,
+        received_count=received_count,
         acts=HandoverActRepository().list_by_object(object_id),
         mail_configured=bool(
             current_app.config["MAIL_USERNAME"]
@@ -531,14 +549,27 @@ def delete_checklist_item(object_id: int, item_id: int):
     return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist"))
 
 
-@bp.post("/objects/<int:object_id>/checklist/<int:item_id>/note")
-def update_checklist_note(object_id: int, item_id: int):
-    if ObjectRepository().get(object_id) is None or not ChecklistRepository().update_project_note(
-        object_id, item_id, request.form.get("note", "")
-    ):
+@bp.post("/objects/<int:object_id>/checklist/<int:item_id>/properties")
+def update_checklist_properties(object_id: int, item_id: int):
+    if ObjectRepository().get(object_id) is None:
         abort(404)
+    try:
+        validity_years = int(request.form.get("validity_years", "0"))
+    except ValueError:
+        validity_years = 0
+    updated = ChecklistRepository().update_project_properties(
+        object_id,
+        item_id,
+        request.form.get("title", ""),
+        request.form.get("description", ""),
+        request.form.get("note", ""),
+        request.form.get("issue_date", ""),
+        validity_years,
+    )
+    if updated is None:
+        abort(409)
     if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
+        return jsonify(updated), 200
     return redirect(url_for("web.object_workspace", object_id=object_id, tab="checklist") + "#checklist")
 
 

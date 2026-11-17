@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 import re
@@ -13,6 +14,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+from pymorphy3 import MorphAnalyzer
 
 
 HANDOVER_TEMPLATE = Path(__file__).resolve().parents[1] / "document_templates" / "handover_act_template.docx"
@@ -25,12 +27,6 @@ DOCUMENT_TYPES = {
         "filename": "Opis_dokumentov",
         "description": "Сформировать перечень загруженных документов проекта.",
     },
-    "request": {
-        "title": "Запрос недостающих исходных данных",
-        "button": "Запрос недостающих исходных данных",
-        "filename": "Zapros_nedostayushchih_dannyh",
-        "description": "Подготовить письмо со списком ожидаемых документов.",
-    },
     "handover": {
         "title": "Акт приёма-передачи ИРД",
         "button": "Создать акт приёма-передачи ИРД",
@@ -40,17 +36,130 @@ DOCUMENT_TYPES = {
 }
 
 
+REQUEST_TEXT_SPEC = {
+    "title": "Текст запроса недостающих исходных данных",
+    "description": "Скопируйте текст и оформите письмо самостоятельно.",
+}
+
+
+def generate_missing_data_request_text(project: Any, checklist: list[Any]) -> str:
+    replacements = [item for item in checklist if item["replacement_required"]]
+    missing = [item for item in checklist if item["status"] == "missing" and not item["replacement_required"]]
+    if not missing and not replacements:
+        return ""
+
+    if missing and replacements:
+        request = "просим предоставить недостающие исходные данные и заменить указанные документы."
+    elif missing:
+        request = "просим предоставить следующие исходные данные."
+    else:
+        request = "просим заменить следующие документы."
+    lines = [
+        f"В рамках исполнения обязательств по договору № {project['contract_number']} "
+        f"по объекту «{project['name']}» {request}"
+    ]
+    if missing:
+        lines.extend(["", "Недостающие документы:"])
+        lines.extend(f"{index}. {item['title']}" for index, item in enumerate(missing, start=1))
+    if replacements:
+        lines.extend(["", "Документы, требующие замены:"])
+        for index, item in enumerate(replacements, start=1):
+            title = item["title"]
+            issuer = (item["linked_document_issuer"] or "").strip()
+            number = (item["linked_document_number"] or "").strip()
+            issue_date = _format_request_date(item["linked_document_issue_date"])
+            requisites = []
+            if issue_date:
+                requisites.append(f"от {issue_date}")
+            if number:
+                requisites.append(f"№ {number}")
+            line = f"{index}. {title}"
+            if requisites:
+                line += " " + " ".join(requisites)
+            if issuer:
+                line += f", {_issued_agreement(title)} {_organization_instrumental(issuer)}"
+            lines.append(line)
+            note = (item["note"] or item["linked_document_note"] or "").strip()
+            if note:
+                lines.append(f"   Примечание: {note}")
+    return "\n".join(lines)
+
+
+def _format_request_date(value: Any) -> str:
+    """Format stored ISO dates for the human-readable request text."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return date.fromisoformat(raw[:10]).strftime("%d.%m.%Y")
+    except ValueError:
+        return raw
+
+
+def _issued_agreement(title: str) -> str:
+    """Choose a participle agreeing with the document title."""
+    first = (title or "").strip().lower()
+    if first.startswith(("технические условия", "технические требования", "сведения", "материалы", "документы")):
+        return "выданные"
+    if first.startswith(("справка", "копия", "выписка", "ведомость")):
+        return "выданная"
+    if first.startswith(("решение", "письмо", "свидетельство", "задание", "согласование", "заключение")):
+        return "выданное"
+    if first.startswith("акт"):
+        return "выданный"
+    return "выданный"
+
+
+def _match_case(source: str, replacement: str) -> str:
+    if source.isupper():
+        return replacement.upper()
+    if source[:1].isupper():
+        return replacement[:1].upper() + replacement[1:]
+    return replacement
+
+
+def _organization_instrumental(value: str) -> str:
+    """Inflect the issuer phrase while preserving quoted legal names and acronyms."""
+    morph = _get_morph_analyzer()
+    parts = re.split(r'("[^"\n]*"|«[^»\n]*»)', value)
+    for index, part in enumerate(parts):
+        if part.startswith(('"', '«')):
+            continue
+        tokens = re.split(r"([А-Яа-яЁё-]+)", part)
+        in_prepositional_phrase = False
+        for token_index, token in enumerate(tokens):
+            if token == ",":
+                in_prepositional_phrase = False
+                continue
+            if not re.fullmatch(r"[А-Яа-яЁё-]+", token):
+                continue
+            if token.lower() == "по":
+                in_prepositional_phrase = True
+                continue
+            if in_prepositional_phrase or token.isupper():
+                continue
+            parsed = morph.parse(token)[0]
+            inflected = parsed.inflect({"ablt"})
+            if inflected:
+                tokens[token_index] = _match_case(token, inflected.word)
+        parts[index] = "".join(tokens)
+    return "".join(parts)
+
+
+@lru_cache(maxsize=1)
+def _get_morph_analyzer() -> MorphAnalyzer:
+    return MorphAnalyzer()
+
+
 def generate_project_document(
     kind: str,
     project: Any,
     documents: list[Any],
     checklist: list[Any],
-    fields: dict[str, str] | None = None,
     checklist_document_titles: dict[int, str] | None = None,
 ) -> bytes:
     if kind not in DOCUMENT_TYPES:
         raise ValueError("Неизвестный тип документа.")
-    fields = fields or {}
     if kind == "handover":
         document = Document(str(HANDOVER_TEMPLATE))
         document.core_properties.title = f"{DOCUMENT_TYPES[kind]['title']} — {project['name']}"
@@ -66,20 +175,16 @@ def generate_project_document(
     title = DOCUMENT_TYPES[kind]["title"]
     document.core_properties.title = f"{title} — {project['name']}"
     document.core_properties.subject = f"Проект {project['contract_number']}"
-    if kind != "request":
-        title_paragraph = document.add_paragraph(style="Title")
-        title_run = title_paragraph.add_run(title)
-        title_run.font.name = "Times New Roman"
-        title_run.font.size = Pt(15)
-        title_run.font.bold = True
-        title_run.font.color.rgb = RGBColor(0, 0, 0)
-        _set_run_font(title_run, "Times New Roman")
-        _add_project_details(document, project)
+    title_paragraph = document.add_paragraph(style="Title")
+    title_run = title_paragraph.add_run(title)
+    title_run.font.name = "Times New Roman"
+    title_run.font.size = Pt(15)
+    title_run.font.bold = True
+    title_run.font.color.rgb = RGBColor(0, 0, 0)
+    _set_run_font(title_run, "Times New Roman")
+    _add_project_details(document, project)
 
-    if kind == "inventory":
-        _add_inventory(document, documents, checklist)
-    else:
-        _add_missing_data_request(document, project, checklist, fields)
+    _add_inventory(document, documents, checklist)
 
     output = BytesIO()
     document.save(output)
@@ -181,135 +286,6 @@ def _add_inventory(document: Document, documents: list[Any], checklist: list[Any
         ])
     _add_table(document, ["№", "Документ", "Кем выдан", "Дата выдачи", "Действителен до", "Имя файла"], rows)
     document.add_paragraph(f"Всего документов: {len(documents)}.")
-
-
-def _add_missing_data_request(document: Document, project: Any, checklist: list[Any], fields: dict[str, str]) -> None:
-    replacements = [item for item in checklist if item["replacement_required"]]
-    missing = [item for item in checklist if item["status"] == "missing" and not item["replacement_required"]]
-    header = document.add_table(rows=1, cols=2)
-    header.alignment = WD_TABLE_ALIGNMENT.CENTER
-    header.autofit = False
-    header.columns[0].width = Cm(7.5)
-    header.columns[1].width = Cm(8.5)
-    left, right = header.rows[0].cells
-    left.width = Cm(7.5)
-    right.width = Cm(8.5)
-    left.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-    right.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-    outgoing_date = _date_display(fields.get("date")) or "«___» __________ 20__ г."
-    left.text = f"№ {fields.get('number') or '_______'} от {outgoing_date}\nНа № {fields.get('incoming_number') or '_______'} от {_date_display(fields.get('incoming_date')) or '__________'}"
-    recipient = fields.get("recipient") or project["customer"] or ""
-    right.text = recipient
-    for cell in (left, right):
-        _remove_cell_borders(cell)
-        for paragraph in cell.paragraphs:
-            paragraph.paragraph_format.space_after = Pt(2)
-            for run in paragraph.runs:
-                _set_run_font(run, "Times New Roman")
-                run.font.size = Pt(12)
-                run.font.color.rgb = RGBColor(0, 0, 0)
-    for paragraph in right.paragraphs:
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-    subject = document.add_paragraph()
-    subject.paragraph_format.space_before = Pt(12)
-    subject.paragraph_format.space_after = Pt(18)
-    subject.add_run(f"О предоставлении исходных данных\n(объект №{project['contract_number']})")
-
-    greeting_name = fields.get("greeting_name", "").strip()
-    if greeting_name:
-        greeting = document.add_paragraph()
-        greeting.paragraph_format.left_indent = Cm(4)
-        greeting.paragraph_format.space_before = Pt(4)
-        greeting.paragraph_format.space_after = Pt(12)
-        salutation = greeting_name.rstrip("! .")
-        if not salutation.casefold().startswith("уважаемый"):
-            salutation = f"Уважаемый {salutation}"
-        greeting.add_run(f"{salutation}!")
-
-    contract_date = _date_display(fields.get("contract_date"))
-    contract_reference = f"договору №{project['contract_number']}"
-    if contract_date:
-        contract_reference += f" от {contract_date}"
-    if missing:
-        opening_text = (
-            f"В рамках исполнения обязательств по {contract_reference} по объекту "
-            f"«{project['name']}» просим Вас предоставить следующие данные:"
-        )
-    else:
-        opening_text = (
-            f"В рамках исполнения обязательств по {contract_reference} по объекту "
-            f"«{project['name']}» просим Вас заменить следующие документы:"
-        )
-    opening = document.add_paragraph(opening_text)
-    opening.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    opening.paragraph_format.first_line_indent = Cm(1.25)
-    opening.paragraph_format.space_after = Pt(5)
-
-    if missing:
-        _add_numbered_request_items(document, missing, include_notes=False)
-    if replacements:
-        heading = document.add_paragraph("Документы, требующие замены:")
-        heading.paragraph_format.space_before = Pt(8)
-        heading.paragraph_format.space_after = Pt(3)
-        _add_numbered_request_items(document, replacements, include_notes=True)
-
-    deadline = _date_display(fields.get("deadline"))
-    if deadline:
-        paragraph = document.add_paragraph(f"Информацию просим представить не позднее {deadline}.")
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        paragraph.paragraph_format.first_line_indent = Cm(1.25)
-        paragraph.paragraph_format.space_before = Pt(8)
-
-    signature = document.add_table(rows=1, cols=2)
-    signature.alignment = WD_TABLE_ALIGNMENT.CENTER
-    signature.autofit = False
-    for cell, width, value in zip(
-        signature.rows[0].cells,
-        (Cm(9), Cm(7)),
-        (fields.get("signatory_position") or "", fields.get("sender_signatory") or ""),
-    ):
-        cell.width = width
-        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
-        cell.text = value
-        _remove_cell_borders(cell)
-        for paragraph in cell.paragraphs:
-            paragraph.paragraph_format.space_before = Pt(18)
-            paragraph.paragraph_format.space_after = Pt(0)
-    for paragraph in signature.rows[0].cells[1].paragraphs:
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-    if fields.get("contact_phone"):
-        phone = document.add_paragraph(fields["contact_phone"])
-        phone.paragraph_format.space_before = Pt(10)
-        phone.paragraph_format.space_after = Pt(0)
-        for run in phone.runs:
-            run.font.size = Pt(9)
-            _set_run_font(run, "Times New Roman")
-
-
-def _add_numbered_request_items(document: Document, items: list[Any], *, include_notes: bool) -> None:
-    for index, item in enumerate(items, start=1):
-        paragraph = document.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        paragraph.paragraph_format.left_indent = Cm(0.8)
-        paragraph.paragraph_format.first_line_indent = Cm(-0.8)
-        paragraph.paragraph_format.space_after = Pt(3)
-        paragraph.add_run(f"{index}. {item['title']}")
-        if include_notes:
-            issuer = (item["linked_document_issuer"] or item["issuer"] or "").strip()
-            if issuer:
-                details = document.add_paragraph()
-                details.paragraph_format.left_indent = Cm(1.4)
-                details.paragraph_format.space_after = Pt(2)
-                details.add_run(f"Орган, выдавший документ: {issuer}")
-            note = (item["note"] or item["linked_document_note"] or "").strip()
-            if note:
-                comment = document.add_paragraph()
-                comment.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                comment.paragraph_format.left_indent = Cm(1.4)
-                comment.paragraph_format.space_after = Pt(5)
-                comment.add_run(f"Примечание: {note}")
 
 
 def _populate_handover_template(
@@ -424,16 +400,6 @@ def _repeat_table_header(row: Any) -> None:
     properties.append(repeat)
 
 
-def _remove_cell_borders(cell: Any) -> None:
-    properties = cell._tc.get_or_add_tcPr()
-    borders = OxmlElement("w:tcBorders")
-    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        element = OxmlElement(f"w:{edge}")
-        element.set(qn("w:val"), "nil")
-        borders.append(element)
-    properties.append(borders)
-
-
 def _document_title(item: Any) -> str:
     return item["working_title"] or item["official_title"] or item["original_filename"] or "Документ"
 
@@ -441,15 +407,6 @@ def _document_title(item: Any) -> str:
 def _date_display(value: str | None) -> str:
     if not value:
         return ""
-    try:
-        return date.fromisoformat(value[:10]).strftime("%d.%m.%Y")
-    except ValueError:
-        return value
-
-
-def _form_date(value: str | None) -> str:
-    if not value:
-        return date.today().strftime("%d.%m.%Y")
     try:
         return date.fromisoformat(value[:10]).strftime("%d.%m.%Y")
     except ValueError:

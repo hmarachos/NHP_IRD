@@ -69,6 +69,22 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             content.innerHTML = await response.text();
             const section = content.querySelector('[data-generation-kind]');
+            if (section?.dataset.generationKind === 'request') {
+                const text = section.querySelector('[data-request-text]');
+                const copy = section.querySelector('[data-copy-request-text]');
+                const feedback = section.querySelector('[data-copy-request-feedback]');
+                copy?.addEventListener('click', async () => {
+                    if (!text) return;
+                    text.focus(); text.select();
+                    try {
+                        await navigator.clipboard.writeText(text.value);
+                    } catch (_) {
+                        document.execCommand('copy');
+                    }
+                    if (feedback) feedback.textContent = 'Текст скопирован.';
+                });
+                return;
+            }
             const form = content.querySelector('[data-generation-form]');
             if (!form || !section) throw new Error('Форма генерации не найдена');
             form.addEventListener('submit', async (event) => {

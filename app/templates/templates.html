@@ -40,9 +40,9 @@
         <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
     </div>
     <div class="template-table-wrap">
-        <div class="template-items-table-head" aria-hidden="true"><span>№</span><span>Документ</span><span>Описание</span></div>
+        <div class="template-items-table-head" aria-hidden="true"><span>№</span><span>Документ</span><span>Примечание</span></div>
         <ul class="template-items-readonly" data-template-items-readonly>
-            {% for item in entry['items'] %}<li><span class="template-item-number">{{ loop.index }}</span><span class="template-item-title">{{ item.title }}</span><span class="template-item-description">{{ item.description or '—' }}</span></li>{% endfor %}
+            {% for item in entry['items'] %}<li><span class="template-item-number">{{ loop.index }}</span><span class="template-item-title">{{ item.title }}{% if item.title == 'Сведения для разработки сметной документации (по типовой форме)' %}<a class="template-item-download" href="{{ url_for('static', filename='templates/request_input_data_template.docx') }}" download><i class="bi bi-download" aria-hidden="true"></i> Скачать файл запроса</a>{% endif %}</span><span class="template-item-description">{{ item.description or '—' }}</span></li>{% endfor %}
         </ul>
     </div>
     <div class="template-edit-list" data-template-items-edit hidden>

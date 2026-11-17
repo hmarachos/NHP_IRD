@@ -460,7 +460,7 @@ class ChecklistRepository:
             "SELECT id FROM documents WHERE id = ? AND object_id = ? AND archived_at IS NULL",
             (document_id, object_id),
         ).fetchone()
-        if item is None or document is None or item["validity_years"] > 0:
+        if item is None or document is None or (item["validity_years"] > 0 and item["title"] != "Инженерно-геодезические изыскания"):
             return False
         if self.allows_multiple_documents(item["title"]):
             order = db.execute(
@@ -682,6 +682,18 @@ class ChecklistRepository:
                            JOIN documents AS linked ON linked.id = linked_documents.document_id
                            WHERE linked_documents.checklist_item_id = checklist.id
                        )) AS linked_document_issuer,
+                       COALESCE(NULLIF(TRIM(documents.document_number), ''), (
+                           SELECT group_concat(NULLIF(TRIM(linked.document_number), ''), '; ')
+                           FROM project_checklist_documents AS linked_documents
+                           JOIN documents AS linked ON linked.id = linked_documents.document_id
+                           WHERE linked_documents.checklist_item_id = checklist.id
+                       )) AS linked_document_number,
+                       COALESCE(NULLIF(TRIM(documents.issue_date), ''), (
+                           SELECT group_concat(NULLIF(TRIM(linked.issue_date), ''), '; ')
+                           FROM project_checklist_documents AS linked_documents
+                           JOIN documents AS linked ON linked.id = linked_documents.document_id
+                           WHERE linked_documents.checklist_item_id = checklist.id
+                       )) AS linked_document_issue_date,
                        COALESCE(NULLIF(TRIM(documents.note), ''), (
                            SELECT group_concat(NULLIF(TRIM(linked.note), ''), '; ')
                            FROM project_checklist_documents AS linked_documents
@@ -782,7 +794,7 @@ class ChecklistRepository:
     ) -> bool:
         db = get_db()
         item = db.execute(
-            "SELECT validity_years FROM project_checklist_items WHERE id = ? AND object_id = ?",
+            "SELECT validity_years, document_id FROM project_checklist_items WHERE id = ? AND object_id = ?",
             (item_id, object_id),
         ).fetchone()
         if item is None:
@@ -791,8 +803,8 @@ class ChecklistRepository:
             normalized_date = iso_date(issue_date or "")
             valid_until = add_years(normalized_date, item["validity_years"])
             cursor = db.execute(
-                "UPDATE project_checklist_items SET issue_date = ?, valid_until = ?, status = ?, document_id = NULL, note = COALESCE(?, note), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
-                (normalized_date, valid_until, "received" if normalized_date else "missing", note[:2000] if note is not None else None, item_id, object_id),
+                "UPDATE project_checklist_items SET issue_date = ?, valid_until = ?, status = ?, note = COALESCE(?, note), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
+                (normalized_date, valid_until, "received" if normalized_date or item["document_id"] else "missing", note[:2000] if note is not None else None, item_id, object_id),
             )
             db.commit()
             return cursor.rowcount > 0
@@ -830,14 +842,44 @@ class ChecklistRepository:
         db.commit()
         return cursor.rowcount > 0
 
-    def update_project_note(self, object_id: int, item_id: int, note: str) -> bool:
+    def update_project_properties(
+        self, object_id: int, item_id: int, title: str, description: str, note: str, issue_date: str, validity_years: int,
+    ) -> dict | None:
         db = get_db()
-        cursor = db.execute(
-            "UPDATE project_checklist_items SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND object_id = ?",
-            (note.strip()[:2000], item_id, object_id),
+        normalized_title = self._normalize(title)
+        if not normalized_title:
+            return None
+        current = db.execute(
+            "SELECT issue_date, title FROM project_checklist_items WHERE id = ? AND object_id = ?",
+            (item_id, object_id),
+        ).fetchone()
+        if current is None:
+            return None
+        if normalized_title != self._normalize(current["title"]):
+            existing_titles = db.execute(
+                "SELECT title FROM project_checklist_items WHERE object_id = ? AND id <> ?",
+                (object_id, item_id),
+            )
+            if any(self._normalize(row["title"]) == normalized_title for row in existing_titles):
+                return None
+        years = max(0, min(int(validity_years), 10))
+        issue_date = issue_date.strip()[:10] or (current["issue_date"] or "")
+        valid_until = add_years(issue_date, years) if years else ""
+        db.execute(
+            """UPDATE project_checklist_items
+               SET title = ?, description = ?, note = ?, issue_date = ?, validity_years = ?, valid_until = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND object_id = ?""",
+            (title.strip()[:300], description.strip()[:500], note.strip()[:2000], issue_date, years, valid_until, item_id, object_id),
         )
         db.commit()
-        return cursor.rowcount > 0
+        return {
+            "title": title.strip()[:300],
+            "description": description.strip()[:500],
+            "note": note.strip()[:2000],
+            "validity_years": years,
+            "issue_date": issue_date,
+            "valid_until": valid_until,
+        }
 
     def update_replacement_required(self, object_id: int, item_id: int, required: bool) -> bool:
         db = get_db()
