@@ -9,7 +9,6 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from flask import Blueprint, abort, current_app, flash, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
@@ -64,12 +63,14 @@ def index():
 @bp.post("/objects")
 def create_object():
     contract_number = request.form.get("contract_number", "").strip()
+    contract_date = request.form.get("contract_date", "").strip()
     name = request.form.get("name", "").strip()
     customer = request.form.get("customer", "").strip()
     if not contract_number or not name:
         return _index_error("Заполните номер договора и наименование проекта.")
     object_id = ObjectRepository().create(
         contract_number=contract_number,
+        contract_date=contract_date,
         name=name,
         customer=customer,
         template_id=_optional_int(request.form.get("template_id")),
@@ -80,11 +81,12 @@ def create_object():
 @bp.post("/objects/<int:object_id>/update")
 def update_object(object_id: int):
     contract_number = request.form.get("contract_number", "").strip()
+    contract_date = request.form.get("contract_date", "").strip()
     name = request.form.get("name", "").strip()
     customer = request.form.get("customer", "").strip()
     if not contract_number or not name:
         return _index_error("Заполните номер договора и наименование проекта.")
-    if not ObjectRepository().update(object_id, contract_number=contract_number, name=name, customer=customer):
+    if not ObjectRepository().update(object_id, contract_number=contract_number, contract_date=contract_date, name=name, customer=customer):
         abort(404)
     return redirect(url_for("web.index"))
 
@@ -263,16 +265,41 @@ def download_project_document(object_id: int, kind: str):
         name: request.form.get(name, "").strip()[:limit]
         for name, limit in field_limits.items()
     }
-    content = generate_project_document(kind, project, documents, checklist, fields)
+    checklist_document_titles = {}
+    if kind == "handover":
+        checklist_by_id = {item["id"]: item for item in checklist}
+        for link in ChecklistRepository().list_linked_documents(object_id):
+            item = checklist_by_id.get(link["checklist_item_id"])
+            if item and ChecklistRepository.uses_customer_letter_subject(item["title"]):
+                checklist_document_titles[link["document_id"]] = item["title"]
+    content = generate_project_document(
+        kind, project, documents, checklist, fields,
+        checklist_document_titles=checklist_document_titles,
+    )
     project_slug = secure_filename(project["name"]) or f"project-{object_id}"
     filename = f"{DOCUMENT_TYPES[kind]['filename']}_{project_slug}.docx"
     if kind == "handover":
         now = datetime.now(timezone.utc).replace(microsecond=0)
         stamp = now.strftime("%Y-%m-%d %H:%M:%S")
-        local_stamp = now.astimezone(ZoneInfo(current_app.config["MAIL_TIMEZONE"]))
-        filename = f"Akt_IRD_manual_{local_stamp:%Y%m%d_%H%M%S}_{uuid4().hex[:8]}_{project_slug}.docx"
         project_dir = Path(current_app.config["ACTS_DIR"]) / str(object_id)
         project_dir.mkdir(parents=True, exist_ok=True)
+        contract_slug = re.sub(r"[^0-9A-Za-zА-Яа-яЁё.-]+", "-", project["contract_number"] or "").strip("-._")
+        contract_slug = contract_slug or f"project-{object_id}"
+        filename_prefix = f"Акт_{contract_slug}_"
+        sequence_numbers = []
+        for candidate in project_dir.glob(f"{filename_prefix}*.docx"):
+            match = re.fullmatch(re.escape(filename_prefix) + r"(\d+)\.docx", candidate.name)
+            if match:
+                sequence_numbers.append(int(match.group(1)))
+        existing_manual_acts = sum(
+            act["source"] == "manual"
+            for act in HandoverActRepository().list_by_object(object_id)
+        )
+        sequence = max(max(sequence_numbers, default=0), existing_manual_acts) + 1
+        filename = f"{filename_prefix}{sequence}.docx"
+        while (project_dir / filename).exists():
+            sequence += 1
+            filename = f"{filename_prefix}{sequence}.docx"
         target = project_dir / filename
         temp = project_dir / f".{filename}.tmp"
         temp.write_bytes(content)

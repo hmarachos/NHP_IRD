@@ -8,6 +8,7 @@
         <form action="{{ url_for('web.create_object') }}" method="post" class="new-project-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label><span>Номер договора</span><input name="contract_number" placeholder="Например, 24-017" required></label>
+            <label><span>Дата договора</span><input type="date" name="contract_date"></label>
             <label><span>Наименование объекта</span><input name="name" placeholder="Наименование объекта" required></label>
             <label><span>Заказчик</span><input name="customer" list="customer-suggestions" placeholder="Начните вводить название" autocomplete="off"></label>
             <label><span>Список документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
@@ -32,7 +33,7 @@
             <td data-label="Заказчик">{{ object.customer or '—' }}</td>
             <td data-label="Документы">{{ object.documents_count }}</td>
             <td class="project-table-actions">
-                <details class="project-edit"><summary>Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form></details>
+                <details class="project-edit"><summary>Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form></details>
                 <form action="{{ url_for('web.archive_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet-button" type="submit">В архив</button></form>
                 <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger active-project-delete" type="submit">Удалить</button></form>
             </td>

@@ -3,13 +3,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from flask import current_app, g
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_number TEXT NOT NULL,
+    contract_date TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     customer TEXT NOT NULL DEFAULT '',
     template_id INTEGER,
@@ -172,6 +173,7 @@ def init_db() -> None:
         "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('mail_notifications_start_at', CURRENT_TIMESTAMP)"
     )
     ensure_column(db, "objects", "customer", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(db, "objects", "contract_date", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "objects", "template_id", "INTEGER")
     ensure_column(db, "objects", "archived_at", "TEXT")
     ensure_column(db, "documents", "object_id", "INTEGER")

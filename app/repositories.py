@@ -6,11 +6,11 @@ from app.services.expiry import add_years, iso_date
 
 
 class ObjectRepository:
-    def create(self, *, contract_number: str, name: str, customer: str = "", template_id: int | None = None) -> int:
+    def create(self, *, contract_number: str, name: str, customer: str = "", contract_date: str = "", template_id: int | None = None) -> int:
         db = get_db()
         cursor = db.execute(
-            "INSERT INTO objects (contract_number, name, customer, template_id) VALUES (?, ?, ?, ?)",
-            (contract_number, name, customer, template_id),
+            "INSERT INTO objects (contract_number, contract_date, name, customer, template_id) VALUES (?, ?, ?, ?, ?)",
+            (contract_number, contract_date, name, customer, template_id),
         )
         object_id = int(cursor.lastrowid)
         if template_id:
@@ -61,15 +61,15 @@ class ObjectRepository:
             "SELECT * FROM objects WHERE id = ?", (object_id,)
         ).fetchone()
 
-    def update(self, object_id: int, *, contract_number: str, name: str, customer: str = "") -> bool:
+    def update(self, object_id: int, *, contract_number: str, name: str, customer: str = "", contract_date: str = "") -> bool:
         db = get_db()
         cursor = db.execute(
             """
             UPDATE objects
-            SET contract_number = ?, name = ?, customer = ?
+            SET contract_number = ?, contract_date = ?, name = ?, customer = ?
             WHERE id = ?
             """,
-            (contract_number, name, customer, object_id),
+            (contract_number, contract_date, name, customer, object_id),
         )
         db.execute(
             """

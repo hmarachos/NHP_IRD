@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import date
 from io import BytesIO
 from pathlib import Path
+import re
 from typing import Any
 
 from docx import Document
@@ -45,6 +46,7 @@ def generate_project_document(
     documents: list[Any],
     checklist: list[Any],
     fields: dict[str, str] | None = None,
+    checklist_document_titles: dict[int, str] | None = None,
 ) -> bytes:
     if kind not in DOCUMENT_TYPES:
         raise ValueError("Неизвестный тип документа.")
@@ -53,7 +55,7 @@ def generate_project_document(
         document = Document(str(HANDOVER_TEMPLATE))
         document.core_properties.title = f"{DOCUMENT_TYPES[kind]['title']} — {project['name']}"
         document.core_properties.subject = f"Проект {project['contract_number']}"
-        _populate_handover_template(document, project, documents, fields)
+        _populate_handover_template(document, project, documents, checklist_document_titles or {})
         output = BytesIO()
         document.save(output)
         return output.getvalue()
@@ -310,73 +312,63 @@ def _add_numbered_request_items(document: Document, items: list[Any], *, include
                 comment.add_run(f"Примечание: {note}")
 
 
-def _populate_handover_template(document: Document, project: Any, documents: list[Any], fields: dict[str, str]) -> None:
+def _populate_handover_template(
+    document: Document,
+    project: Any,
+    documents: list[Any],
+    checklist_document_titles: dict[int, str],
+) -> None:
     """Fill the supplied handover form while retaining its layout and styles."""
-    paragraphs = document.paragraphs
-    if len(paragraphs) < 18 or not document.tables:
+    if not document.paragraphs or not document.tables or len(document.tables[0].rows) < 2:
         raise ValueError("Шаблон акта приёма-передачи имеет неожиданную структуру.")
-
-    contract_date = _date_display(fields.get("contract_date"))
-    contract_date_text = contract_date or "__ _____________ 20__"
-    _replace_paragraph_text(
-        paragraphs[1],
-        f"к договору № {project['contract_number']} от {contract_date_text} г.",
+    contract_paragraph = next(
+        (paragraph for paragraph in document.paragraphs if paragraph.text.strip().startswith("к договору №")),
+        None,
     )
-    paragraphs[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if contract_paragraph is None:
+        raise ValueError("В шаблоне акта не найдено место для реквизитов договора.")
+    contract_date = _date_display(project["contract_date"] if "contract_date" in project.keys() else "")
+    contract_date_text = contract_date or "__ _____________ 20__"
+    _replace_paragraph_text(contract_paragraph, f"к договору № {project['contract_number']} от {contract_date_text} г.")
 
-    act_meta = document.add_paragraph()
-    act_meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    act_meta.paragraph_format.space_after = Pt(0)
-    run = act_meta.add_run(f"№ {fields.get('number') or '________'} от {_form_date(fields.get('date'))}")
-    _set_run_font(run, "Times New Roman")
-    run.font.size = Pt(12)
-    paragraphs[0]._p.addnext(act_meta._p)
-
-    _replace_paragraph_text(paragraphs[3], str(project["name"] or ""))
-    paragraphs[3].alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _replace_paragraph_text(paragraphs[4], "")
-    sender = (fields.get("sender") or "").strip()
-    recipient = (fields.get("recipient") or "").strip()
-    if sender:
-        _replace_paragraph_text(paragraphs[10], f"Сдал: {sender}")
-    if recipient:
-        _replace_paragraph_text(paragraphs[14], f"Принял: {recipient}")
+    object_paragraph = next((paragraph for paragraph in document.paragraphs if paragraph.text.strip() == "{{OBJECT_NAME}}"), None)
+    if object_paragraph is None:
+        raise ValueError("В шаблоне акта не найдено место для наименования объекта.")
+    _replace_paragraph_text(object_paragraph, str(project["name"] or ""))
 
     table = document.tables[0]
-    for column, width in zip(table.columns, (Cm(8.1), Cm(3.2), Cm(4.8))):
-        column.width = width
-    header = table.rows[0]
-    header_properties = header._tr.get_or_add_trPr()
-    if not header_properties.find(qn("w:tblHeader")):
-        repeat = OxmlElement("w:tblHeader")
-        repeat.set(qn("w:val"), "true")
-        header_properties.append(repeat)
+    exemplar = deepcopy(table.rows[1]._tr)
+    for row in list(table.rows[1:]):
+        table._tbl.remove(row._tr)
 
     for item in documents:
-        title = _document_title(item)
+        title = _customer_letter_title(item, checklist_document_titles.get(item["id"]))
         number = (item["document_number"] or "").strip()
         issue_date = _date_display(item["issue_date"])
         details = ", ".join(part for part in (issue_date, f"№ {number}" if number else "") if part)
         label = f"{title} ({details})" if details else title
-        note = (item["note"] or "").strip()
-        row_xml = deepcopy(header._tr)
-        row_properties = row_xml.get_or_add_trPr()
-        repeated_header = row_properties.find(qn("w:tblHeader"))
-        if repeated_header is not None:
-            row_properties.remove(repeated_header)
+        row_xml = deepcopy(exemplar)
         table._tbl.append(row_xml)
         cells = table.rows[-1].cells
-        for index, (cell, value) in enumerate(zip(cells, (label, "1", note))):
-            cell.text = value
-            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            for paragraph in cell.paragraphs:
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if index == 1 else WD_ALIGN_PARAGRAPH.LEFT
-                paragraph.paragraph_format.space_before = Pt(2)
-                paragraph.paragraph_format.space_after = Pt(2)
-                for run in paragraph.runs:
-                    _set_run_font(run, "Times New Roman")
-                    run.font.size = Pt(11)
-                    run.font.bold = False
+        for cell, value in zip(cells, (label, "1", "")):
+            _replace_paragraph_text(cell.paragraphs[0], value)
+
+
+def _customer_letter_title(item: Any, checklist_title: str | None) -> str:
+    raw_title = str(item["working_title"] or item["official_title"] or "").strip()
+    is_letter = bool(checklist_title) or raw_title.casefold().startswith("письмо заказчика")
+    if not is_letter:
+        return _document_title(item)
+    subject = raw_title
+    subject = re.sub(r"^письмо\s+заказчика\s*", "", subject, flags=re.IGNORECASE)
+    subject = re.sub(r"^письмо\s*", "", subject, flags=re.IGNORECASE)
+    subject = subject.strip(" \t\r\n:—–-«»\"'")
+    if not subject and checklist_title:
+        subject = re.sub(r"^письмо\s+заказчика\s*", "", checklist_title, flags=re.IGNORECASE).strip(" \t:—–-«»\"'")
+    if subject:
+        subject = subject[0].upper() + subject[1:]
+        return f"Письмо заказчика «{subject}»"
+    return "Письмо заказчика"
 
 
 def _replace_paragraph_text(paragraph: Any, value: str) -> None:
