@@ -11,7 +11,7 @@ from urllib.parse import quote
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, make_response, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
 from app.database import get_db
@@ -716,53 +716,81 @@ def upload_correspondence(object_id: int):
         direction = "incoming"
     files = [file for file in request.files.getlist("files") if file and file.filename]
     if not files:
+        if request.headers.get("X-Correspondence-Analyze") == "1":
+            return jsonify(error="Выберите PDF, Word-файл или изображения страниц письма."), 400
         flash("Выберите PDF или фотографии страниц письма.", "error")
         return redirect(url_for("web.object_workspace", object_id=object_id, tab=target_tab))
 
     storage = StorageService(current_app.config["UPLOAD_DIR"], max_file_size=current_app.config["MAX_UPLOAD_FILE_SIZE"])
     saved_files = []
-    for file in files:
-        try:
+    analyze = request.headers.get("X-Correspondence-Analyze") == "1"
+    try:
+        for file in files:
             saved_files.append(storage.save_upload(file))
-        except Exception as exc:
-            flash(f"{file.filename}: {exc}", "error")
-
-    image_files = [item for item in saved_files if item[3].startswith("image/")]
-    pdf_files = [item for item in saved_files if item[3] == "application/pdf"]
-    if image_files:
-        combined_path = Path(current_app.config["UPLOAD_DIR"]) / f"{uuid4().hex}_letter-pages.pdf"
-        try:
+        word_files = [item for item in saved_files if is_word_document(item[2])]
+        pdf_files = [item for item in saved_files if item[3] == "application/pdf"]
+        image_files = [item for item in saved_files if item[3].startswith("image/")]
+        if word_files and len(saved_files) != 1:
+            raise ValueError("Загружайте один Word-файл за раз.")
+        if pdf_files and len(saved_files) != 1:
+            raise ValueError("Выберите один PDF либо несколько изображений страниц.")
+        if len(image_files) != len(saved_files):
+            raise ValueError("Для многостраничного письма выберите один PDF или несколько изображений страниц.")
+        if word_files:
+            prepared_files = word_files
+        elif pdf_files:
+            prepared_files = pdf_files
+        else:
+            if not image_files:
+                raise ValueError("Выберите PDF, Word-файл или изображения страниц письма.")
+            combined_path = Path(current_app.config["UPLOAD_DIR"]) / f"{uuid4().hex}_letter-pages.pdf"
             _combine_image_uploads(image_files, combined_path)
-            pdf_files.append((f"Письмо — {len(image_files)} страниц.pdf", combined_path.name, combined_path, "application/pdf"))
-        except Exception as exc:
-            flash(f"Не удалось собрать фотографии письма в PDF: {exc}", "error")
-        finally:
             for _name, _stored, source_path, _mime in image_files:
                 source_path.unlink(missing_ok=True)
+            prepared_files = [(f"Письмо — {len(image_files)} страниц.pdf", combined_path.name, combined_path, "application/pdf")]
+            saved_files = prepared_files
+    except Exception as exc:
+        for _name, _stored, source_path, _mime in saved_files:
+            source_path.unlink(missing_ok=True)
+        if analyze:
+            return jsonify(error=str(exc) if isinstance(exc, ValueError) else "Не удалось подготовить файл письма."), 422
+        flash(str(exc) if isinstance(exc, ValueError) else "Не удалось подготовить файл письма.", "error")
+        return redirect(url_for("web.object_workspace", object_id=object_id, tab=target_tab))
 
     extractor = PdfTextExtractor(tesseract_lang=current_app.config["TESSERACT_LANG"], dpi=current_app.config["OCR_DPI"])
     repository = CorrespondenceRepository()
-    created = 0
-    for original_name, stored_name, path, mime_type in pdf_files:
-        raw_text = ""
-        values = {"direction": direction, "number": "", "letter_date": "", "sender": "", "recipient": "", "subject": "", "summary": ""}
-        status, error = "processed", ""
-        try:
-            raw_text = extractor.extract(path)
-            values.update(_extract_correspondence_fields(raw_text))
-            if not raw_text.strip():
-                raise ValueError("В письме не удалось распознать текст.")
-        except Exception as exc:
-            status, error = "error", str(exc)
-            logger.exception("Correspondence OCR or extraction failed")
-        repository.create(
-            object_id=object_id, **values, original_filename=original_name,
-            stored_filename=stored_name, mime_type=mime_type, raw_text=raw_text,
-            status=status, error=error, record_type=record_type,
+    original_name, stored_name, path, mime_type = prepared_files[0]
+    raw_text = ""
+    values = {"direction": direction, "number": "", "letter_date": "", "sender": "", "recipient": "", "subject": "", "summary": ""}
+    status, error = "processed", ""
+    try:
+        extraction_path = word_preview_path(path) if is_word_document(path) else path
+        raw_text = extractor.extract(extraction_path)
+        values.update(_extract_correspondence_fields(raw_text))
+        if not raw_text.strip():
+            status, error = "error", "Не удалось распознать текст письма. Заполните реквизиты вручную."
+    except Exception as exc:
+        status, error = "error", str(exc)
+        logger.exception("Correspondence OCR or extraction failed")
+        if not analyze:
+            flash(f"Не удалось распознать письмо: {exc}", "error")
+    values["direction"] = direction
+    letter_id = repository.create(
+        object_id=object_id, **values, original_filename=original_name,
+        stored_filename=stored_name, mime_type=mime_type, raw_text=raw_text,
+        status=status, error=error, record_type=record_type,
+    )
+    if analyze:
+        return jsonify(
+            id=letter_id,
+            preview=url_for("web.correspondence_preview", letter_id=letter_id),
+            record_type=record_type,
+            fields={key: values[key] for key in ("direction", "number", "letter_date", "sender", "recipient", "subject", "summary")}
+                  | {"valid_until": ""},
+            warning=error,
         )
-        created += 1
-    if created:
-        flash(f"Добавлено писем: {created}. Проверьте распознанные реквизиты.", "success")
+    if letter_id:
+        flash("Письмо добавлено. Проверьте распознанные реквизиты.", "success")
     return redirect(url_for("web.object_workspace", object_id=object_id, tab=target_tab))
 
 
@@ -820,6 +848,35 @@ def correspondence_file(letter_id: int):
         mimetype=letter["mime_type"] or "application/pdf", as_attachment=False,
         download_name=letter["original_filename"] or stored,
     )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@bp.get("/correspondence/<int:letter_id>/preview")
+def correspondence_preview(letter_id: int):
+    letter = CorrespondenceRepository().get(letter_id)
+    if letter is None or not letter["stored_filename"]:
+        abort(404)
+    upload_dir = Path(current_app.config["UPLOAD_DIR"])
+    stored = letter["stored_filename"]
+    if Path(stored).name != stored:
+        abort(404)
+    source = upload_dir / stored
+    if is_word_document(source):
+        try:
+            preview = word_preview_path(source)
+        except (OSError, RuntimeError, ValueError):
+            logger.exception("Correspondence Word preview conversion failed for letter id=%s", letter_id)
+            abort(415)
+        filename = f"{Path(letter['original_filename'] or stored).stem}.pdf"
+        response = send_file(preview, mimetype="application/pdf", as_attachment=False, download_name=filename)
+        response.headers["Content-Disposition"] = "inline; filename*=UTF-8''" + quote(filename)
+    else:
+        response = send_from_directory(
+            upload_dir, stored, mimetype=letter["mime_type"] or "application/pdf",
+            as_attachment=False, download_name=letter["original_filename"] or stored,
+        )
+        response.headers["Content-Disposition"] = "inline; filename*=UTF-8''" + quote(letter["original_filename"] or stored)
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
