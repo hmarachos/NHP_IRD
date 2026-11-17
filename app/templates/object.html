@@ -47,12 +47,24 @@
 <dialog class="checklist-note-dialog" data-checklist-note-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">ДОКУМЕНТ ПРОЕКТА</p><h2 data-checklist-note-heading>Примечание</h2></div><button type="button" class="checklist-add-close" data-close-checklist-note aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-checklist-note-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label for="checklist-note-text">Текст примечания</label><textarea id="checklist-note-text" name="note" rows="3" maxlength="2000" placeholder="Введите примечание" data-grow-textarea></textarea><div class="checklist-add-actions"><button type="button" class="checklist-note-cancel" data-close-checklist-note>Отмена</button><button type="submit">Сохранить</button></div></form></dialog>
 <dialog class="checklist-note-dialog" data-checklist-date-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">СРОК ДОКУМЕНТА</p><h2>Инженерно-геодезические изыскания</h2></div><button type="button" class="checklist-add-close" data-close-checklist-date aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-checklist-date-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="missing"><input type="hidden" name="document_id" value=""><label for="checklist-issue-date">Дата изысканий</label><input id="checklist-issue-date" class="checklist-dialog-date" type="date" name="issue_date"><div class="checklist-add-actions"><button type="button" class="checklist-note-cancel" data-close-checklist-date>Отмена</button><button type="submit">Сохранить</button></div></form></dialog>
 <dialog class="checklist-add-dialog" data-checklist-add-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">КОМПЛЕКТНОСТЬ ПРОЕКТА</p><h2>Добавить документ</h2></div><button type="button" class="checklist-add-close" data-close-checklist-add aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-add-form" action="{{ url_for('web.add_checklist_item', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Способ добавления</span><select name="add_mode" data-checklist-add-mode><option value="template" {% if not template_items or template_items|selectattr('already_added', 'equalto', false)|list|length == 0 %}disabled{% endif %}>Выбрать документ из шаблона проекта</option><option value="custom" {% if not template_items or template_items|selectattr('already_added', 'equalto', false)|list|length == 0 %}selected{% endif %}>Добавить новый документ</option></select></label><label data-checklist-template-field {% if not template_items or template_items|selectattr('already_added', 'equalto', false)|list|length == 0 %}hidden{% endif %}><span>Документ из полного шаблона</span><select name="template_item_id" data-checklist-template-select><option value="" disabled selected>Выберите документ</option>{% for template_item in template_items %}<option value="{{ template_item.id }}" {% if template_item.already_added %}disabled{% endif %}>{{ template_item.title }}{% if template_item.already_added %} — уже добавлен{% endif %}</option>{% endfor %}</select></label><div class="checklist-add-custom-fields" data-checklist-custom-fields {% if template_items and template_items|selectattr('already_added', 'equalto', false)|list|length > 0 %}hidden{% endif %}><label><span>Название нового документа</span><textarea name="title" rows="1" maxlength="300" placeholder="Например, заключение экспертизы" data-grow-textarea disabled></textarea></label><label><span>Примечание <small class="checklist-add-optional">Необязательно</small></span><textarea name="note" rows="1" maxlength="2000" placeholder="Дополнительная информация" data-grow-textarea disabled></textarea></label></div><div class="checklist-add-actions"><button type="submit">Добавить документ</button></div></form></dialog>
-<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения страниц</span></label><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><label>Наименование документа<input name="working_title"></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><input name="issuer"></label><label>Номер документа<input name="document_number"></label><div class="ird-date-fields"><label>Дата выдачи<input type="date" name="issue_date"></label><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions"><button type="button" data-ird-back>Загрузить другой файл</button><button type="button" class="ird-delete-document" data-ird-delete hidden>Удалить документ</button><button type="submit">Сохранить документ</button></div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender"></label><label>Получатель<input name="recipient"></label><label>Тема письма<input name="subject"></label><label>Краткое содержание<textarea name="summary" rows="4"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back>Загрузить другой файл</button><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete>Удалить письмо</button><button type="submit">Сохранить письмо</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
+<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения страниц</span></label><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><label>Наименование документа<input name="working_title"></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><input name="issuer"></label><label>Номер документа<input name="document_number"></label><div class="ird-date-fields"><label>Дата выдачи<input type="date" name="issue_date"></label><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions"><button type="button" data-ird-back>Загрузить другой файл</button><button type="button" class="ird-delete-document" data-ird-delete hidden>Удалить документ</button><button type="submit">Сохранить документ</button></div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender"></label><label>Получатель<input name="recipient"></label><label>Тема письма<input name="subject"></label><label>Краткое содержание<textarea name="summary" rows="1" data-grow-textarea data-grow-max-lines="2"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back>Загрузить другой файл</button><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete>Удалить письмо</button><button type="submit">Сохранить письмо</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
 <script>
 (() => {
     const workspace = document.querySelector('[data-project-workspace]');
     const checklistAddDialog = document.querySelector('[data-checklist-add-dialog]');
-    const resizeGrowingTextarea = (textarea) => { textarea.style.height = 'auto'; textarea.style.height = `${textarea.scrollHeight}px`; };
+    const resizeGrowingTextarea = (textarea) => {
+        textarea.style.height = 'auto';
+        const maxLines = Number(textarea.dataset.growMaxLines || 0);
+        if (maxLines > 0) {
+            const style = getComputedStyle(textarea);
+            const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+            const maxHeight = lineHeight * maxLines + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+            textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+            textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+            return;
+        }
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    };
     document.querySelectorAll('[data-grow-textarea]').forEach((textarea) => {
         resizeGrowingTextarea(textarea);
         textarea.addEventListener('input', () => resizeGrowingTextarea(textarea));
@@ -63,15 +75,44 @@
     document.querySelectorAll('[data-correspondence-table]').forEach((table) => {
         const header = table.querySelector('.correspondence-table-head');
         if (!header) return;
-        const key = 'ird-correspondence-column-widths-v1';
+        const key = 'ird-correspondence-column-widths-v2';
+        const previousKey = 'ird-correspondence-column-widths-v1';
         const defaults = [.7, .9, 1.1, 1.1, 1.25, 1.35, .9, .32];
         const minimums = [82, 120, 130, 130, 140, 160, 90, 42];
-        let weights = defaults.slice();
+        const distributeWidths = (available, weights) => {
+            const result = Array(weights.length).fill(0);
+            let pending = weights.map((_, index) => index);
+            let remaining = Math.max(available, minimums.reduce((sum, value) => sum + value, 0));
+            while (pending.length) {
+                const totalWeight = pending.reduce((sum, index) => sum + weights[index], 0);
+                const constrained = pending.filter((index) => remaining * weights[index] / totalWeight < minimums[index]);
+                if (!constrained.length) {
+                    pending.forEach((index) => { result[index] = remaining * weights[index] / totalWeight; });
+                    break;
+                }
+                constrained.forEach((index) => {
+                    result[index] = minimums[index];
+                    remaining -= minimums[index];
+                    pending = pending.filter((pendingIndex) => pendingIndex !== index);
+                });
+            }
+            return result;
+        };
+        const availableWidth = Math.max(table.clientWidth, minimums.reduce((sum, value) => sum + value, 0));
+        let widths = distributeWidths(availableWidth, defaults);
         try {
-            const saved = JSON.parse(localStorage.getItem(key) || 'null');
-            if (Array.isArray(saved) && saved.length === defaults.length && saved.every((value) => Number.isFinite(value) && value > 0)) weights = saved;
+            const savedWidths = JSON.parse(localStorage.getItem(key) || 'null');
+            if (Array.isArray(savedWidths) && savedWidths.length === defaults.length && savedWidths.every((value, index) => Number.isFinite(value) && value >= minimums[index])) {
+                widths = savedWidths;
+            } else {
+                const oldWeights = JSON.parse(localStorage.getItem(previousKey) || 'null');
+                if (Array.isArray(oldWeights) && oldWeights.length === defaults.length && oldWeights.every((value) => Number.isFinite(value) && value > 0)) {
+                    widths = distributeWidths(availableWidth, oldWeights);
+                }
+            }
         } catch (_) { }
-        const apply = () => { table.style.setProperty('--correspondence-grid-columns', weights.map((weight, index) => `minmax(${minimums[index]}px, ${weight}fr)`).join(' ')); };
+        const saveWidths = () => { try { localStorage.setItem(key, JSON.stringify(widths)); } catch (_) { } };
+        const apply = () => { table.style.setProperty('--correspondence-grid-columns', widths.map((width) => `${width}px`).join(' ')); };
         apply();
         Array.from(header.children).slice(0, -1).forEach((cell, index) => {
             const handle = document.createElement('button');
@@ -82,27 +123,21 @@
             let drag = null;
             handle.addEventListener('pointerdown', (event) => {
                 if (event.button !== undefined && event.button !== 0) return;
-                const left = header.children[index].getBoundingClientRect().width;
-                const right = header.children[index + 1].getBoundingClientRect().width;
-                drag = {x: event.clientX, left, total: left + right, leftWeight: weights[index], rightWeight: weights[index + 1]};
+                drag = {x: event.clientX, width: widths[index]};
                 handle.classList.add('is-dragging'); handle.setPointerCapture(event.pointerId); event.preventDefault();
             });
             handle.addEventListener('pointermove', (event) => {
                 if (!drag) return;
-                const left = Math.max(minimums[index], Math.min(drag.total - minimums[index + 1], drag.left + event.clientX - drag.x));
-                const pair = drag.leftWeight + drag.rightWeight;
-                weights[index] = Math.max(.18, pair * left / drag.total);
-                weights[index + 1] = Math.max(.18, pair - weights[index]);
+                widths[index] = Math.max(minimums[index], drag.width + event.clientX - drag.x);
                 apply();
-                try { localStorage.setItem(key, JSON.stringify(weights)); } catch (_) { }
+                saveWidths();
             });
             const stop = () => { drag = null; handle.classList.remove('is-dragging'); };
             handle.addEventListener('pointerup', stop); handle.addEventListener('pointercancel', stop); handle.addEventListener('lostpointercapture', stop);
             handle.addEventListener('keydown', (event) => {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-                event.preventDefault(); const delta = event.key === 'ArrowRight' ? .1 : -.1;
-                weights[index] = Math.max(.18, weights[index] + delta); weights[index + 1] = Math.max(.18, weights[index + 1] - delta); apply();
-                try { localStorage.setItem(key, JSON.stringify(weights)); } catch (_) { }
+                event.preventDefault(); const delta = event.key === 'ArrowRight' ? 10 : -10;
+                widths[index] = Math.max(minimums[index], widths[index] + delta); apply(); saveWidths();
             });
         });
     });
@@ -608,6 +643,7 @@
                 reviewForm.elements.namedItem('recipient').value = row.dataset.recipient || '';
                 reviewForm.elements.namedItem('subject').value = row.dataset.subject || '';
                 reviewForm.elements.namedItem('summary').value = row.dataset.summary || '';
+                resizeGrowingTextarea(reviewForm.elements.namedItem('summary'));
                 reviewForm.elements.namedItem('valid_until').value = row.dataset.validUntil || '';
                 extracted = {id: row.dataset.recordId};
                 const deleteForm = irdDialog.querySelector('[data-ird-delete-form]');

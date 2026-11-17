@@ -20,13 +20,13 @@
          data-sender="{{ letter.sender }}" data-recipient="{{ letter.recipient }}" data-subject="{{ letter.subject }}"
          data-summary="{{ letter.summary }}" data-valid-until="{{ letter.valid_until }}"
          data-preview-label="{{ letter.subject or letter.original_filename or table_label }}">
-        <span role="cell">{{ 'Входящее' if letter.direction == 'incoming' else 'Исходящее' }}</span>
-        <span role="cell" class="correspondence-table-number">{% if letter.number %}№ {{ letter.number }}{% endif %}{% if letter.letter_date %}<small>{{ letter.letter_date|ru_date }}</small>{% endif %}</span>
-        <span role="cell" title="{{ letter.sender }}">{{ letter.sender }}</span>
-        <span role="cell" title="{{ letter.recipient }}">{{ letter.recipient }}</span>
-        <span role="cell" class="correspondence-table-subject" title="{{ letter.subject }}">{{ letter.subject }}</span>
-        <span role="cell" class="correspondence-table-summary" title="{{ letter.summary }}">{{ letter.summary }}</span>
-        <span role="cell" class="correspondence-table-file">{% if letter.stored_filename %}<i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>{{ letter.original_filename }}</span>{% endif %}</span>
+        <span role="cell"><span class="correspondence-table-cell-text">{{ 'Входящее' if letter.direction == 'incoming' else 'Исходящее' }}</span></span>
+        <span role="cell" class="correspondence-table-number"><strong>{% if letter.number %}№ {{ letter.number }}{% endif %}</strong>{% if letter.letter_date %}<small>{{ letter.letter_date|ru_date }}</small>{% endif %}</span>
+        <span role="cell" title="{{ letter.sender }}"><span class="correspondence-table-cell-text">{{ letter.sender }}</span></span>
+        <span role="cell" title="{{ letter.recipient }}"><span class="correspondence-table-cell-text">{{ letter.recipient }}</span></span>
+        <span role="cell" class="correspondence-table-subject" title="{{ letter.subject }}"><span class="correspondence-table-cell-text">{{ letter.subject }}</span></span>
+        <span role="cell" class="correspondence-table-summary" title="{{ letter.summary }}"><span class="correspondence-table-cell-text">{{ letter.summary }}</span></span>
+        <span role="cell" class="correspondence-table-file">{% if letter.stored_filename %}<i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span class="correspondence-table-cell-text">{{ letter.original_filename }}</span>{% endif %}</span>
         <span role="cell" class="correspondence-row-actions"><i class="bi bi-eye" aria-hidden="true"></i><span class="visually-hidden">Открыть письмо</span></span>
     </div>
     {% endfor %}
