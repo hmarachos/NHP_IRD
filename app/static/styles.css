@@ -229,7 +229,6 @@
 .checklist.panel{max-height:none;overflow:visible;padding:0}
 .checklist-row{position:relative;z-index:0;display:grid;grid-template-columns:38px minmax(0,1.4fr) minmax(140px,.7fr) minmax(115px,.55fr) 72px;gap:12px;align-items:center;min-width:0;padding:9px 13px;border-bottom:1px solid #edf0f1}
 .checklist-row:last-child{border-bottom:0}
-.checklist-row:has(.checklist-row-menu[open]){z-index:3;background:#fffdfb}
 .checklist-row[hidden]{display:none!important}
 .checklist-filter-empty{margin:0;padding:24px 15px;color:var(--muted);font-size:12px;text-align:center}
 .checklist-number{justify-self:center;color:#929aa0;font-size:11px;text-align:center}
@@ -243,6 +242,9 @@
 .checklist-status-label.status-not_required{background:#f2f0eb;color:#776a54}
 .checklist-status-label.status-not_required::before{background:#a28c67}
 .checklist-row-actions{display:flex;align-items:center;justify-self:end;gap:3px}
+.checklist-upload-trigger{display:grid;width:34px;height:34px;flex:0 0 auto;place-items:center;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--accent-dark);cursor:pointer}
+.checklist-upload-trigger:hover{border-color:var(--line);background:#f7f8f8}
+.checklist-upload-trigger i{font-size:17px}
 .checklist-row-delete-form{margin:0}
 .checklist-row-delete{display:none;width:32px;height:32px;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--danger);font-size:15px}
 .checklist-row-delete:hover{background:#fff0ee}
