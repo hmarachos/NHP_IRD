@@ -201,6 +201,7 @@ def init_db() -> None:
     seed_default_template(db)
     ensure_geodetic_survey_item(db)
     ensure_azs_initial_documents(db)
+    apply_recommended_azs_document_order(db)
     integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
     if integrity != "ok":
         raise RuntimeError(f"Database integrity check failed after migration: {integrity}")
@@ -421,9 +422,9 @@ def ensure_azs_initial_documents(db: sqlite3.Connection) -> None:
         return
 
     template = db.execute(
-        "SELECT id FROM checklist_templates WHERE name IN (?, ?) "
-        "ORDER BY CASE name WHEN 'Возведение/реконструкция АЗС' THEN 0 ELSE 1 END LIMIT 1",
-        ("АЗС", "Возведение/реконструкция АЗС"),
+        "SELECT id FROM checklist_templates WHERE name IN (?, ?, ?) "
+        "ORDER BY CASE name WHEN 'Возведение/реконструкция АЗС' THEN 0 WHEN 'АЗС' THEN 1 ELSE 2 END LIMIT 1",
+        ("АЗС", "Возведение/реконструкция АЗС", "Полный перечень"),
     ).fetchone()
     if template is None:
         return
@@ -541,6 +542,72 @@ def ensure_azs_initial_documents(db: sqlite3.Connection) -> None:
 
     db.execute(
         "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('azs_initial_documents_migrated_v1', '1')"
+    )
+
+
+def apply_recommended_azs_document_order(db: sqlite3.Connection) -> None:
+    """Apply the recommended order to the AZS template and its project checklists."""
+    if db.execute(
+        "SELECT 1 FROM app_settings WHERE key = 'azs_recommended_document_order_v1'"
+    ).fetchone():
+        return
+
+    from app.document_types import DOCUMENT_TYPES
+
+    template = db.execute(
+        "SELECT id FROM checklist_templates WHERE name IN (?, ?, ?) "
+        "ORDER BY CASE name WHEN 'Возведение/реконструкция АЗС' THEN 0 WHEN 'АЗС' THEN 1 ELSE 2 END LIMIT 1",
+        ("АЗС", "Возведение/реконструкция АЗС", "Полный перечень"),
+    ).fetchone()
+    if template is None:
+        return
+
+    template_id = template["id"]
+    title_rank = {" ".join(title.casefold().split()): index for index, title in enumerate(DOCUMENT_TYPES)}
+    # Older versions used these labels for the same first checklist document.
+    title_rank['письмо заказчика "о заключении договора"'] = 0
+    title_rank['письмо заказчика о заключении договора'] = 0
+
+    def order_rows(rows):
+        original = {row["id"]: index for index, row in enumerate(rows)}
+        return sorted(
+            rows,
+            key=lambda row: (
+                title_rank.get(" ".join(row["title"].casefold().split()), len(DOCUMENT_TYPES)),
+                original[row["id"]],
+            ),
+        )
+
+    template_rows = db.execute(
+        "SELECT id, title FROM checklist_template_items WHERE template_id = ? ORDER BY sort_order, id",
+        (template_id,),
+    ).fetchall()
+    for sort_order, row in enumerate(order_rows(template_rows)):
+        db.execute(
+            "UPDATE checklist_template_items SET sort_order = ? WHERE id = ?",
+            (sort_order, row["id"]),
+        )
+
+    projects = db.execute(
+        "SELECT DISTINCT objects.id FROM objects WHERE objects.template_id = ? OR objects.id IN ("
+        "SELECT DISTINCT project_checklist_items.object_id FROM project_checklist_items "
+        "JOIN checklist_template_items ON checklist_template_items.id = project_checklist_items.source_template_item_id "
+        "WHERE checklist_template_items.template_id = ?)",
+        (template_id, template_id),
+    ).fetchall()
+    for project in projects:
+        rows = db.execute(
+            "SELECT id, title FROM project_checklist_items WHERE object_id = ? ORDER BY sort_order, id",
+            (project["id"],),
+        ).fetchall()
+        for sort_order, row in enumerate(order_rows(rows)):
+            db.execute(
+                "UPDATE project_checklist_items SET sort_order = ? WHERE id = ?",
+                (sort_order, row["id"]),
+            )
+
+    db.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('azs_recommended_document_order_v1', '1')"
     )
 
 

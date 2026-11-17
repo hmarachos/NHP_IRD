@@ -987,6 +987,12 @@ class AppSettingsRepository:
 
 
 class CorrespondenceRepository:
+    def list_organizations(self):
+        rows = get_db().execute(
+            "SELECT sender AS organization FROM correspondence UNION SELECT recipient AS organization FROM correspondence ORDER BY organization COLLATE NOCASE"
+        )
+        return [row["organization"].strip() for row in rows if row["organization"] and row["organization"].strip()]
+
     def list_by_object(self, object_id: int, record_type: str = "correspondence"):
         return list(get_db().execute("SELECT * FROM correspondence WHERE object_id = ? AND record_type = ? ORDER BY COALESCE(letter_date, '' ) DESC, id DESC", (object_id, record_type)))
 

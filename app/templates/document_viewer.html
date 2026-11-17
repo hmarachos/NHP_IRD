@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Предпросмотр документа</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261117-pdf-viewer-split-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261117-pdf-viewer-split-v2') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="pdf-viewer-body">
@@ -29,7 +29,7 @@
             </button>
             {% endfor %}
         </aside>
-        <div class="pdf-viewer-splitter" data-pdf-splitter role="separator" aria-label="Изменить ширину миниатюр" aria-orientation="vertical" aria-valuemin="15" aria-valuemax="40" aria-valuenow="25" tabindex="0" title="Перетащите, чтобы изменить ширину области миниатюр"></div>
+        <div class="pdf-viewer-splitter" data-pdf-splitter role="separator" aria-label="Изменить ширину миниатюр" aria-orientation="vertical" aria-valuemin="8" aria-valuemax="40" aria-valuenow="13" tabindex="0" title="Перетащите, чтобы изменить ширину области миниатюр"></div>
         <section class="pdf-page-viewport" data-page-viewport aria-label="Выбранная страница документа">
             <img class="pdf-page-image" data-page-image src="{{ url_for('web.document_viewer_page', document_id=document_id, page_index=0) }}" alt="Страница 1 из {{ page_count }}">
         </section>
@@ -47,20 +47,25 @@
     const viewport = viewer.querySelector('[data-page-viewport]');
     const thumbnails = Array.from(viewer.querySelectorAll('[data-page-index]'));
     const splitter = viewer.querySelector('[data-pdf-splitter]');
-    const splitStorageKey = 'ird-pdf-thumbnail-width-v1';
+    const splitStorageKey = 'ird-pdf-thumbnail-width-v2';
+    const previousSplitStorageKey = 'ird-pdf-thumbnail-width-v1';
     let page = 0;
     let zoom = 100;
     let drag = null;
     const setRatio = (ratio, persist = true) => {
-        const value = Math.max(.15, Math.min(.4, Number(ratio) || .25));
+        const value = Math.max(.08, Math.min(.4, Number(ratio) || .125));
         layout.style.setProperty('--pdf-thumbnails-width', `${value * 100}%`);
         splitter.setAttribute('aria-valuenow', String(Math.round(value * 100)));
         if (persist) { try { localStorage.setItem(splitStorageKey, String(value)); } catch (_) {} }
     };
     try {
         const saved = Number(localStorage.getItem(splitStorageKey));
-        setRatio(Number.isFinite(saved) && saved > 0 ? saved : .25, false);
-    } catch (_) { setRatio(.25, false); }
+        if (Number.isFinite(saved) && saved > 0) setRatio(saved, false);
+        else {
+            const previous = Number(localStorage.getItem(previousSplitStorageKey));
+            setRatio(Number.isFinite(previous) && previous > 0 ? previous / 2 : .125, false);
+        }
+    } catch (_) { setRatio(.125, false); }
     const setZoom = (value) => {
         zoom = Math.max(50, Math.min(200, value));
         pageImage.style.width = `${zoom}%`;

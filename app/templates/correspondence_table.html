@@ -7,8 +7,7 @@
         <span role="columnheader">Получатель</span>
         <span role="columnheader">Тема</span>
         <span role="columnheader">Содержание</span>
-        <span role="columnheader">Файл</span>
-        <span role="columnheader">Действия</span>
+        <span role="columnheader" aria-label="Открыть письмо"></span>
     </div>
     {% for letter in correspondence_items %}
     <div class="correspondence-table-row" role="row" tabindex="0" data-open-correspondence
@@ -26,7 +25,6 @@
         <span role="cell" title="{{ letter.recipient }}"><span class="correspondence-table-cell-text">{{ letter.recipient }}</span></span>
         <span role="cell" class="correspondence-table-subject" title="{{ letter.subject }}"><span class="correspondence-table-cell-text">{{ letter.subject }}</span></span>
         <span role="cell" class="correspondence-table-summary" title="{{ letter.summary }}"><span class="correspondence-table-cell-text">{{ letter.summary }}</span></span>
-        <span role="cell" class="correspondence-table-file">{% if letter.stored_filename %}<i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span class="correspondence-table-cell-text">{{ letter.original_filename }}</span>{% endif %}</span>
         <span role="cell" class="correspondence-row-actions"><i class="bi bi-eye" aria-hidden="true"></i><span class="visually-hidden">Открыть письмо</span></span>
     </div>
     {% endfor %}

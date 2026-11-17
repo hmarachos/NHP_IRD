@@ -202,6 +202,7 @@ def object_workspace(object_id: int):
         warning_days=warning_days,
         correspondence=CorrespondenceRepository().list_by_object(object_id),
         approvals=CorrespondenceRepository().list_by_object(object_id, "approval"),
+        correspondence_organizations=CorrespondenceRepository().list_organizations(),
     )
 
 
