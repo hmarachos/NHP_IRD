@@ -489,6 +489,7 @@
 .checklist-note-display,.checklist-expiry-cell{align-self:stretch;display:grid;align-content:center;}
 .checklist-number,.checklist-status-label{justify-content:center;}
 .checklist-row-actions{justify-content:flex-end;}
+.checklist.is-editing-template .checklist-upload-trigger{display:none!important;}
 @media(min-width:761px){.checklist-table-head,.checklist-row{width:max(100%,calc(var(--checklist-grid-width,0px) + 26px));}.checklist-table-head{padding-left:13px;padding-right:13px;}}
 .checklist-table-head>span{overflow-wrap:anywhere;word-break:break-all;white-space:normal;}
 .checklist-row-actions,.checklist-row-actions>*{min-width:0;max-width:100%;}
