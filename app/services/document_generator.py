@@ -283,6 +283,12 @@ def _add_numbered_request_items(document: Document, items: list[Any], *, include
         paragraph.paragraph_format.space_after = Pt(3)
         paragraph.add_run(f"{index}. {item['title']}")
         if include_notes:
+            issuer = (item["linked_document_issuer"] or item["issuer"] or "").strip()
+            if issuer:
+                details = document.add_paragraph()
+                details.paragraph_format.left_indent = Cm(1.4)
+                details.paragraph_format.space_after = Pt(2)
+                details.add_run(f"Орган, выдавший документ: {issuer}")
             note = (item["note"] or item["linked_document_note"] or "").strip()
             if note:
                 comment = document.add_paragraph()

@@ -676,6 +676,12 @@ class ChecklistRepository:
             db.execute(
                 """
                 SELECT checklist.*, documents.working_title AS linked_document_title,
+                       COALESCE(NULLIF(TRIM(documents.issuer), ''), (
+                           SELECT group_concat(NULLIF(TRIM(linked.issuer), ''), '; ')
+                           FROM project_checklist_documents AS linked_documents
+                           JOIN documents AS linked ON linked.id = linked_documents.document_id
+                           WHERE linked_documents.checklist_item_id = checklist.id
+                       )) AS linked_document_issuer,
                        COALESCE(NULLIF(TRIM(documents.note), ''), (
                            SELECT group_concat(NULLIF(TRIM(linked.note), ''), '; ')
                            FROM project_checklist_documents AS linked_documents
