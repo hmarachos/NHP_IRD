@@ -550,3 +550,6 @@
 
 @media(min-width:761px){.new-project-form{width:min(960px,calc(100vw - 40px));grid-template-columns:.9fr .95fr 1.35fr 1.1fr 1fr auto}}
 @media(max-width:760px){.new-project-form{left:0;right:auto;width:min(600px,calc(100vw - 24px));grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Keep correspondence rows on the same grid width as the header. */
+.correspondence-table-head,.correspondence-table-row{width:100%;min-width:900px}
