@@ -1,114 +1,58 @@
-# Инструкция по запуску с Docker
+# Запуск Django и PostgreSQL в Docker
 
-## Предварительные требования
+## Подготовка
 
-1. Установите [Docker](https://docs.docker.com/get-docker/)
-2. Установите [Docker Compose](https://docs.docker.com/compose/install/)
+1. Установите Docker Desktop.
+2. Скопируйте `.env.example` в `.env` и задайте уникальные `SECRET_KEY` и `DJANGO_POSTGRES_PASSWORD`.
+3. Укажите SMTP и OpenAI параметры, если нужны email-уведомления и AI-извлечение.
 
-## Быстрый старт
-
-1. Скопируйте файл с переменными окружения (если еще не создан):
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Отредактируйте файл `.env` и укажите свои значения:
-   ```bash
-   # Откройте файл в текстовом редакторе
-   nano .env
-   ```
-
-3. Запустите приложение:
-   ```bash
-   docker-compose up -d
-   ```
-
-4. Приложение будет доступно по адресу: http://localhost:5050 (порт задается через `APP_PORT`)
-
-**Примечание:** Dockerfile автоматически скопирует `.env` файл в контейнер. Если `.env` не существует, будет использован `.env.example`.
-
-## Команды Docker Compose
-
-- **Запуск в фоновом режиме**: `docker-compose up -d`
-- **Остановка**: `docker-compose down`
-- **Просмотр логов**: `docker-compose logs -f`
-- **Пересборка образа**: `docker-compose build`
-- **Перезапуск**: `docker-compose restart`
-- **Проверка статуса**: `docker-compose ps`
-
-## Переменные окружения
-
-Основные переменные окружения, которые можно настроить в файле `.env`:
-
-| Переменная | Описание | Значение по умолчанию |
-|------------|----------|----------------------|
-| `SECRET_KEY` | Ключ безопасности Flask | `dev-secret-change-me` |
-| `OPENAI_API_KEY` | Ключ API OpenAI | (обязательно для AI функций) |
-| `OPENAI_MODEL` | Модель извлечения реквизитов | `gpt-6-luna` |
-| `APP_PORT` | Порт приложения на компьютере | `5050` |
-| `USE_AI` | Использовать AI функции | `true` |
-| `TESSERACT_LANG` | Язык для OCR | `rus+eng` |
-| `OCR_DPI` | DPI для OCR | `300` |
-| `MAX_CONTENT_LENGTH` | Максимальный размер файла | `26214400` (25MB) |
-
-## Структура томов
-
-- `./instance` - монтируется как `/app/instance` в контейнере (содержит базу данных)
-- `./uploads` - монтируется как `/app/instance/uploads` в контейнере (загруженные файлы)
-
-## Разработка с Docker
-
-Для разработки можно использовать Docker с монтированием исходного кода:
+## Запуск
 
 ```bash
-# Запуск с пересборкой
-docker-compose up --build
-
-# Запуск с просмотром логов
-docker-compose up
-
-# Остановка и удаление контейнеров
-docker-compose down
+docker compose up --build -d django-web
+docker compose --profile post-migration up --build -d django-scheduler
 ```
 
-## Устранение неполадок
+Портал доступен на `http://127.0.0.1:5050`, Django Admin — по адресу
+`http://127.0.0.1:5050/admin/`, PostgreSQL доступен локально на `127.0.0.1:5438`.
+Внешний доступ настраивается через HTTPS reverse proxy; `ALLOWED_HOSTS` и
+`CSRF_TRUSTED_ORIGINS` должны включать домен прокси. Портал требует авторизации.
 
-1. **Проблемы с правами доступа к файлам**:
-   ```bash
-   sudo chown -R $USER:$USER instance/ uploads/
-   ```
+При первом запуске entrypoint применяет Django-миграции. Архивная SQLite не
+импортируется автоматически: PostgreSQL уже содержит записи, созданные после
+перехода, и является единственным рабочим источником данных. Не запускайте
+`import_legacy_sqlite --replace` поверх действующей базы. Команду аудита можно
+использовать только для чтения:
 
-2. **Контейнер не запускается**:
-   ```bash
-   docker-compose logs web
-   ```
+```bash
+docker compose exec django-web python manage.py audit_legacy_sqlite \
+  --source /app/instance/documents.db
+```
 
-3. **Пересборка образа**:
-   ```bash
-   docker-compose build --no-cache
-   ```
+Создание superuser:
 
-4. **Очистка Docker**:
-   ```bash
-   docker-compose down -v  # удаляет тома
-   docker system prune -a  # очистка неиспользуемых ресурсов
-   ```
+```bash
+docker compose exec django-web python manage.py createsuperuser
+```
 
-## Без Docker
+## Управление
 
-Если вы предпочитаете запускать приложение без Docker:
+```bash
+docker compose ps
+docker compose logs -f django-web
+docker compose logs -f django-scheduler
+docker compose restart django-web django-scheduler
+docker compose stop django-web django-scheduler
+```
 
-1. Установите Python 3.11+
-2. Установите системные зависимости:
-   ```bash
-   sudo apt-get install tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng poppler-utils
-   ```
-3. Установите Python зависимости:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Настройте переменные окружения в `.env`
-5. Запустите приложение:
-   ```bash
-   python run.py
-   ```
+Не запускайте `docker compose down -v` без отдельной резервной копии: команда
+удаляет PostgreSQL volume. Загруженные документы хранятся в `uploads/`, акты —
+в `instance/acts/`; их резервируйте отдельно вместе с PostgreSQL.
+
+## Проверки
+
+```bash
+docker compose exec django-web python manage.py check
+docker compose exec django-web python manage.py makemigrations --check --dry-run
+docker compose exec django-web python manage.py test migration_portal
+```

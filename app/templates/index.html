@@ -9,6 +9,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label><span>Номер договора</span><input name="contract_number" placeholder="Например, 24-017" required></label>
             <label><span>Дата договора</span><input type="date" name="contract_date"></label>
+            <label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option><option>Предпроектная документация</option><option>Строительный проект</option><option>Архитектурный проект</option></select></label>
             <label><span>Наименование объекта</span><input name="name" placeholder="Наименование объекта" required></label>
             <label><span>Заказчик</span><input name="customer" list="customer-suggestions" placeholder="Начните вводить название" autocomplete="off"></label>
             <label><span>Список документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
@@ -21,39 +22,102 @@
 {% if alerts %}
 <section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.object_workspace', object_id=alert.document.object_id, tab='checklist', open_document=alert.document.id) }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.working_title or alert.document.original_filename }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
 {% endif %}
-<section class="project-area project-table-area">
-    <div class="section-title"><div><h2>Активные проекты</h2><p>{{ objects|length }} в работе</p></div></div>
+<section class="project-area project-cards-area">
+    <div class="project-list-heading"><div class="section-title"><div><h2>Активные проекты</h2><p><span data-project-count>{{ objects|length }}</span> в работе</p></div></div>{% if objects %}<label class="project-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Договор, объект, заказчик или стадия" aria-label="Поиск проектов" autocomplete="off" data-project-search><kbd>⌘ K</kbd></label>{% endif %}</div>
     {% if objects %}
-    <div class="projects-table-wrap"><table class="projects-table">
-        <thead><tr><th>Договор</th><th>Наименование объекта</th><th>Заказчик</th><th>Документы</th><th></th></tr></thead>
-        <tbody>{% for object in objects %}
-        <tr class="project-row" data-href="{{ url_for('web.object_workspace', object_id=object.id) }}" tabindex="0" aria-label="Открыть проект {{ object.name }}">
-            <td data-label="Договор"><span class="contract-tag">{{ object.contract_number }}</span></td>
-            <td data-label="Наименование объекта"><a class="project-table-link" href="{{ url_for('web.object_workspace', object_id=object.id) }}">{{ object.name }}</a></td>
-            <td data-label="Заказчик">{{ object.customer or '—' }}</td>
-            <td data-label="Документы">{{ object.documents_count }}</td>
-            <td class="project-table-actions">
-                <details class="project-edit"><summary>Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form></details>
-                <form action="{{ url_for('web.archive_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet-button" type="submit">В архив</button></form>
-                <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger active-project-delete" type="submit">Удалить</button></form>
-            </td>
-        </tr>{% endfor %}</tbody>
-    </table></div>
+    <div class="projects-card-grid">{% for object in objects %}
+        <article class="project-card" data-project-card data-search="{{ object.contract_number }} {{ object.name }} {{ object.customer }} {{ object.stage }}">
+            <a class="project-card-main" href="{{ url_for('web.object_workspace', object_id=object.id) }}" aria-label="Открыть проект {{ object.name }}">
+                <strong class="project-card-contract">{{ object.contract_number }}</strong>
+                {% if object.stage %}<span class="project-stage">{{ object.stage }}</span>{% endif %}
+                <h3>{{ object.name }}</h3>
+                <span class="project-card-meta"><span class="project-card-customer"><small>ЗАКАЗЧИК</small>{{ object.customer or 'Не указан' }}</span><span class="project-card-documents"><i class="bi bi-file-earmark-text" aria-hidden="true"></i>{{ object.documents_count }} док.</span></span>
+            </a>
+            <footer class="project-card-actions">
+                <details class="project-edit"><summary><i class="bi bi-pencil" aria-hidden="true"></i> Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Шаблон документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}" {% if object.template_id == template.id %}selected{% endif %}>{{ template.name }}</option>{% endfor %}</select><small>Добавятся только отсутствующие пункты, существующие сохранятся.</small></label><label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option>{% for stage in ['Предпроектная документация', 'Строительный проект', 'Архитектурный проект'] %}<option value="{{ stage }}" {% if object.stage == stage %}selected{% endif %}>{{ stage }}</option>{% endfor %}</select></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form></details>
+                <form action="{{ url_for('web.archive_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet-button" type="submit"><i class="bi bi-archive" aria-hidden="true"></i> В архив</button></form>
+                <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger active-project-delete" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button></form>
+            </footer>
+        </article>
+    {% endfor %}<p class="project-search-empty" data-project-search-empty hidden>По вашему запросу проекты не найдены.</p></div>
     {% else %}<div class="empty-state compact-empty"><h3>Пока нет проектов</h3><p>Создайте проект, чтобы добавить документы.</p></div>{% endif %}
 </section>
 {% if archived_objects %}<details class="archive-section"><summary>Архив проектов <span class="count-pill">{{ archived_objects|length }}</span></summary><div class="archive-list">{% for object in archived_objects %}<div><span><strong>{{ object.name }}</strong><small>Договор {{ object.contract_number }}</small></span><div class="archive-actions"><a href="{{ url_for('web.export_object', object_id=object.id) }}">Скачать архив</a><form action="{{ url_for('web.restore_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="secondary-button" type="submit">Восстановить</button></form><form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit">Удалить</button></form></div></div>{% endfor %}</div></details>{% endif %}
 <script>
-document.querySelectorAll(".project-row").forEach((row) => {
-    const openProject = () => window.location.assign(row.dataset.href);
-    row.addEventListener("click", (event) => {
-        if (!event.target.closest("a, button, summary, form, input, select")) openProject();
+const projectSearch = document.querySelector('[data-project-search]');
+const projectCards = [...document.querySelectorAll('[data-project-card]')];
+const projectSearchEmpty = document.querySelector('[data-project-search-empty]');
+const projectCount = document.querySelector('[data-project-count]');
+const normalizeSearch = (value) => (value || '').toLocaleLowerCase('ru').replaceAll('ё', 'е').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim();
+const filterProjects = () => {
+    const query = normalizeSearch(projectSearch?.value).replace(/\s+/g, ' ');
+    let visibleCount = 0;
+    projectCards.forEach((card) => {
+        const matches = !query || normalizeSearch(card.dataset.search).replace(/\s+/g, ' ').includes(query);
+        card.hidden = !matches;
+        if (matches) visibleCount += 1;
     });
-    row.addEventListener("keydown", (event) => {
-        if ((event.key === "Enter" || event.key === " ") && event.target === row) {
-            event.preventDefault();
-            openProject();
-        }
+    if (projectCount) projectCount.textContent = projectSearch?.value.trim() ? `${visibleCount} из ${projectCards.length}` : String(projectCards.length);
+    if (projectSearchEmpty) projectSearchEmpty.hidden = visibleCount > 0;
+};
+projectSearch?.addEventListener('input', filterProjects);
+document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k' && projectSearch) {
+        event.preventDefault();
+        projectSearch.focus();
+        projectSearch.select();
+    }
+    if (event.key === 'Escape' && document.activeElement === projectSearch) {
+        projectSearch.value = '';
+        filterProjects();
+        projectSearch.blur();
+    }
+});
+const projectEditDetails = [...document.querySelectorAll(".project-edit")];
+const closeProjectEditMenus = (except = null) => {
+    projectEditDetails.forEach((details) => {
+        if (details === except) return;
+        details.open = false;
+        details.classList.remove("is-floating", "opens-up");
+        details.querySelector(".stack-form")?.style.removeProperty("--project-edit-top");
     });
+};
+const positionProjectEditMenu = (details) => {
+    const form = details.querySelector(".stack-form");
+    const summary = details.querySelector("summary");
+    if (!form || !summary) return;
+    const anchor = summary.getBoundingClientRect();
+    const gap = 8;
+    const margin = 12;
+    const measuredHeight = form.offsetHeight;
+    const roomBelow = window.innerHeight - anchor.bottom - margin;
+    const roomAbove = anchor.top - margin;
+    const opensUp = measuredHeight > roomBelow && roomAbove > roomBelow;
+    const maxHeight = Math.max(180, (opensUp ? roomAbove : roomBelow) - gap);
+    const top = opensUp
+        ? Math.max(margin, anchor.top - Math.min(measuredHeight, maxHeight) - gap)
+        : Math.min(window.innerHeight - margin - Math.min(measuredHeight, maxHeight), anchor.bottom + gap);
+    const left = Math.max(margin, Math.min(anchor.right - form.offsetWidth, window.innerWidth - form.offsetWidth - margin));
+    form.style.setProperty("--project-edit-top", `${top}px`);
+    form.style.left = `${left}px`;
+    form.style.right = "auto";
+    form.style.maxHeight = `${maxHeight}px`;
+    details.classList.toggle("opens-up", opensUp);
+};
+projectEditDetails.forEach((details) => details.addEventListener("toggle", () => {
+    if (!details.open) {
+        details.classList.remove("is-floating", "opens-up");
+        details.querySelector(".stack-form")?.style.removeProperty("--project-edit-top");
+        return;
+    }
+    closeProjectEditMenus(details);
+    details.classList.add("is-floating");
+    requestAnimationFrame(() => positionProjectEditMenu(details));
+}));
+window.addEventListener("resize", () => projectEditDetails.filter((details) => details.open).forEach(positionProjectEditMenu));
+window.addEventListener("scroll", () => projectEditDetails.filter((details) => details.open).forEach(positionProjectEditMenu), true);
+document.addEventListener("click", (event) => {
+    if (!event.target.closest(".project-edit")) closeProjectEditMenus();
 });
 </script>
 {% endblock %}

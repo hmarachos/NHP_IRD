@@ -9,11 +9,13 @@
 </dialog>
 <div class="template-list">
 {% for entry in templates %}
-<section class="panel template-card" id="template-{{ entry.template.id }}">
+<section class="panel template-card" id="template-{{ entry.template.id }}" data-template-accordion-card>
     <header class="template-card-header">
+        <button class="template-card-toggle" type="button" aria-expanded="false" aria-controls="template-content-{{ entry.template.id }}" data-template-accordion-toggle>
         <div class="template-card-identity">
             <h2 data-template-name>{{ entry.template.name }}</h2>
             <p data-template-description>{{ entry.template.description or 'Без описания' }}</p>
+            <small class="template-card-count">{{ entry['items']|length }} документов</small>
             <form action="{{ url_for('web.update_template', template_id=entry.template.id) }}" method="post" class="template-header template-edit-form" hidden>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label><span>Название шаблона</span><input name="name" value="{{ entry.template.name }}" required data-template-meta-autosave></label>
@@ -21,6 +23,8 @@
                 <span class="template-save-status" aria-live="polite"></span>
             </form>
         </div>
+        <i class="bi bi-chevron-down template-card-chevron" aria-hidden="true"></i>
+        </button>
         <details class="template-menu">
             <summary aria-label="Действия с шаблоном" title="Действия с шаблоном"><i class="bi bi-list" aria-hidden="true"></i></summary>
             <div class="template-menu-panel">
@@ -36,6 +40,7 @@
             </div>
         </details>
     </header>
+    <div class="template-card-content" id="template-content-{{ entry.template.id }}" data-template-accordion-content hidden>
     <div class="section-title template-card-title">
         <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
     </div>
@@ -66,6 +71,7 @@
     <form action="{{ url_for('web.add_template_item', template_id=entry.template.id) }}" method="post" class="inline-form add-item" data-template-add-item hidden>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="title" placeholder="Название нового документа" required><input name="description" placeholder="Пояснение (необязательно)"><button class="secondary-button" type="submit">Добавить документ</button>
     </form>
+    </div>
 </section>
 {% else %}
 <div class="empty-state"><h3>Шаблонов пока нет</h3><p>Создайте первый перечень выше.</p></div>
@@ -81,6 +87,24 @@
     createDialog?.querySelectorAll('[data-close-template-dialog]').forEach((button) => button.addEventListener('click', () => createDialog.close()));
     createDialog?.addEventListener('click', (event) => { if (event.target === createDialog) createDialog.close(); });
 
+    document.querySelectorAll('[data-template-accordion-card]').forEach((card) => {
+        const accordionToggle = card.querySelector('[data-template-accordion-toggle]');
+        const content = card.querySelector('[data-template-accordion-content]');
+        accordionToggle?.addEventListener('click', (event) => {
+            if (event.target.closest('.template-edit-form, .template-menu')) return;
+            const opening = content.hidden;
+            if (opening) {
+                document.querySelectorAll('[data-template-accordion-card]').forEach((otherCard) => {
+                    otherCard.querySelector('[data-template-accordion-content]').hidden = true;
+                    otherCard.querySelector('[data-template-accordion-toggle]').setAttribute('aria-expanded', 'false');
+                    otherCard.classList.remove('is-expanded');
+                });
+            }
+            content.hidden = !opening;
+            accordionToggle.setAttribute('aria-expanded', String(opening));
+            card.classList.toggle('is-expanded', opening);
+        });
+    });
     document.querySelectorAll('.template-card').forEach((card) => {
         const form = card.querySelector('.template-edit-form');
         const menu = card.querySelector('.template-menu');
@@ -123,6 +147,8 @@
         };
         toggle.addEventListener('click', () => {
             const opening = form.hidden;
+            const content = card.querySelector('[data-template-accordion-content]');
+            if (opening && content.hidden) { content.hidden = false; card.querySelector('[data-template-accordion-toggle]').setAttribute('aria-expanded', 'true'); card.classList.add('is-expanded'); document.querySelectorAll('[data-template-accordion-card]').forEach((otherCard) => { if (otherCard !== card) { otherCard.querySelector('[data-template-accordion-content]').hidden = true; otherCard.querySelector('[data-template-accordion-toggle]').setAttribute('aria-expanded', 'false'); otherCard.classList.remove('is-expanded'); } }); }
             if (!opening) {
                 window.clearTimeout(timer);
                 save();

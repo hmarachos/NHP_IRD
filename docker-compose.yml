@@ -1,24 +1,68 @@
-version: '3.8'
-
 services:
-  web:
-    build: .
+  django-db:
+    image: postgres:16-alpine
     ports:
-      - "127.0.0.1:${APP_PORT:-5050}:5000"
-    env_file:
-      - .env
+      - "127.0.0.1:${DJANGO_POSTGRES_BIND_PORT:-5438}:5432"
+    environment:
+      POSTGRES_DB: ${DJANGO_POSTGRES_DB:-nhp_ird_django}
+      POSTGRES_USER: ${DJANGO_POSTGRES_USER:-nhp_ird}
+      POSTGRES_PASSWORD: ${DJANGO_POSTGRES_PASSWORD:-local-dev-only-change-me}
     volumes:
-      - ./instance:/app/instance
-      - ./uploads:/app/instance/uploads
+      - django_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DJANGO_POSTGRES_USER:-nhp_ird} -d ${DJANGO_POSTGRES_DB:-nhp_ird_django}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
-  scheduler:
-    build: .
-    command: ["python", "-m", "app.scheduler"]
+  django-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:${DJANGO_APP_PORT:-5050}:8000"
     env_file:
       - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: django_site.settings
+      DJANGO_POSTGRES_DB: ${DJANGO_POSTGRES_DB:-nhp_ird_django}
+      DJANGO_POSTGRES_USER: ${DJANGO_POSTGRES_USER:-nhp_ird}
+      DJANGO_POSTGRES_PASSWORD: ${DJANGO_POSTGRES_PASSWORD:-local-dev-only-change-me}
+      DJANGO_POSTGRES_HOST: django-db
+      DJANGO_POSTGRES_PORT: 5432
+      LEGACY_SQLITE_SOURCE_PATH: /app/instance/documents.db
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
     volumes:
       - ./instance:/app/instance
       - ./uploads:/app/instance/uploads
     depends_on:
-      - web
+      django-db:
+        condition: service_healthy
     restart: unless-stopped
+  django-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "manage.py", "run_scheduler"]
+    profiles: ["post-migration"]
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: django_site.settings
+      DJANGO_POSTGRES_DB: ${DJANGO_POSTGRES_DB:-nhp_ird_django}
+      DJANGO_POSTGRES_USER: ${DJANGO_POSTGRES_USER:-nhp_ird}
+      DJANGO_POSTGRES_PASSWORD: ${DJANGO_POSTGRES_PASSWORD:-local-dev-only-change-me}
+      DJANGO_POSTGRES_HOST: django-db
+      DJANGO_POSTGRES_PORT: 5432
+      LEGACY_SQLITE_SOURCE_PATH: /app/instance/documents.db
+      DJANGO_ENABLE_EMAIL_NOTIFICATIONS: ${DJANGO_ENABLE_EMAIL_NOTIFICATIONS:-false}
+    volumes:
+      - ./instance:/app/instance
+      - ./uploads:/app/instance/uploads
+    depends_on:
+      django-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  django_postgres_data:

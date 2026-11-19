@@ -92,8 +92,10 @@
                 const submit = form.querySelector('[type="submit"]');
                 submit.disabled = true;
                 submit.innerHTML = '<span class="spinner" aria-hidden="true"></span> Формируем…';
+                const controller = new AbortController();
+                const requestTimeout = window.setTimeout(() => controller.abort(), 120000);
                 try {
-                    const result = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+                    const result = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal});
                     const disposition = result.headers.get('Content-Disposition') || '';
                     if (!result.ok || !disposition.includes('attachment')) throw new Error('Не удалось сформировать документ. Проверьте поля и попробуйте снова.');
                     const blobUrl = URL.createObjectURL(await result.blob());
@@ -109,10 +111,10 @@
                 } catch (error) {
                     let feedback = section.querySelector('.generation-feedback');
                     if (!feedback) { feedback = document.createElement('p'); feedback.className = 'notice notice-error generation-feedback'; section.append(feedback); }
-                    feedback.textContent = error.message || 'Не удалось сформировать документ.';
+                    feedback.textContent = error.name === 'AbortError' ? 'Формирование заняло больше двух минут. Попробуйте ещё раз или сообщите администратору.' : (error.message || 'Не удалось сформировать документ.');
                     submit.disabled = false;
                     submit.innerHTML = `<i class="bi bi-file-earmark-word" aria-hidden="true"></i> ${submit.dataset.idleLabel || 'Скачать Word'}`;
-                }
+                } finally { window.clearTimeout(requestTimeout); }
             });
         } catch (error) {
             content.innerHTML = '<p class="notice notice-error">Не удалось загрузить форму. Обновите страницу и попробуйте снова.</p>';

@@ -5,7 +5,18 @@ import json
 import logging
 from pathlib import Path
 
-from flask import current_app
+import os
+from django.conf import settings as django_settings
+
+
+def _config(key):
+    if django_settings.configured and hasattr(django_settings, key):
+        return getattr(django_settings, key)
+    env_name = key
+    value = os.getenv(env_name)
+    if key == "USE_AI":
+        return (value or "true").lower() in {"1", "true", "yes", "on"}
+    return value or ""
 
 from app.models import ParsedDocument
 from app.prompts import EXTRACTION_PROMPT, EXTRACTION_SCHEMA
@@ -20,10 +31,10 @@ class AiFieldExtractor:
         self.fallback_extractor = fallback_extractor
 
     def extract(self, text: str, document_types: list[str]) -> ParsedDocument:
-        if not current_app.config["USE_AI"]:
+        if not _config("USE_AI"):
             return self.fallback_extractor.extract(text)
 
-        if not current_app.config["OPENAI_API_KEY"]:
+        if not _config("OPENAI_API_KEY"):
             return self.fallback_extractor.extract(text)
 
         try:
@@ -31,7 +42,7 @@ class AiFieldExtractor:
         except ImportError:
             return self.fallback_extractor.extract(text)
 
-        client = OpenAI(api_key=current_app.config["OPENAI_API_KEY"])
+        client = OpenAI(api_key=_config("OPENAI_API_KEY"))
 
         # Keep the working title as a plain string in the strict output schema.
         # Several Russian document titles contain quotation marks, which the
@@ -44,7 +55,7 @@ class AiFieldExtractor:
         for chunk in self._split_text(text, OPENAI_INPUT_CHUNK_CHARS):
             try:
                 response = client.responses.create(
-                    model=current_app.config["OPENAI_MODEL"],
+                    model=_config("OPENAI_MODEL"),
                     instructions=EXTRACTION_PROMPT,
                     input=(
                         f"Возможные рабочие названия: {', '.join(document_types)}\n\n"
@@ -75,7 +86,7 @@ class AiFieldExtractor:
 
     def extract_apz_handwritten_header(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
         """Read the handwritten APZ registration line from its first page."""
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -102,8 +113,8 @@ class AiFieldExtractor:
                 },
                 "required": ["document_number", "issue_date"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Прочитай рукописные номер и дату выдачи архитектурно-планировочного задания "
                     "на приложенном фрагменте. Это строка регистрации прямо под заголовком. "
@@ -129,7 +140,7 @@ class AiFieldExtractor:
 
     def extract_handwritten_header_line(self, pdf_path: Path, ocr_text: str, marker: str) -> dict[str, str]:
         """Read a handwritten document number and date near a printed header marker."""
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -151,8 +162,8 @@ class AiFieldExtractor:
                 "properties": {"document_number": {"type": "string"}, "issue_date": {"type": "string"}},
                 "required": ["document_number", "issue_date"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     f"Изучи изображение первой страницы документа. Распознай рукописные исходящий номер и дату выдачи "
                     f"в верхней шапке рядом с обозначением «{marker}». Не используй номера, напечатанные в тексте, "
@@ -173,7 +184,7 @@ class AiFieldExtractor:
 
     def extract_gai_stamp_fields(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
         """Read issuer, handwritten date and number from the GAI blue stamp."""
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -199,8 +210,8 @@ class AiFieldExtractor:
                 },
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     "На изображении шапка технических требований ГАИ. Извлеки три реквизита. "
                     "issuer: полное русскоязычное название выдавшего подразделения из синей печати "
@@ -225,7 +236,7 @@ class AiFieldExtractor:
 
     def extract_beltelecom_header_dates(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
         """Read handwritten issue and expiry dates from Beltelecom conditions."""
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -252,8 +263,8 @@ class AiFieldExtractor:
                 "properties": {"issue_date": {"type": "string"}, "valid_until": {"type": "string"}},
                 "required": ["issue_date", "valid_until"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     "На изображениях две строки технических условий РУП Белтелеком. "
                     "На первом фрагменте прочитай дату после печатного слова «от» (это дата выдачи). "
@@ -277,7 +288,7 @@ class AiFieldExtractor:
 
     def extract_minskenergo_header(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
         """Read the handwritten registration number and date on Minskenergo TUs."""
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -303,8 +314,8 @@ class AiFieldExtractor:
                 "properties": {"issuer": {"type": "string"}, "document_number": {"type": "string"}, "issue_date": {"type": "string"}},
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Распознавай реквизиты технических условий филиала Минскэнерго. На первом изображении "
                     "используй только ПРАВЫЙ РУССКИЙ вариант шапки. Верни орган в обычном регистре, "
@@ -335,7 +346,7 @@ class AiFieldExtractor:
         document issuers place the letterhead and handwritten registration
         line in different positions and often use bilingual columns.
         """
-        if not current_app.config["USE_AI"] or not current_app.config["OPENAI_API_KEY"]:
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
             return {}
         try:
             import pypdfium2 as pdfium
@@ -363,8 +374,8 @@ class AiFieldExtractor:
                 },
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=current_app.config["OPENAI_API_KEY"]).responses.create(
-                model=current_app.config["OPENAI_MODEL"],
+            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Извлеки реквизиты именно выдающего документа из изображения верхней части первой страницы. "
                     "issuer: полное название организации в РУССКОЙ части шапки/бланка; не бери белорусскую "

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261117-checklist-column-alignment-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261119-contract-stage-v1') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
@@ -33,6 +33,7 @@
                     <a class="project-nav-item{% if is_active %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) if is_acts else url_for('web.object_workspace', object_id=active_project.id, tab=tab) }}"{% if is_active %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</a>
                     {% endif %}
                     {% endfor %}
+                    <a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_notebook' %} is-active{% endif %}" href="/objects/{{ active_project.id }}/notebook"{% if request.resolver_match.url_name == 'web_project_notebook' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-journal-text" aria-hidden="true"></i><span>Записная книжка</span></a>
                 </div>
                 {% endif %}
             </nav>
@@ -41,7 +42,7 @@
         <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>
         <main class="page app-main">
             <div class="mobile-menu-row"><button class="mobile-sidebar-toggle" type="button" aria-label="Открыть меню" aria-controls="app-sidebar" aria-expanded="false" data-sidebar-toggle><i class="bi bi-list" aria-hidden="true"></i></button></div>
-            {% if active_project %}<header class="project-topbar"><div class="project-topbar-context"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><small>Договор {{ active_project.contract_number }}</small></div></header>{% endif %}
+            {% if active_project %}<header class="project-topbar"><div class="project-topbar-context"><span class="eyebrow">ТЕКУЩИЙ ПРОЕКТ</span><strong>{{ active_project.name }}</strong><small>Договор {{ active_project.contract_number }}{% if active_project.stage %} · {{ active_project.stage }}{% endif %}</small></div></header>{% endif %}
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% for category, message in messages %}<p class="notice notice-{{ category }}">{{ message }}</p>{% endfor %}
             {% endwith %}

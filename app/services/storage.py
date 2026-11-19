@@ -1,8 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from werkzeug.datastructures import FileStorage
-from werkzeug.utils import secure_filename
+from app.services.filenames import secure_stem
 
 
 class StorageService:
@@ -10,23 +9,26 @@ class StorageService:
         self.upload_dir = upload_dir
         self.max_file_size = max_file_size
 
-    def save_pdf(self, file: FileStorage) -> tuple[str, str, Path]:
+    def save_pdf(self, file) -> tuple[str, str, Path]:
         original, stored, path, _mime = self.save_upload(file)
         return original, stored, path
 
-    def save_upload(self, file: FileStorage) -> tuple[str, str, Path, str]:
-        original_name = file.filename or "document.pdf"
+    def save_upload(self, file) -> tuple[str, str, Path, str]:
+        original_name = getattr(file, "filename", None) or getattr(file, "name", None) or "document.pdf"
         basename = original_name.replace("\\", "/").rsplit("/", 1)[-1]
         original_path = Path(basename)
         suffix = original_path.suffix.lower()
         allowed = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".doc", ".docx"}
         if suffix not in allowed:
             raise ValueError("Поддерживаются PDF, DOC, DOCX, JPG, PNG, WebP и HEIC.")
-        safe_stem = secure_filename(original_path.stem) or "document"
+        safe_stem = secure_stem(original_path.stem)
         safe_name = f"{safe_stem}{suffix}"
 
-        content = file.stream.read()
-        file.stream.seek(0)
+        stream = getattr(file, "stream", None) or getattr(file, "file", None)
+        if stream is None:
+            raise ValueError("Не удалось прочитать загруженный файл.")
+        content = stream.read()
+        stream.seek(0)
         if not content:
             raise ValueError("Файл пустой.")
         if len(content) > self.max_file_size:
@@ -36,7 +38,7 @@ class StorageService:
         stored_name = f"{uuid4().hex}_{safe_name}"
         path = self.upload_dir / stored_name
         self.upload_dir.mkdir(parents=True, exist_ok=True)
-        file.save(path)
+        path.write_bytes(content)
         return original_name, stored_name, path, mime_type
 
     @staticmethod

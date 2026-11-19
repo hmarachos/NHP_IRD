@@ -1,5 +1,6 @@
 /.env
 /.venv
+/.venv-django
 /venv/
 __pycache__/
 *.py[cod]
@@ -8,4 +9,5 @@ __pycache__/
 /uploads
 /instance/preview-cache
 /instance
+/staticfiles/
 /.codex-attachments/
