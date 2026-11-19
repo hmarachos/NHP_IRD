@@ -1564,6 +1564,8 @@ def delete_template_item(request, item_id):
         raise Http404
     template_id = item.template_id
     item.delete()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return JsonResponse({"ok": True, "template_id": template_id})
     return HttpResponseRedirect(f"{reverse('web_manage_templates')}#template-{template_id}")
 
 
