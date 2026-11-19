@@ -13,7 +13,7 @@
                 <label><span>Дата договора</span><input type="date" name="contract_date"></label>
                 <label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option><option>Предпроектная документация</option><option>Строительный проект</option><option>Архитектурный проект</option></select></label>
                 <label><span>Главный инженер проекта</span><select name="chief_engineer_id" required><option value="" disabled {% if not is_chief_engineer %}selected{% endif %}>Выберите ГИПа</option>{% for gip in gips %}<option value="{{ gip.id }}" {% if gip.id == request.user.id and is_chief_engineer %}selected{% endif %}>{{ gip.get_full_name() or gip.email }}</option>{% endfor %}</select></label>
-                <label class="project-create-wide"><span>Наименование объекта</span><input name="name" placeholder="Наименование объекта" required></label>
+                <label class="project-create-wide"><span>Наименование объекта</span><textarea class="object-name-input" name="name" placeholder="Наименование объекта" rows="1" required></textarea></label>
                 <div class="project-create-customer-row"><label><span>Заказчик</span><input name="customer" list="customer-suggestions" placeholder="Начните вводить название" autocomplete="off"></label><a class="account-secondary project-create-customer-add" href="{{ url_for('admin_organizations') }}" target="_blank" rel="noopener"><i class="bi bi-building-add" aria-hidden="true"></i> Добавить</a></div>
                 <label><span>Список документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
                 <button class="project-create-wide" type="submit">Создать проект</button>
@@ -27,7 +27,7 @@
 <section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.object_workspace', object_id=alert.document.object_id, tab='checklist', open_document=alert.document.id) }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.working_title or alert.document.original_filename }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
 {% endif %}
 <section class="project-area project-cards-area">
-    <div class="project-list-heading"><div class="section-title"><div><h2>{% if gip_filter_active %}Мои проекты как главный инженер{% elif is_chief_engineer %}Все доступные проекты{% else %}Активные проекты{% endif %}</h2><p><span data-project-count>{{ objects|length }}</span> в работе</p></div></div><div class="project-list-tools">{% if is_chief_engineer %}{% if gip_filter_active %}<a class="project-scope-toggle" href="/?scope=all">Все доступные</a>{% else %}<a class="project-scope-toggle" href="/">Мои проекты как ГИП</a>{% endif %}{% endif %}{% if objects %}<label class="project-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Договор, объект, заказчик или стадия" aria-label="Поиск проектов" autocomplete="off" data-project-search><kbd>⌘ K</kbd></label>{% endif %}</div></div>
+    <div class="project-list-heading"><div class="section-title"><div><h2>{% if gip_filter_active %}Мои проекты как главный инженер{% elif is_chief_engineer %}Все доступные проекты{% else %}Активные проекты{% endif %}</h2><p><span data-project-count>{{ objects|length }}</span> в работе</p></div></div><div class="project-list-tools">{% if is_chief_engineer %}{% if gip_filter_active %}<a class="project-scope-toggle" href="/?scope=all">Все доступные</a>{% else %}<a class="project-scope-toggle" href="/">Мои проекты как ГИП</a>{% endif %}{% endif %}{% if objects %}<label class="project-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Договор, объект, заказчик или стадия" aria-label="Поиск проектов" autocomplete="off" data-project-search></label>{% endif %}</div></div>
     {% if objects %}
     <div class="projects-card-grid">{% for object in objects %}
         <article class="project-card" data-project-card data-search="{{ object.contract_number }} {{ object.name }} {{ object.customer }} {{ object.stage }} {% if object.chief_engineer %}{{ object.chief_engineer.get_full_name() }}{% endif %}">
@@ -46,7 +46,7 @@
             <dialog class="project-edit-modal" data-project-edit-dialog="{{ object.id }}" aria-labelledby="project-edit-title-{{ object.id }}">
                 <section class="project-edit-modal-panel">
                     <header class="project-edit-modal-head"><div><p class="eyebrow">СВОЙСТВА ПРОЕКТА</p><h2 id="project-edit-title-{{ object.id }}">Редактирование объекта</h2></div><button type="button" class="project-edit-modal-close" data-project-edit-close aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
-                    <form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form project-edit-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Шаблон документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}" {% if object.template_id == template.id %}selected{% endif %}>{{ template.name }}</option>{% endfor %}</select><small>Добавятся только отсутствующие пункты, существующие сохранятся.</small></label><label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option>{% for stage in ['Предпроектная документация', 'Строительный проект', 'Архитектурный проект'] %}<option value="{{ stage }}" {% if object.stage == stage %}selected{% endif %}>{{ stage }}</option>{% endfor %}</select></label><label><span>Главный инженер проекта</span><select name="chief_engineer_id"><option value="">Не назначен</option>{% if object.chief_engineer_id %}<option value="{{ object.chief_engineer_id }}" selected>{{ object.chief_engineer.get_full_name() or object.chief_engineer.email }} · текущий ответственный</option>{% endif %}{% for gip in gips %}{% if gip.id != object.chief_engineer_id %}<option value="{{ gip.id }}">{{ gip.get_full_name() or gip.email }}</option>{% endif %}{% endfor %}</select></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form>
+                    <form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form project-edit-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Шаблон документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}" {% if object.template_id == template.id %}selected{% endif %}>{{ template.name }}</option>{% endfor %}</select><small>Добавятся только отсутствующие пункты, существующие сохранятся.</small></label><label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option>{% for stage in ['Предпроектная документация', 'Строительный проект', 'Архитектурный проект'] %}<option value="{{ stage }}" {% if object.stage == stage %}selected{% endif %}>{{ stage }}</option>{% endfor %}</select></label><label><span>Главный инженер проекта</span><select name="chief_engineer_id"><option value="">Не назначен</option>{% if object.chief_engineer_id %}<option value="{{ object.chief_engineer_id }}" selected>{{ object.chief_engineer.get_full_name() or object.chief_engineer.email }}</option>{% endif %}{% for gip in gips %}{% if gip.id != object.chief_engineer_id %}<option value="{{ gip.id }}">{{ gip.get_full_name() or gip.email }}</option>{% endif %}{% endfor %}</select></label><label><span>Наименование объекта</span><textarea class="object-name-input" name="name" rows="1" required>{{ object.name }}</textarea></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form>
                 </section>
             </dialog>{% endif %}
         </article>
@@ -90,11 +90,15 @@ document.querySelectorAll("[data-project-edit-open]").forEach((button) => {
         const dialog = document.querySelector(`[data-project-edit-dialog="${id}"]`);
         if (!dialog || typeof dialog.showModal !== "function") return;
         dialog.showModal();
+        requestAnimationFrame(() => resizeObjectName(dialog.querySelector("textarea[name='name']")));
         dialog.querySelector("input:not([type=hidden]), select")?.focus({ preventScroll: true });
     });
 });
 const createProjectDialog = document.querySelector("[data-project-create-dialog]");
-document.querySelector("[data-project-create-open]")?.addEventListener("click", () => createProjectDialog?.showModal());
+document.querySelector("[data-project-create-open]")?.addEventListener("click", () => {
+    createProjectDialog?.showModal();
+    requestAnimationFrame(() => resizeObjectName(createProjectDialog?.querySelector("textarea[name='name']")));
+});
 document.querySelector("[data-project-create-close]")?.addEventListener("click", () => createProjectDialog?.close());
 createProjectDialog?.addEventListener("click", (event) => {
     if (event.target === createProjectDialog) createProjectDialog.close();
@@ -106,6 +110,18 @@ document.querySelectorAll(".project-edit-modal").forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
         if (event.target === dialog) dialog.close();
     });
+});
+const resizeObjectName = (field) => {
+    if (!field) return;
+    field.style.height = "auto";
+    const desiredHeight = Math.max(field.scrollHeight, 46);
+    const maxHeight = 260;
+    field.style.height = `${Math.min(desiredHeight, maxHeight)}px`;
+    field.style.overflowY = desiredHeight > maxHeight ? "auto" : "hidden";
+};
+document.querySelectorAll("textarea.object-name-input").forEach((field) => {
+    field.addEventListener("input", () => resizeObjectName(field));
+    resizeObjectName(field);
 });
 </script>
 {% endblock %}

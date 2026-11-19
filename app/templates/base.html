@@ -39,7 +39,7 @@
                 {% if request.user.is_authenticated %}<div class="project-nav-group project-nav-account">{% if request.user.is_superuser %}<a class="project-nav-item" href="{{ url_for('account_admin') }}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<a class="project-nav-item" href="{{ url_for('account_profile') }}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>{{ request.user.get_full_name() or request.user.email }}</span></a></div>{% endif %}
             </nav>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
-            {% if request.user.is_authenticated %}<small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Made by A.Kazantsev</a></small>{% endif %}
+            {% if request.user.is_authenticated %}<small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Developed by A. Kazantsau</a></small>{% endif %}
         </aside>
         <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>
         <main class="page app-main">
@@ -49,7 +49,6 @@
                 {% for category, message in messages %}<p class="notice notice-{{ category }}">{{ message }}</p>{% endfor %}
             {% endwith %}
             {% block content %}{% endblock %}
-            <footer class="app-footer"><span>Разработано</span><strong>Александром Казанцевым</strong></footer>
         </main>
     </div>
     <script>
