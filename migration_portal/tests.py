@@ -12,7 +12,7 @@ from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Document, ExpiryNotification, HandoverAct, Project, ProjectChecklistItem, ProjectNotebookEntry
+from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Customer, Document, ExpiryNotification, HandoverAct, Organization, Project, ProjectChecklistItem, ProjectNotebookEntry, UserProfile
 from pypdf import PdfWriter
 from app.models import ParsedDocument
 from migration_portal.document_matching import find_duplicate
@@ -762,3 +762,107 @@ class DjangoRemainingFlowTests(TransactionTestCase):
             self.assertFalse(Project.objects.filter(pk=project.id).exists())
             self.assertFalse(Document.objects.filter(pk=document.id).exists())
             self.assertFalse(stored_path.exists())
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class GuestProjectAccessTests(TransactionTestCase):
+    def setUp(self):
+        username = f"guest-scope-{id(self)}"
+        self.user = get_user_model().objects.create_user(
+            username=username, email=f"{username}@example.test", password="TestPass123!!",
+        )
+        self.profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        self.profile.access_level = UserProfile.AccessLevel.VIEW
+        self.profile.save(update_fields=["access_level"])
+        self.client = Client(enforce_csrf_checks=False)
+        self.client.force_login(self.user)
+        self.addCleanup(self.user.delete)
+
+    def test_guest_customer_and_individual_project_scope_is_enforced_on_pages_and_direct_urls(self):
+        customer = Customer.objects.create(name="Allowed customer")
+        allowed_by_customer = Project.objects.create(
+            contract_number="GUEST-CUSTOMER-1", name="Customer project one", customer=customer.name,
+        )
+        allowed_by_customer_2 = Project.objects.create(
+            contract_number="GUEST-CUSTOMER-2", name="Customer project two", customer=customer.name,
+        )
+        explicitly_allowed = Project.objects.create(
+            contract_number="GUEST-PROJECT", name="Explicit project", customer="Other customer",
+        )
+        forbidden = Project.objects.create(
+            contract_number="GUEST-FORBIDDEN", name="Private project", customer="Other customer",
+        )
+        self.profile.allowed_customers.add(customer)
+        self.profile.allowed_projects.add(explicitly_allowed)
+        organization = Organization.objects.create(name="Employer organization")
+        organization_project = Project.objects.create(
+            contract_number="GUEST-ORG", name="Employer organization project", customer="Employer customer",
+        )
+        self.profile.organization = organization
+        self.profile.save(update_fields=["organization"])
+        forbidden_document = Document.objects.create(
+            project=forbidden, contract_number=forbidden.contract_number, object_name=forbidden.name,
+            original_filename="private.pdf", stored_filename="private.pdf",
+        )
+
+        home = self.client.get(reverse("web_index"))
+        self.assertContains(home, "Customer project one")
+        self.assertContains(home, "Customer project two")
+        self.assertContains(home, "Explicit project")
+        self.assertNotContains(home, "Employer organization project")
+        self.assertNotContains(home, "Private project")
+        self.assertEqual(self.client.get(reverse("web_object_workspace", args=[allowed_by_customer.id])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("web_object_workspace", args=[allowed_by_customer_2.id])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("web_object_workspace", args=[explicitly_allowed.id])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("web_object_workspace", args=[organization_project.id])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("web_object_workspace", args=[forbidden.id])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("web_document_detail", args=[forbidden_document.id])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("web_save_notebook_entry", args=[forbidden.id]), {}).status_code, 403)
+        self.assertEqual(self.client.post(reverse("web_save_notebook_entry", args=[explicitly_allowed.id]), {}).status_code, 403)
+
+    def test_directory_edit_prefills_record_and_deletion_protects_referenced_entries(self):
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+        customer = Customer.objects.create(name="Customer to edit", is_active=False)
+        response = self.client.get(reverse("admin_organizations"), {"edit_customer": customer.id})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{customer.name}"')
+
+        response = self.client.post(reverse("admin_organizations"), {
+            "kind": "customer", "id": customer.id, "name": "Updated customer", "is_active": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Updated customer")
+        self.assertTrue(customer.is_active)
+
+        organization = Organization.objects.create(name="Standalone workplace")
+        response = self.client.get(reverse("admin_organizations"), {"edit_org": organization.id})
+        self.assertEqual(response.status_code, 200)
+        response = self.client.post(reverse("admin_organizations"), {
+            "kind": "organization", "id": organization.id, "name": organization.name,
+            "is_active": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+
+        project = Project.objects.create(contract_number="REFERENCED", name="Referenced", customer=customer.name)
+        response = self.client.post(reverse("admin_organizations"), {"kind": "delete_customer", "id": customer.id})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Customer.objects.filter(pk=customer.id).exists())
+
+        unused = Customer.objects.create(name="Unused customer")
+        response = self.client.post(reverse("admin_organizations"), {"kind": "delete_customer", "id": unused.id})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Customer.objects.filter(pk=unused.id).exists())
+
+        organization = Organization.objects.create(name="Assigned organization")
+        self.profile.organization = organization
+        self.profile.save(update_fields=["organization"])
+        response = self.client.post(reverse("admin_organizations"), {"kind": "delete_organization", "id": organization.id})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Organization.objects.filter(pk=organization.id).exists())
+        self.profile.organization = None
+        self.profile.save(update_fields=["organization"])
+        response = self.client.post(reverse("admin_organizations"), {"kind": "delete_organization", "id": organization.id})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Organization.objects.filter(pk=organization.id).exists())

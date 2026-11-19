@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261119-contract-stage-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261119-author-mail-v3') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body data-access-level="{% if request.user.is_superuser %}edit{% else %}{{ request.user.profile.access_level }}{% endif %}">
@@ -14,7 +14,7 @@
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <a class="brand app-sidebar-brand" href="{{ url_for('web.index') }}"><span class="brand-mark">И</span><span>Архив ИРД<small>Проектные документы</small></span></a>
             <nav class="project-side-nav" aria-label="Разделы приложения">
-                <div class="project-nav-group"><span class="project-nav-caption">ОБЩЕЕ</span><a class="project-nav-item{% if request.endpoint == 'web.index' %} is-active{% endif %}" href="{{ url_for('web.index') }}"{% if request.endpoint == 'web.index' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item{% if request.endpoint in ['web.manage_templates', 'web.create_template', 'web.update_template', 'web.copy_template', 'web.delete_template', 'web.add_template_item', 'web.update_template_item', 'web.delete_template_item'] %} is-active{% endif %}" href="{{ url_for('web.manage_templates') }}"{% if request.endpoint == 'web.manage_templates' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div>
+                <div class="project-nav-group"><a class="project-nav-item{% if request.endpoint == 'web.index' %} is-active{% endif %}" href="{{ url_for('web.index') }}"{% if request.endpoint == 'web.index' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item{% if request.endpoint in ['web.manage_templates', 'web.create_template', 'web.update_template', 'web.copy_template', 'web.delete_template', 'web.add_template_item', 'web.update_template_item', 'web.delete_template_item'] %} is-active{% endif %}" href="{{ url_for('web.manage_templates') }}"{% if request.endpoint == 'web.manage_templates' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div>
                 {% if active_project %}
                 <div class="project-nav-group"><span class="project-nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</span>
                     {% set project_nav_items = [
@@ -36,9 +36,10 @@
                     <a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_notebook' %} is-active{% endif %}" href="/objects/{{ active_project.id }}/notebook"{% if request.resolver_match.url_name == 'web_project_notebook' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-journal-text" aria-hidden="true"></i><span>Записная книжка</span></a>
                 </div>
                 {% endif %}
-                {% if request.user.is_authenticated %}<div class="project-nav-group"><span class="project-nav-caption">УЧЁТНАЯ ЗАПИСЬ</span><a class="project-nav-item" href="{{ url_for('account_profile') }}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>Мои настройки</span></a>{% if request.user.is_superuser %}<a class="project-nav-item" href="{{ url_for('account_admin') }}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<form action="{{ url_for('account_logout') }}" method="post" class="sidebar-logout-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="project-nav-item" type="submit"><i class="project-nav-icon bi bi-box-arrow-right" aria-hidden="true"></i><span>Выйти</span></button></form></div>{% endif %}
+                {% if request.user.is_authenticated %}<div class="project-nav-group project-nav-account">{% if request.user.is_superuser %}<a class="project-nav-item" href="{{ url_for('account_admin') }}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<a class="project-nav-item" href="{{ url_for('account_profile') }}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>{{ request.user.get_full_name() or request.user.email }}</span></a></div>{% endif %}
             </nav>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
+            {% if request.user.is_authenticated %}<small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Made by A.Kazantsev</a></small>{% endif %}
         </aside>
         <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>
         <main class="page app-main">

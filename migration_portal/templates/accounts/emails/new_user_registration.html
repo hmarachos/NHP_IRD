@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<body style="margin:0;padding:24px;background:#f3f5f5;color:#1b292d;font-family:Arial,sans-serif;">
+  <main style="max-width:620px;margin:0 auto;padding:30px;background:#fff;border:1px solid #e1e6e7;border-radius:14px;">
+    <p style="margin:0 0 8px;color:#b85a24;font-size:12px;font-weight:bold;letter-spacing:1px;">АРХИВ ИРД</p>
+    <h1 style="margin:0 0 14px;font-size:24px;">Новая регистрация</h1>
+    <p style="margin:0 0 20px;line-height:1.5;">Зарегистрировался новый пользователь. Проверьте данные и настройте доступ.</p>
+    <table role="presentation" style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:9px 0;color:#68777c;">ФИО</td><td style="padding:9px 0;font-weight:bold;">{{ full_name }}</td></tr>
+      <tr><td style="padding:9px 0;color:#68777c;">Электронная почта</td><td style="padding:9px 0;">{{ email }}</td></tr>
+      <tr><td style="padding:9px 0;color:#68777c;">ГИП</td><td style="padding:9px 0;">{% if is_gip %}Да{% else %}Нет{% endif %}</td></tr>
+      <tr><td style="padding:9px 0;color:#68777c;">Уровень доступа</td><td style="padding:9px 0;">Заблокирован до настройки</td></tr>
+    </table>
+    <p style="margin:0 0 24px;"><a href="{{ settings_url }}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#d97839;color:#fff;font-weight:bold;text-decoration:none;">Открыть настройки пользователя</a></p>
+    <p style="margin:0;color:#68777c;font-size:12px;line-height:1.5;">Если кнопка не работает, откройте ссылку:<br><a href="{{ settings_url }}" style="color:#b85a24;word-break:break-all;">{{ settings_url }}</a></p>
+  </main>
+</body>
+</html>

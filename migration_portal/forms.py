@@ -11,9 +11,9 @@ class RegistrationForm(forms.Form):
     first_name = forms.CharField(label="Имя", max_length=150)
     middle_name = forms.CharField(label="Отчество", max_length=150, required=False)
     email = forms.EmailField(label="Электронная почта", max_length=150)
-    is_gip = forms.ChoiceField(label="ГИП", choices=(("", "Выберите"), ("0", "Нет"), ("1", "Да")))
-    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput, min_length=10)
-    password2 = forms.CharField(label="Повторите пароль", widget=forms.PasswordInput)
+    is_gip = forms.ChoiceField(label="Главный инженер проекта", choices=(("", "Выберите"), ("0", "Нет"), ("1", "Да")))
+    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput, min_length=8)
+    password2 = forms.CharField(label="Подтверждение пароля", widget=forms.PasswordInput)
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().casefold()
@@ -44,7 +44,7 @@ class ProfileForm(forms.Form):
     first_name = forms.CharField(label="Имя", max_length=150)
     middle_name = forms.CharField(label="Отчество", max_length=150, required=False)
     email = forms.EmailField(label="Электронная почта", max_length=150)
-    is_gip = forms.ChoiceField(label="ГИП", choices=(("", "Выберите"), ("0", "Нет"), ("1", "Да")))
+    is_gip = forms.ChoiceField(label="Главный инженер проекта", choices=(("", "Выберите"), ("0", "Нет"), ("1", "Да")))
 
     def __init__(self, *args, user, **kwargs):
         self.user = user
@@ -74,8 +74,8 @@ class UserAccessForm(forms.Form):
     first_name = forms.CharField(label="Имя", max_length=150)
     middle_name = forms.CharField(label="Отчество", max_length=150, required=False)
     email = forms.EmailField(label="Email", max_length=150)
-    is_gip = forms.BooleanField(label="ГИП", required=False)
-    organization = forms.ModelChoiceField(label="Организация", queryset=Organization.objects.none())
+    is_gip = forms.BooleanField(label="Главный инженер проекта", required=False, widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}))
+    organization = forms.ModelChoiceField(label="Место работы", queryset=Organization.objects.none())
     access_level = forms.ChoiceField(label="Уровень доступа", choices=UserProfile.AccessLevel.choices)
     allowed_customers = forms.ModelMultipleChoiceField(
         label="Разрешённые заказчики", queryset=Customer.objects.none(), required=False,
@@ -85,7 +85,7 @@ class UserAccessForm(forms.Form):
         label="Разрешённые объекты (для гостевого доступа)", queryset=Project.objects.none(), required=False,
         widget=forms.CheckboxSelectMultiple,
     )
-    is_active = forms.BooleanField(label="Учётная запись активна", required=False, initial=True)
+    is_active = forms.BooleanField(label="Учётная запись активна", required=False, initial=True, widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}))
 
     def __init__(self, *args, user_record, profile, **kwargs):
         self.user_record = user_record
@@ -125,10 +125,21 @@ class UserAccessForm(forms.Form):
 
 
 class OrganizationForm(forms.ModelForm):
+    is_active = forms.BooleanField(
+        label="Активна",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}),
+    )
+
     class Meta:
         model = Organization
         fields = ("name", "is_active")
-        labels = {"name": "Название организации", "is_active": "Активна для регистрации"}
+        labels = {
+            "name": "Название организации", "is_active": "Активна",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
@@ -139,12 +150,25 @@ class OrganizationForm(forms.ModelForm):
             raise ValidationError("Организация с таким названием уже есть.")
         return name
 
+    def clean_is_active(self):
+        # New directory entries are active by default. The switch is shown only
+        # while editing an existing record.
+        if not self.instance.pk:
+            return True
+        return self.cleaned_data["is_active"]
+
 
 class CustomerForm(forms.ModelForm):
+    is_active = forms.BooleanField(
+        label="Активен",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}),
+    )
+
     class Meta:
         model = Customer
         fields = ("name", "is_active")
-        labels = {"name": "Заказчик", "is_active": "Активен"}
+        labels = {"name": "Название заказчика", "is_active": "Активен"}
 
     def clean_name(self):
         name = self.cleaned_data["name"].strip()
@@ -154,3 +178,8 @@ class CustomerForm(forms.ModelForm):
         if duplicates.exists():
             raise ValidationError("Заказчик с таким названием уже есть.")
         return name
+
+    def clean_is_active(self):
+        if not self.instance.pk:
+            return True
+        return self.cleaned_data["is_active"]

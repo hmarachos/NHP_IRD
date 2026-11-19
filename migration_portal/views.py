@@ -11,6 +11,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_not_required
+from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import connection, transaction
 from django.db.utils import IntegrityError
@@ -580,8 +581,9 @@ def object_workspace(request, object_id):
         raise Http404
     warning_days = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
     obj = {field: getattr(project, field) for field in (
-        "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "archived_at", "created_at",
+        "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "chief_engineer_id", "archived_at", "created_at",
     )}
+    obj["chief_engineer_name"] = project.chief_engineer.get_full_name() if project.chief_engineer_id else ""
     documents = [attach_expiry(row, warning_days) for row in Document.objects.filter(
         project=project, archived_at__isnull=True,
     ).order_by("-created_at", "-id").values()]
@@ -964,8 +966,9 @@ def _project_rows(project_id):
     if project is None:
         raise Http404
     obj = {field: getattr(project, field) for field in (
-        "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "archived_at", "created_at",
+        "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "chief_engineer_id", "archived_at", "created_at",
     )}
+    obj["chief_engineer_name"] = project.chief_engineer.get_full_name() if project.chief_engineer_id else ""
     documents = list(
         Document.objects.filter(project=project, archived_at__isnull=True)
         .order_by("-created_at", "-id").values()
@@ -1211,9 +1214,16 @@ def export_object(request, object_id):
 
 def home(request):
     warning_days = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
-    project_scope = visible_projects(request.user)
+    all_visible_projects = visible_projects(request.user)
+    try:
+        is_chief_engineer = request.user.profile.is_gip
+    except Exception:
+        is_chief_engineer = False
+    gip_filter_active = is_chief_engineer and request.GET.get("scope") != "all"
+    project_scope = all_visible_projects.filter(chief_engineer=request.user) if gip_filter_active else all_visible_projects
     objects = list(
         project_scope.filter(archived_at__isnull=True)
+        .select_related("chief_engineer")
         .annotate(
             documents_count=Count("document", filter=Q(document__archived_at__isnull=True), distinct=True),
             last_document_at=Max("document__created_at"),
@@ -1224,7 +1234,7 @@ def home(request):
     customers = []
     seen = set()
     customer_rows = {}
-    for customer in project_scope.exclude(customer="").values_list("customer", flat=True):
+    for customer in all_visible_projects.exclude(customer="").values_list("customer", flat=True):
         value = customer.strip()
         key = value.casefold()
         if value:
@@ -1251,6 +1261,9 @@ def home(request):
         "archived_objects": archived_objects,
         "customers": customers,
         "templates": templates,
+        "gips": User.objects.filter(is_active=True, profile__is_gip=True).order_by("last_name", "first_name", "email"),
+        "is_chief_engineer": is_chief_engineer,
+        "gip_filter_active": gip_filter_active,
         "alerts": alerts,
         "warning_days": warning_days,
         "error": "",
@@ -1268,6 +1281,15 @@ def create_object(request):
         stage = ""
     name = request.POST.get("name", "").strip()
     customer = request.POST.get("customer", "").strip()
+    chief_engineer_id = request.POST.get("chief_engineer_id", "").strip()
+    chief_engineer = None
+    if not chief_engineer_id:
+        messages.error(request, "Выберите главного инженера проекта.")
+        return redirect("web_index")
+    chief_engineer = User.objects.filter(pk=chief_engineer_id, is_active=True, profile__is_gip=True).first()
+    if chief_engineer is None:
+        messages.error(request, "Выберите активного пользователя с признаком «Главный инженер проекта».")
+        return redirect("web_index")
     if not request.user.is_superuser:
         allowed_customer = visible_customers(request.user).filter(name__iexact=customer).first()
         if allowed_customer is None:
@@ -1288,6 +1310,7 @@ def create_object(request):
             stage=stage,
             name=name,
             customer=customer,
+            chief_engineer=chief_engineer,
             template_id=template_id if ChecklistTemplate.objects.filter(pk=template_id).exists() else None,
             created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         )
@@ -1320,6 +1343,15 @@ def update_object(request, object_id):
         stage = ""
     name = request.POST.get("name", "").strip()
     customer = request.POST.get("customer", "").strip()
+    chief_engineer = project.chief_engineer
+    if "chief_engineer_id" in request.POST:
+        chief_engineer_id = request.POST.get("chief_engineer_id", "").strip()
+        chief_engineer = None
+        if chief_engineer_id:
+            chief_engineer = User.objects.filter(pk=chief_engineer_id, is_active=True, profile__is_gip=True).first()
+            if chief_engineer is None:
+                messages.error(request, "Выберите активного пользователя с признаком «Главный инженер проекта».")
+                return redirect("web_index")
     if not request.user.is_superuser and customer.casefold() != project.customer.casefold():
         allowed_customer = visible_customers(request.user).filter(name__iexact=customer).first()
         if allowed_customer is None:
@@ -1341,7 +1373,8 @@ def update_object(request, object_id):
         project.name = name
         project.customer = customer
         project.template = selected_template
-        project.save(update_fields=["contract_number", "contract_date", "stage", "name", "customer", "template"])
+        project.chief_engineer = chief_engineer
+        project.save(update_fields=["contract_number", "contract_date", "stage", "name", "customer", "template", "chief_engineer"])
         Document.objects.filter(project_id=project.id).update(contract_number=contract_number, object_name=name)
         if selected_template:
             existing_items = list(ProjectChecklistItem.objects.filter(project=project).values_list("source_template_item_id", "title"))

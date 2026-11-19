@@ -27,7 +27,7 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(models.Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ("id", "contract_number", "name", "customer", "archived_at")
+    list_display = ("id", "contract_number", "name", "customer", "chief_engineer", "archived_at")
     search_fields = ("contract_number", "name", "customer")
     list_filter = ("archived_at",)
 

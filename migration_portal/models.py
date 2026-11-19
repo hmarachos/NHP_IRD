@@ -26,6 +26,10 @@ class Project(models.Model):
     name = models.TextField()
     customer = models.TextField(default="", db_default="")
     template = models.ForeignKey(ChecklistTemplate, null=True, blank=True, on_delete=models.SET_NULL, db_column="template_id")
+    chief_engineer = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="chief_engineer_projects",
+    )
     archived_at = models.CharField(max_length=40, null=True, blank=True)
     created_at = models.CharField(max_length=40, default="", db_default=TIMESTAMP_TEXT_DEFAULT)
 

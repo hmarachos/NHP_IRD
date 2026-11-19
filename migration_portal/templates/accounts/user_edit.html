@@ -2,6 +2,135 @@
 {% block title %}Настройка пользователя · Архив ИРД{% endblock %}
 {% block content %}
 <section class="account-card"><div class="account-heading"><div><p class="eyebrow">НАСТРОЙКА ДОСТУПА</p><h1>{{ managed_user.last_name }} {{ managed_user.first_name }}</h1><p class="account-intro">{{ managed_user.email }}</p></div><a class="account-secondary" href="{% url 'admin_users' %}">К списку</a></div>
-<form method="post" class="account-form account-form-wide">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}{% if field.name == 'allowed_customers' or field.name == 'allowed_projects' %}<fieldset class="permission-field"><legend>{{ field.label }}</legend><input type="search" class="permission-filter" placeholder="Фильтр списка" data-filter-target="{{ field.auto_id }}">{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</fieldset>{% else %}<label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>{% endif %}{% endfor %}<div class="account-warning"><strong>Гостевой доступ</strong><p>Уровень «Просмотр» вместе с выбранными объектами разрешает только чтение этих объектов, включая документы, письма, акты и скачиваемый архив.</p></div><button class="account-primary" type="submit">Сохранить доступ</button></form></section>
-<script>document.querySelectorAll('[data-filter-target]').forEach((input)=>{const list=document.getElementById(input.dataset.filterTarget);input.addEventListener('input',()=>list?.querySelectorAll('li').forEach((row)=>{row.hidden=!row.textContent.toLocaleLowerCase('ru').includes(input.value.toLocaleLowerCase('ru'));}));});</script>
+<form method="post" class="account-form account-form-wide" id="user-access-form">
+  {% csrf_token %}{{ form.non_field_errors }}
+  {% for field in form %}
+    {% if field.name == 'organization' %}
+      <div class="organization-select-row"><label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label><button class="account-secondary organization-open-button" type="button" data-open-organizations><i class="bi bi-building-gear" aria-hidden="true"></i> Добавить</button></div>
+    {% elif field.name == 'access_level' %}
+      <label class="access-level-field">{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+    {% elif field.name == 'allowed_customers' %}
+      <fieldset class="customer-access-fieldset" data-gip-hide-fieldset>
+        <legend>{{ field.label }}</legend>
+        <div class="customer-access-summary"><div><span class="customer-access-count" data-customer-count>0 выбрано</span><div class="customer-access-chips" data-customer-chips></div><p class="customer-access-empty" data-customer-empty>Заказчики не выбраны.</p></div><button class="account-secondary" type="button" data-open-customer-picker>Выбрать заказчиков</button></div>
+        {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+      </fieldset>
+    {% elif field.name == 'allowed_projects' %}
+      <fieldset class="customer-access-fieldset" data-gip-hide-fieldset>
+        <legend>{{ field.label }}</legend>
+        <div class="customer-access-summary"><div><span class="customer-access-count" data-project-count>Выбрано: 0</span><div class="customer-access-chips" data-project-chips></div><p class="customer-access-empty" data-project-empty>Объекты не выбраны.</p></div><button class="account-secondary" type="button" data-open-project-picker>Выбрать объекты</button></div>
+        {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+      </fieldset>
+    {% elif field.name == 'is_gip' or field.name == 'is_active' %}
+      <div class="account-switch-field"><label class="account-switch-row"><span>{{ field.label }}</span>{{ field }}</label>{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
+    {% else %}
+      <label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+    {% endif %}
+  {% endfor %}
+  <dialog class="customer-access-dialog" data-customer-dialog aria-labelledby="customer-access-title">
+    <section class="customer-access-panel">
+      <header class="customer-access-header"><div><p class="eyebrow">НАСТРОЙКА ДОСТУПА</p><h2 id="customer-access-title">Разрешённые заказчики</h2><p>Выберите заказчиков, проекты которых будут доступны пользователю.</p></div><button class="customer-access-close" type="button" data-close-customer-picker aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+      <label class="customer-access-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Поиск по названию заказчика" data-customer-search></label>
+      <div class="customer-access-results"><span data-customer-results-count></span><div class="customer-access-options" data-customer-options>{{ form.allowed_customers }}</div><p class="customer-access-no-results" data-customer-no-results hidden>Заказчики не найдены.</p></div>
+      <footer class="customer-access-actions"><button class="account-secondary" type="button" data-cancel-customer-picker>Отмена</button><button class="account-primary" type="button" data-apply-customer-picker>Сохранить выбор</button></footer>
+    </section>
+  </dialog>
+  <dialog class="customer-access-dialog" data-project-dialog aria-labelledby="project-access-title">
+    <section class="customer-access-panel">
+      <header class="customer-access-header"><div><p class="eyebrow">НАСТРОЙКА ДОСТУПА</p><h2 id="project-access-title">Разрешённые объекты</h2><p>Выберите конкретные проекты, доступные этому пользователю.</p></div><button class="customer-access-close" type="button" data-close-project-picker aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+      <label class="customer-access-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Поиск по договору, объекту или заказчику" data-project-search></label>
+      <div class="customer-access-results"><span data-project-results-count></span><div class="customer-access-options" data-project-options>{{ form.allowed_projects }}</div><p class="customer-access-no-results" data-project-no-results hidden>Объекты не найдены.</p></div>
+      <footer class="customer-access-actions"><button class="account-secondary" type="button" data-cancel-project-picker>Отмена</button><button class="account-primary" type="button" data-apply-project-picker>Сохранить выбор</button></footer>
+    </section>
+  </dialog>
+  <div class="account-warning"><strong>Гостевой доступ</strong><p>Уровень «Просмотр» разрешает читать проекты выбранных заказчиков, отдельно разрешённые объекты, а также проекты, где пользователь назначен главным инженером проекта.</p></div>
+  <button class="account-primary" type="submit">Сохранить доступ</button>
+</form></section>
+
+<div class="organization-modal-backdrop" data-organization-modal hidden>
+  <section class="organization-modal" role="dialog" aria-modal="true" aria-labelledby="organization-modal-title">
+    <header class="organization-modal-header"><div><p class="eyebrow">СПРАВОЧНИК</p><h2 id="organization-modal-title">Организации</h2></div><button class="organization-modal-close" type="button" data-close-organizations aria-label="Закрыть">&times;</button></header>
+    <input class="organization-search" type="search" placeholder="Поиск по названию" aria-label="Поиск организаций" data-organization-search>
+    <form class="organization-add-form" data-organization-add-form>{% csrf_token %}<label for="new-organization-name">Название организации</label><div><input id="new-organization-name" name="name" type="text" maxlength="240" required><button class="account-primary" type="submit">Добавить</button></div></form>
+    <p class="organization-feedback" role="status" aria-live="polite" data-organization-feedback></p>
+    <ul class="organization-modal-list" data-organization-list>{% for organization in organizations %}<li data-organization-row data-organization-name="{{ organization.name|lower }}"><span>{{ organization.name }}{% if not organization.is_active %}<small> · отключена</small>{% endif %}</span><button class="organization-delete-button" type="button" data-delete-organization="{{ organization.id }}"><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button></li>{% empty %}<li class="organization-empty">Организаций пока нет.</li>{% endfor %}</ul>
+  </section>
+</div>
+<script>
+document.querySelectorAll('[data-filter-target]').forEach(input=>{const list=document.getElementById(input.dataset.filterTarget);const filter=()=>{const query=input.value.trim().toLocaleLowerCase('ru').replaceAll('ё','е');list?.querySelectorAll('label').forEach(choice=>{const text=choice.textContent.trim().toLocaleLowerCase('ru').replaceAll('ё','е');choice.hidden=!text.includes(query);});};input.addEventListener('input',filter);});
+(()=>{
+  const setupPicker=({kind,dialogSelector,optionsSelector,searchSelector,countSelector,emptySelector,chipsSelector,selectedCountSelector,noResultsSelector,resultsCountSelector,openSelector,closeSelector,cancelSelector,applySelector,removeAttribute})=>{
+    const dialog=document.querySelector(dialogSelector);const options=dialog?.querySelector(optionsSelector);const search=dialog?.querySelector(searchSelector);const count=dialog?.querySelector(resultsCountSelector);const noResults=dialog?.querySelector(noResultsSelector);const chips=document.querySelector(chipsSelector);const selectedCount=document.querySelector(selectedCountSelector);const empty=document.querySelector(emptySelector);const boxes=[...(options?.querySelectorAll('input[type=checkbox]')||[])];
+    if(!dialog||!options||!search||!chips||!selectedCount||!empty)return;
+    let savedState=[];let applied=false;
+    const normalize=value=>(value||'').trim().toLocaleLowerCase('ru').replaceAll('ё','е');
+    const updateSummary=()=>{
+      const selected=boxes.filter(box=>box.checked);selectedCount.textContent=`Выбрано: ${selected.length}`;chips.replaceChildren();
+      selected.slice(0,3).forEach(box=>{const label=box.closest('label');const name=(label?.textContent||'').trim();const chip=document.createElement('span');chip.className='customer-access-chip';const text=document.createElement('span');text.textContent=name;const remove=document.createElement('button');remove.type='button';remove.setAttribute(removeAttribute,box.value);remove.setAttribute('aria-label',`Убрать ${name}`);remove.textContent='×';chip.append(text,remove);chips.append(chip);});
+      if(selected.length>3){const more=document.createElement('span');more.className='customer-access-chip customer-access-chip-more';more.textContent=`+${selected.length-3} ещё`;chips.append(more);}
+      empty.hidden=selected.length>0;
+    };
+    const filter=()=>{const query=normalize(search.value);let visible=0;boxes.forEach(box=>{const label=box.closest('label');const row=box.parentElement?.parentElement;const match=!query||normalize(label?.textContent).includes(query);if(row)row.hidden=!match;if(match)visible++;});if(count)count.textContent=`Показано: ${visible}`;if(noResults)noResults.hidden=visible>0;};
+    document.querySelector(openSelector)?.addEventListener('click',()=>{savedState=boxes.map(box=>box.checked);applied=false;search.value='';filter();dialog.showModal();search.focus();});
+    dialog.querySelector(closeSelector)?.addEventListener('click',()=>dialog.close());dialog.querySelector(cancelSelector)?.addEventListener('click',()=>dialog.close());
+    dialog.querySelector(applySelector)?.addEventListener('click',()=>{applied=true;updateSummary();dialog.close();});
+    dialog.addEventListener('close',()=>{if(!applied)boxes.forEach((box,index)=>{box.checked=Boolean(savedState[index]);});updateSummary();});
+    dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close();});
+    options.addEventListener('change',event=>{if(event.target.matches('input[type=checkbox]'))updateSummary();});
+    chips.addEventListener('click',event=>{const button=event.target.closest(`[${removeAttribute}]`);if(!button)return;const box=boxes.find(item=>item.value===button.getAttribute(removeAttribute));if(box)box.checked=false;updateSummary();});
+    search.addEventListener('input',filter);updateSummary();
+  };
+  setupPicker({kind:'customers',dialogSelector:'[data-customer-dialog]',optionsSelector:'[data-customer-options]',searchSelector:'[data-customer-search]',resultsCountSelector:'[data-customer-results-count]',noResultsSelector:'[data-customer-no-results]',chipsSelector:'[data-customer-chips]',selectedCountSelector:'[data-customer-count]',emptySelector:'[data-customer-empty]',openSelector:'[data-open-customer-picker]',closeSelector:'[data-close-customer-picker]',cancelSelector:'[data-cancel-customer-picker]',applySelector:'[data-apply-customer-picker]',removeAttribute:'data-remove-customer'});
+  setupPicker({kind:'projects',dialogSelector:'[data-project-dialog]',optionsSelector:'[data-project-options]',searchSelector:'[data-project-search]',resultsCountSelector:'[data-project-results-count]',noResultsSelector:'[data-project-no-results]',chipsSelector:'[data-project-chips]',selectedCountSelector:'[data-project-count]',emptySelector:'[data-project-empty]',openSelector:'[data-open-project-picker]',closeSelector:'[data-close-project-picker]',cancelSelector:'[data-cancel-project-picker]',applySelector:'[data-apply-project-picker]',removeAttribute:'data-remove-project'});
+})();
+(()=>{const gipSwitch=document.getElementById('id_is_gip');const permissionFields=[...document.querySelectorAll('[data-gip-hide-fieldset]')];const update=()=>permissionFields.forEach(field=>{field.hidden=Boolean(gipSwitch?.checked);});gipSwitch?.addEventListener('change',update);update();})();
+(()=>{
+  const modal=document.querySelector('[data-organization-modal]');
+  const list=modal?.querySelector('[data-organization-list]');
+  const search=modal?.querySelector('[data-organization-search]');
+  const addForm=modal?.querySelector('[data-organization-add-form]');
+  const feedback=modal?.querySelector('[data-organization-feedback]');
+  const select=document.getElementById('id_organization');
+  const apiUrl="{% url 'admin_organization_api' %}";
+  if(!modal||!list||!addForm||!select)return;
+  const close=()=>{modal.hidden=true;};
+  const message=(text,error=false)=>{feedback.textContent=text;feedback.classList.toggle('is-error',error);};
+  const send=async data=>{
+    const token=addForm.querySelector('[name=csrfmiddlewaretoken]').value;
+    const response=await fetch(apiUrl,{method:'POST',credentials:'same-origin',headers:{'X-CSRFToken':token},body:data});
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.error||'Не удалось выполнить действие.');
+    return payload;
+  };
+  const empty=()=>{if(!list.children.length){const row=document.createElement('li');row.className='organization-empty';row.textContent='Организаций пока нет.';list.append(row);}};
+  const addRow=organization=>{
+    list.querySelector('.organization-empty')?.remove();
+    const row=document.createElement('li');row.dataset.organizationRow='';row.dataset.organizationName=organization.name.toLocaleLowerCase('ru');
+    const name=document.createElement('span');name.textContent=organization.name;
+    const button=document.createElement('button');button.type='button';button.className='organization-delete-button';button.dataset.deleteOrganization=organization.id;
+    const icon=document.createElement('i');icon.className='bi bi-trash3';icon.setAttribute('aria-hidden','true');button.append(icon,document.createTextNode(' Удалить'));
+    row.append(name,button);list.append(row);
+    const option=document.createElement('option');option.value=organization.id;option.textContent=organization.name;select.append(option);
+    applySearch();
+  };
+  const applySearch=()=>{const query=(search?.value||'').trim().toLocaleLowerCase('ru');list.querySelectorAll('[data-organization-row]').forEach(row=>{row.hidden=!row.dataset.organizationName.includes(query);});};
+  document.querySelector('[data-open-organizations]')?.addEventListener('click',()=>{modal.hidden=false;search?.focus();});
+  modal.querySelector('[data-close-organizations]')?.addEventListener('click',close);
+  modal.addEventListener('click',event=>{if(event.target===modal)close();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!modal.hidden)close();});
+  search?.addEventListener('input',applySearch);
+  addForm.addEventListener('submit',async event=>{
+    event.preventDefault();message('');
+    const data=new FormData(addForm);data.set('action','add');
+    try{const organization=await send(data);addRow(organization);addForm.reset();message('Организация добавлена и доступна для назначения.');}
+    catch(error){message(error.message,true);}
+  });
+  list.addEventListener('click',async event=>{
+    const button=event.target.closest('[data-delete-organization]');if(!button)return;
+    message('');const data=new FormData(addForm);data.set('action','delete');data.set('id',button.dataset.deleteOrganization);
+    try{const result=await send(data);const row=button.closest('[data-organization-row]');row?.remove();const option=select.querySelector(`option[value="${CSS.escape(String(result.id))}"]`);if(option){if(option.selected)select.value='';option.remove();}empty();message('Организация удалена.');}
+    catch(error){message(error.message,true);}
+  });
+})();
+</script>
 {% endblock %}

@@ -1,7 +1,84 @@
 {% extends 'accounts/base.html' %}
 {% block title %}Организации и заказчики · Архив ИРД{% endblock %}
 {% block content %}
-<section class="account-card"><div class="account-heading"><div><p class="eyebrow">СУПЕРАДМИНИСТРАТОР</p><h1>Организации и заказчики</h1><p class="account-intro">Справочник заказчиков сформирован из существующих проектов и может дополняться.</p></div><a class="account-secondary" href="{% url 'account_admin' %}">Назад</a></div>
-<div class="directory-columns"><section class="directory-panel"><h2>Организации</h2><form method="post" class="account-form">{% csrf_token %}<input type="hidden" name="kind" value="organization">{{ organization_form.as_p }}<button class="account-primary" type="submit">Сохранить организацию</button></form><ul class="directory-list">{% for organization in organizations %}<li><span><strong>{{ organization.name }}</strong><small>{% if organization.is_active %}Доступна для назначения{% else %}Отключена{% endif %}</small></span><a href="?edit_org={{ organization.id }}">Изменить</a></li>{% empty %}<li>Организаций пока нет. Добавьте первую выше.</li>{% endfor %}</ul></section>
-<section class="directory-panel"><h2>Заказчики</h2><form method="post" class="account-form">{% csrf_token %}<input type="hidden" name="kind" value="customer">{{ customer_form.as_p }}<button class="account-primary" type="submit">Сохранить заказчика</button></form><ul class="directory-list">{% for customer in customers %}<li><span><strong>{{ customer.name }}</strong><small>{% if customer.is_active %}Активен{% else %}Отключён{% endif %}</small></span><a href="?edit_customer={{ customer.id }}">Изменить</a></li>{% empty %}<li>Заказчиков пока нет.</li>{% endfor %}</ul></section></div></section>
+<section class="account-card">
+  <div class="account-heading">
+    <div><p class="eyebrow">СУПЕРАДМИНИСТРАТОР</p><h1>Организации и заказчики</h1><p class="account-intro">Здесь ведутся справочники для карточек пользователей и выдачи доступа.</p></div>
+    <a class="account-secondary" href="{% url 'account_admin' %}">Назад</a>
+  </div>
+  <div class="account-warning directory-purpose"><strong>Для чего нужны справочники</strong><p>Место работы хранится в настройках пользователя как справочная информация. Заказчиков и отдельные объекты для доступа суперадминистратор назначает непосредственно пользователю. Пользователь видит только доступные ему проекты.</p></div>
+
+  <div class="directory-columns">
+    <section class="directory-panel" aria-labelledby="organizations-heading">
+      <h2 id="organizations-heading">Организации</h2>
+      <form method="post" class="account-form directory-editor" data-directory-kind="organization">
+        {% csrf_token %}<input type="hidden" name="kind" value="organization">
+        <label>{{ organization_form.name.label }}{{ organization_form.name.as_widget|safe }}{% for error in organization_form.name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+        <button class="account-primary" type="submit">Добавить организацию</button>
+      </form>
+      <ul class="directory-list" data-directory-list="organization">
+        {% for organization in organizations %}
+          {% if editing_organization and editing_organization.id == organization.id %}
+            <li class="is-editing" data-directory-entry><form method="post" class="directory-inline-edit">
+              {% csrf_token %}<input type="hidden" name="kind" value="organization"><input type="hidden" name="id" value="{{ organization.id }}">
+              <label class="directory-inline-name"><span class="visually-hidden">Название организации</span><input type="text" name="name" id="organization-edit-name" value="{{ organization_edit_form.name.value|default:organization.name }}" required maxlength="240" data-directory-name aria-label="Название организации">{% for error in organization_edit_form.name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+              <div class="directory-inline-footer"><label class="account-switch-row"><span>Активна</span><input type="checkbox" name="is_active" id="organization-edit-active" class="account-switch-input"{% if organization_edit_form.is_active.value %} checked{% endif %}></label><div class="directory-row-actions"><button class="directory-save" type="submit">Сохранить</button><a href="{% url 'admin_organizations' %}">Отмена</a></div></div>
+            </form></li>
+          {% else %}
+            <li data-directory-entry><span class="directory-entry-copy"><strong data-directory-name>{{ organization.name }}</strong><small>{% if organization.is_active %}Активна{% else %}Не активна{% endif %}</small></span><div class="directory-row-actions"><a href="?edit_org={{ organization.id }}">Изменить</a><form method="post" action="{% url 'admin_organizations' %}" onsubmit="return confirm('Удалить организацию «{{ organization.name|escapejs }}»?');">{% csrf_token %}<input type="hidden" name="kind" value="delete_organization"><input type="hidden" name="id" value="{{ organization.id }}"><button class="directory-delete" type="submit">Удалить</button></form></div></li>
+          {% endif %}
+        {% empty %}<li class="directory-no-results">Организаций пока нет. Добавьте первую выше.</li>{% endfor %}
+      </ul>
+      {% if organizations %}<p class="directory-empty-filter" data-directory-empty hidden>Организации не найдены.</p>{% endif %}
+    </section>
+
+    <section class="directory-panel" aria-labelledby="customers-heading">
+      <h2 id="customers-heading">Заказчики</h2>
+      <form method="post" class="account-form directory-editor" data-directory-kind="customer">
+        {% csrf_token %}<input type="hidden" name="kind" value="customer">
+        <label>{{ customer_form.name.label }}{{ customer_form.name.as_widget|safe }}{% for error in customer_form.name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+        <button class="account-primary" type="submit">Добавить заказчика</button>
+      </form>
+      <ul class="directory-list" data-directory-list="customer">
+        {% for customer in customers %}
+          {% if editing_customer and editing_customer.id == customer.id %}
+            <li class="is-editing" data-directory-entry><form method="post" class="directory-inline-edit">
+              {% csrf_token %}<input type="hidden" name="kind" value="customer"><input type="hidden" name="id" value="{{ customer.id }}">
+              <label class="directory-inline-name"><span class="visually-hidden">Название заказчика</span><input type="text" name="name" id="customer-edit-name" value="{{ customer_edit_form.name.value|default:customer.name }}" required maxlength="240" data-directory-name aria-label="Название заказчика">{% for error in customer_edit_form.name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>
+              <div class="directory-inline-footer"><label class="account-switch-row"><span>Активен</span><input type="checkbox" name="is_active" id="customer-edit-active" class="account-switch-input"{% if customer_edit_form.is_active.value %} checked{% endif %}></label><div class="directory-row-actions"><button class="directory-save" type="submit">Сохранить</button><a href="{% url 'admin_organizations' %}">Отмена</a></div></div>
+            </form></li>
+          {% else %}
+            <li data-directory-entry><span class="directory-entry-copy"><strong data-directory-name>{{ customer.name }}</strong><small>{% if customer.is_active %}Активен{% else %}Не активен{% endif %}</small></span><div class="directory-row-actions"><a href="?edit_customer={{ customer.id }}">Изменить</a><form method="post" action="{% url 'admin_organizations' %}" onsubmit="return confirm('Удалить заказчика «{{ customer.name|escapejs }}»?');">{% csrf_token %}<input type="hidden" name="kind" value="delete_customer"><input type="hidden" name="id" value="{{ customer.id }}"><button class="directory-delete" type="submit">Удалить</button></form></div></li>
+          {% endif %}
+        {% empty %}<li class="directory-no-results">Заказчиков пока нет. Добавьте первого выше.</li>{% endfor %}
+      </ul>
+      {% if customers %}<p class="directory-empty-filter" data-directory-empty hidden>Заказчики не найдены.</p>{% endif %}
+    </section>
+  </div>
+</section>
+<script>
+document.querySelectorAll('[data-directory-kind]').forEach(form => {
+  const kind = form.dataset.directoryKind;
+  const input = form.querySelector('input[name="name"]');
+  const list = document.querySelector(`[data-directory-list="${kind}"]`);
+  const empty = form.parentElement.querySelector('[data-directory-empty]');
+  if (!input || !list) return;
+  input.type = 'search';
+  input.placeholder = 'Поиск по названию';
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('aria-label', input.placeholder);
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toLocaleLowerCase('ru');
+    let visible = 0;
+    list.querySelectorAll('[data-directory-entry]').forEach(row => {
+      const nameNode = row.querySelector('[data-directory-name]');
+      const name = (nameNode?.value || nameNode?.textContent || '').trim().toLocaleLowerCase('ru');
+      const matches = !query || name.includes(query);
+      row.hidden = !matches;
+      if (matches) visible += 1;
+    });
+    if (empty) empty.hidden = visible !== 0;
+  });
+});
+</script>
 {% endblock %}

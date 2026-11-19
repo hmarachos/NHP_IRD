@@ -2,6 +2,6 @@
 {% block title %}Регистрация · Архив ИРД{% endblock %}
 {% block content %}
 <section class="account-card auth-card"><p class="eyebrow">НОВАЯ УЧЁТНАЯ ЗАПИСЬ</p><h1>Регистрация</h1><p class="account-intro">Укажите личные данные. После регистрации доступ будет заблокирован до проверки суперадминистратором.</p>
-<form method="post" class="account-form">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>{% endfor %}<button class="account-primary" type="submit">Зарегистрироваться</button></form>
+<form method="post" class="account-form">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<label>{{ field.label }}{% if field.field.widget.input_type == 'password' %}<span class="account-password-field">{{ field }}<button class="password-toggle" type="button" data-password-toggle aria-label="Показать пароль" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button></span>{% else %}{{ field }}{% endif %}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>{% endfor %}<button class="account-primary" type="submit">Зарегистрироваться</button></form>
 <div class="account-links"><a href="{% url 'account_login' %}">Уже зарегистрированы? Войти</a></div></section>
 {% endblock %}

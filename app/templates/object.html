@@ -83,6 +83,7 @@
     const checklistLockButton = document.querySelector('[data-checklist-lock]');
     const checklistAddButton = document.querySelector('[data-open-checklist-add]');
     const checklistRows = document.querySelector('[data-checklist-list]');
+    let applyChecklistColumnWidths = () => {};
     document.querySelectorAll('[data-correspondence-table]').forEach((table) => {
         const header = table.querySelector('.correspondence-table-head');
         if (!header) return;
@@ -184,6 +185,7 @@
     const checklistEditKey = `ird-checklist-edit-${checklistLockButton?.dataset.checklistLock || ''}`;
     const setChecklistEditing = (editing) => {
         checklistRows?.classList.toggle('is-editing-template', editing);
+        applyChecklistColumnWidths();
         checklistAddButton?.toggleAttribute('hidden', !editing);
         const filterGroup = document.querySelector('[data-checklist-filters]');
         if (filterGroup) filterGroup.hidden = editing;
@@ -540,7 +542,7 @@
         const header = checklistRows.querySelector('.checklist-table-head');
         const adjustableColumns = [0, 1, 2, 3, 4, 5];
         const defaults = [.25, 1.4, .7, .7, .45, .55, .08];
-        const minWidths = [32, 220, 110, 120, 112, 100, 56];
+        const minWidths = [32, 220, 110, 120, 112, 100, 66];
         const distributeWidths = (available, weights) => {
             const result = Array(weights.length).fill(0);
             let pending = weights.map((_, index) => index);
@@ -566,7 +568,7 @@
             const saved = JSON.parse(localStorage.getItem(columnStorageKey) || 'null');
             if (Array.isArray(saved) && saved.length === defaults.length && saved.every((value) => Number.isFinite(value) && value > 0)) {
                 columnWidths = saved.map((value, index) => index === saved.length - 1
-                    ? Math.min(64, Math.max(minWidths[index], value))
+                    ? Math.min(88, Math.max(minWidths[index], value))
                     : Math.max(minWidths[index], value));
                 const totalWidth = columnWidths.reduce((sum, value) => sum + value, 0);
                 if (totalWidth < availableWidth) columnWidths[1] += availableWidth - totalWidth;
@@ -582,12 +584,16 @@
                 localStorage.setItem(columnStorageKey, JSON.stringify(columnWidths));
             }
         } catch (_) { }
-        const applyColumnWidths = () => {
-            const template = columnWidths.map((width) => `${width}px`).join(' ');
+        applyChecklistColumnWidths = () => {
+            const widths = [...columnWidths];
+            const expandedActionWidth = Math.max(66, Math.min(88, columnWidths[6]));
+            widths[6] = checklistRows.classList.contains('is-editing-template') ? expandedActionWidth : 41;
+            widths[1] += columnWidths[6] - widths[6];
+            const template = widths.map((width) => `${width}px`).join(' ');
             checklistRows.style.setProperty('--checklist-grid-columns', template);
-            checklistRows.style.setProperty('--checklist-grid-width', `${columnWidths.reduce((sum, width) => sum + width, 0)}px`);
+            checklistRows.style.setProperty('--checklist-grid-width', `${widths.reduce((sum, width) => sum + width, 0)}px`);
         };
-        applyColumnWidths();
+        applyChecklistColumnWidths();
         if (header) adjustableColumns.forEach((columnIndex) => {
             const cell = header.children[columnIndex];
             if (!cell) return;
@@ -611,7 +617,7 @@
             handle.addEventListener('pointermove', (event) => {
                 if (!drag) return;
                 columnWidths[columnIndex] = Math.max(minWidths[columnIndex], drag.width + event.clientX - drag.x);
-                applyColumnWidths();
+                applyChecklistColumnWidths();
                 try { localStorage.setItem(columnStorageKey, JSON.stringify(columnWidths)); } catch (_) { }
             });
             const stopResize = () => { drag = null; handle.classList.remove('is-dragging'); };
@@ -623,7 +629,7 @@
                 event.preventDefault();
                 const delta = event.key === 'ArrowRight' ? 10 : -10;
                 columnWidths[columnIndex] = Math.max(minWidths[columnIndex], columnWidths[columnIndex] + delta);
-                applyColumnWidths();
+                applyChecklistColumnWidths();
                 try { localStorage.setItem(columnStorageKey, JSON.stringify(columnWidths)); } catch (_) { }
             });
         });

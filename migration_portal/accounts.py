@@ -18,11 +18,13 @@ def visible_projects(user):
         return Project.objects.none()
     if profile.access_level == UserProfile.AccessLevel.BLOCKED:
         return Project.objects.none()
-    customer_names = [name.strip().casefold() for name in profile.allowed_customers.filter(is_active=True).values_list("name", flat=True)]
+    customers = profile.allowed_customers.filter(is_active=True)
+    customer_names = [name.strip().casefold() for name in customers.values_list("name", flat=True).distinct()]
     project_ids = profile.allowed_projects.values_list("pk", flat=True)
-    return Project.objects.annotate(customer_normalized=Lower(Trim("customer"))).filter(
-        Q(customer_normalized__in=customer_names) | Q(pk__in=project_ids)
-    ).distinct()
+    scope = Q(customer_normalized__in=customer_names) | Q(pk__in=project_ids)
+    if profile.is_gip:
+        scope |= Q(chief_engineer=user)
+    return Project.objects.annotate(customer_normalized=Lower(Trim("customer"))).filter(scope).distinct()
 
 
 def visible_customers(user):
