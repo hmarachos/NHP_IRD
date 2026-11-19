@@ -2,8 +2,24 @@ from django.contrib import admin
 from django.urls import path
 from django.views.decorators.http import require_GET
 from migration_portal import views
+from migration_portal import account_views
+from django.contrib.auth.decorators import login_not_required
 
 urlpatterns = [
+    path("accounts/login/", account_views.account_login, name="account_login"),
+    path("accounts/register/", account_views.account_register, name="account_register"),
+    path("accounts/profile/", account_views.account_profile, name="account_profile"),
+    path("accounts/logout/", account_views.account_logout, name="account_logout"),
+    path("accounts/password-reset/", login_not_required(account_views.AppPasswordResetView.as_view()), name="account_password_reset"),
+    path("accounts/password-reset/done/", login_not_required(account_views.AppPasswordResetDoneView.as_view()), name="account_password_reset_done"),
+    path("accounts/reset/<uidb64>/<token>/", login_not_required(account_views.AppPasswordResetConfirmView.as_view()), name="account_password_reset_confirm"),
+    path("accounts/reset/complete/", login_not_required(account_views.AppPasswordResetCompleteView.as_view()), name="account_password_reset_complete"),
+    path("accounts/password-change/", account_views.AppPasswordChangeView.as_view(), name="account_password_change"),
+    path("accounts/password-change/done/", account_views.AppPasswordChangeDoneView.as_view(), name="account_password_change_done"),
+    path("manage/", account_views.admin_dashboard, name="account_admin"),
+    path("manage/users/", account_views.user_list, name="admin_users"),
+    path("manage/users/<int:user_id>/", account_views.user_edit, name="admin_user_edit"),
+    path("manage/organizations/", account_views.organization_list, name="admin_organizations"),
     path("admin/", admin.site.urls),
     path("", views.home, name="web_index"),
     path("health/", require_GET(views.health), name="health"),

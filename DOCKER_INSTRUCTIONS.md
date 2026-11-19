@@ -56,3 +56,12 @@ docker compose exec django-web python manage.py check
 docker compose exec django-web python manage.py makemigrations --check --dry-run
 docker compose exec django-web python manage.py test migration_portal
 ```
+
+## Учётные записи
+
+Пользователи могут зарегистрироваться по адресу `/accounts/register/`; до
+назначения организации и уровня доступа их учётная запись остаётся
+заблокированной. Суперадминистратор открывает `/manage/`, создаёт организации,
+а затем назначает пользователям доступ и заказчиков/объекты. Для писем сброса
+пароля настройте `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_APP_PASSWORD`
+и `MAIL_FROM` в `.env`.

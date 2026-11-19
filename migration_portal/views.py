@@ -38,6 +38,7 @@ from migration_portal.checklist_utils import (
     allows_multiple_documents, apply_checklist_document_title, normalize,
     uses_customer_letter_subject,
 )
+from migration_portal.accounts import visible_customers, visible_projects
 
 
 def _upload_storage():
@@ -574,7 +575,7 @@ def health(request):
 
 @require_GET
 def object_workspace(request, object_id):
-    project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
     if project is None:
         raise Http404
     warning_days = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
@@ -584,17 +585,18 @@ def object_workspace(request, object_id):
     documents = [attach_expiry(row, warning_days) for row in Document.objects.filter(
         project=project, archived_at__isnull=True,
     ).order_by("-created_at", "-id").values()]
-    # Match pre-existing uploads to exact checklist titles, as the Flask
-    # workspace did on each visit. This also restores links after document restore.
-    for document in documents:
-        title = document.get("working_title") or document.get("official_title")
-        if not title:
-            continue
-        item = ProjectChecklistItem.objects.filter(
-            project=project, status="missing", validity_years=0,
-        ).order_by("id").first()
-        if item and not allows_multiple_documents(item.title) and normalize(item.title) == normalize(title):
-            _link_checklist_document(project.id, item, Document.objects.get(pk=document["id"]))
+    # Reconcile pre-existing uploads only on editable visits: GET requests from
+    # a read-only guest must not mutate checklist relationships.
+    if request.user.is_superuser or request.user.profile.access_level == "edit":
+        for document in documents:
+            title = document.get("working_title") or document.get("official_title")
+            if not title:
+                continue
+            item = ProjectChecklistItem.objects.filter(
+                project=project, status="missing", validity_years=0,
+            ).order_by("id").first()
+            if item and not allows_multiple_documents(item.title) and normalize(item.title) == normalize(title):
+                _link_checklist_document(project.id, item, Document.objects.get(pk=document["id"]))
     archived_documents = [attach_expiry(row, warning_days) for row in Document.objects.filter(
         project=project, archived_at__isnull=False,
     ).order_by("-archived_at", "-id").values()]
@@ -1209,19 +1211,20 @@ def export_object(request, object_id):
 
 def home(request):
     warning_days = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
+    project_scope = visible_projects(request.user)
     objects = list(
-        Project.objects.filter(archived_at__isnull=True)
+        project_scope.filter(archived_at__isnull=True)
         .annotate(
             documents_count=Count("document", filter=Q(document__archived_at__isnull=True), distinct=True),
             last_document_at=Max("document__created_at"),
         )
         .order_by("-created_at", "-id")
     )
-    archived_objects = Project.objects.filter(archived_at__isnull=False).order_by("-archived_at", "-id")
+    archived_objects = project_scope.filter(archived_at__isnull=False).order_by("-archived_at", "-id")
     customers = []
     seen = set()
     customer_rows = {}
-    for customer in Project.objects.exclude(customer="").values_list("customer", flat=True):
+    for customer in project_scope.exclude(customer="").values_list("customer", flat=True):
         value = customer.strip()
         key = value.casefold()
         if value:
@@ -1230,7 +1233,7 @@ def home(request):
     templates = ChecklistTemplate.objects.order_by("name")
     alerts = []
     for document in Document.objects.filter(
-        archived_at__isnull=True, project__archived_at__isnull=True,
+        archived_at__isnull=True, project__archived_at__isnull=True, project__in=project_scope,
     ).order_by("-created_at", "-id"):
         row = {
             "id": document.id,
@@ -1265,6 +1268,12 @@ def create_object(request):
         stage = ""
     name = request.POST.get("name", "").strip()
     customer = request.POST.get("customer", "").strip()
+    if not request.user.is_superuser:
+        allowed_customer = visible_customers(request.user).filter(name__iexact=customer).first()
+        if allowed_customer is None:
+            messages.error(request, "Суперадминистратор должен назначить вам заказчика для новых проектов.")
+            return redirect("web_index")
+        customer = allowed_customer.name
     try:
         template_id = int(request.POST.get("template_id", "")) or None
     except (TypeError, ValueError):
@@ -1311,6 +1320,12 @@ def update_object(request, object_id):
         stage = ""
     name = request.POST.get("name", "").strip()
     customer = request.POST.get("customer", "").strip()
+    if not request.user.is_superuser and customer.casefold() != project.customer.casefold():
+        allowed_customer = visible_customers(request.user).filter(name__iexact=customer).first()
+        if allowed_customer is None:
+            messages.error(request, "Вы не можете назначить этому проекту другого заказчика.")
+            return redirect("web_index")
+        customer = allowed_customer.name
     if not contract_number or not name:
         messages.error(request, "Заполните номер договора и наименование проекта.")
         return redirect("web_index")

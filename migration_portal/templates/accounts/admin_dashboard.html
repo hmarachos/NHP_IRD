@@ -1,0 +1,7 @@
+{% extends 'accounts/base.html' %}
+{% block title %}Управление доступом · Архив ИРД{% endblock %}
+{% block content %}
+<section class="account-card"><p class="eyebrow">СУПЕРАДМИНИСТРАТОР</p><h1>Управление доступом</h1><p class="account-intro">Настраивайте организации, пользователей, заказчиков и доступ гостей к отдельным объектам.</p>
+<div class="admin-tiles"><a href="{% url 'admin_users' %}"><i class="bi bi-people"></i><strong>Пользователи</strong><span>{{ user_count }} учётных записей · {{ pending_count }} ожидают настройки</span></a><a href="{% url 'admin_organizations' %}"><i class="bi bi-building"></i><strong>Организации и заказчики</strong><span>{{ organization_count }} организаций в справочнике</span></a></div>
+<div class="account-warning"><strong>Гостевой доступ к объектам</strong><p>В настройках пользователя выберите уровень «Просмотр» и укажите конкретные объекты в разделе «Разрешённые объекты». Можно дополнительно назначить заказчиков для доступа ко всем их проектам.</p></div></section>
+{% endblock %}

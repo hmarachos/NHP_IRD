@@ -1,0 +1,9 @@
+{% extends 'accounts/base.html' %}
+{% block title %}Мои настройки · Архив ИРД{% endblock %}
+{% block content %}
+<section class="account-card"><p class="eyebrow">ЛИЧНЫЙ КАБИНЕТ</p><h1>Мои настройки</h1>
+{% if profile.access_level == 'blocked' %}<div class="account-warning"><strong>Доступ пока заблокирован</strong><p>Суперадминистратор проверит ваши данные, назначит организацию, уровень доступа и разрешённые проекты.</p></div>{% endif %}
+<div class="account-summary"><div><span>Организация</span><strong>{{ profile.organization|default:'Назначит суперадминистратор' }}</strong></div><div><span>Уровень доступа</span><strong>{{ profile.get_access_level_display }}</strong></div><div><span>Разрешённые заказчики</span><strong>{% for customer in profile.allowed_customers.all %}{{ customer.name }}{% if not forloop.last %}, {% endif %}{% empty %}Не назначены{% endfor %}</strong></div><div><span>Разрешённые объекты</span><strong>{{ profile.allowed_projects.count }}</strong></div></div>
+<form method="post" class="account-form account-form-wide">{% csrf_token %}<h2>Личные данные</h2>{{ form.non_field_errors }}{% for field in form %}<label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>{% endfor %}<button class="account-primary" type="submit">Сохранить данные</button></form>
+<div class="account-links"><a href="{% url 'account_password_change' %}">Изменить пароль</a>{% if user.is_superuser %}<a href="{% url 'account_admin' %}">Открыть панель суперадминистратора</a>{% endif %}</div></section>
+{% endblock %}

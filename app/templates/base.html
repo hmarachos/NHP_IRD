@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261119-contract-stage-v1') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
-<body>
+<body data-access-level="{% if request.user.is_superuser %}edit{% else %}{{ request.user.profile.access_level }}{% endif %}">
     {% set active_project = object if object is defined and object else (project if project is defined and project else none) %}
     <div class="app-layout">
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
@@ -36,6 +36,7 @@
                     <a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_notebook' %} is-active{% endif %}" href="/objects/{{ active_project.id }}/notebook"{% if request.resolver_match.url_name == 'web_project_notebook' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-journal-text" aria-hidden="true"></i><span>Записная книжка</span></a>
                 </div>
                 {% endif %}
+                {% if request.user.is_authenticated %}<div class="project-nav-group"><span class="project-nav-caption">УЧЁТНАЯ ЗАПИСЬ</span><a class="project-nav-item" href="{{ url_for('account_profile') }}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>Мои настройки</span></a>{% if request.user.is_superuser %}<a class="project-nav-item" href="{{ url_for('account_admin') }}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<form action="{{ url_for('account_logout') }}" method="post" class="sidebar-logout-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="project-nav-item" type="submit"><i class="project-nav-icon bi bi-box-arrow-right" aria-hidden="true"></i><span>Выйти</span></button></form></div>{% endif %}
             </nav>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
         </aside>

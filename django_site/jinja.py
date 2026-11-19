@@ -77,9 +77,17 @@ def context_processor(request):
             request._shared_csrf_form_token = token
         return token
 
+    user = getattr(request, "user", None)
+    can_edit = bool(user and user.is_authenticated and user.is_superuser)
+    if user and user.is_authenticated and not can_edit:
+        try:
+            can_edit = user.profile.access_level == "edit"
+        except AttributeError:
+            can_edit = False
     return {
         "request": RequestProxy(request),
         "url_for": url_for,
         "csrf_token": shared_csrf_token,
         "get_flashed_messages": get_flashed_messages,
+        "can_edit": can_edit,
     }

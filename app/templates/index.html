@@ -3,7 +3,7 @@
 {% block content %}
 <section class="page-heading projects-heading">
     <div><p class="eyebrow">АРХИВ ИСХОДНЫХ ДАННЫХ</p><h1>Проекты</h1></div>
-    <details class="new-project">
+    {% if can_edit %}<details class="new-project">
         <summary>＋ Новый проект</summary>
         <form action="{{ url_for('web.create_object') }}" method="post" class="new-project-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -15,7 +15,7 @@
             <label><span>Список документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
             <button type="submit">Создать</button>
         </form>
-    </details>
+    </details>{% endif %}
     <datalist id="customer-suggestions">{% for customer in customers %}<option value="{{ customer }}">{% endfor %}</datalist>
 </section>
 {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
@@ -33,11 +33,11 @@
                 <h3>{{ object.name }}</h3>
                 <span class="project-card-meta"><span class="project-card-customer"><small>ЗАКАЗЧИК</small>{{ object.customer or 'Не указан' }}</span><span class="project-card-documents"><i class="bi bi-file-earmark-text" aria-hidden="true"></i>{{ object.documents_count }} док.</span></span>
             </a>
-            <footer class="project-card-actions">
+            {% if can_edit %}<footer class="project-card-actions">
                 <details class="project-edit"><summary><i class="bi bi-pencil" aria-hidden="true"></i> Изменить</summary><form action="{{ url_for('web.update_object', object_id=object.id) }}" method="post" class="stack-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Договор</span><input name="contract_number" value="{{ object.contract_number }}" required></label><label><span>Дата договора</span><input type="date" name="contract_date" value="{{ object.contract_date }}"></label><label><span>Шаблон документов</span><select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}" {% if object.template_id == template.id %}selected{% endif %}>{{ template.name }}</option>{% endfor %}</select><small>Добавятся только отсутствующие пункты, существующие сохранятся.</small></label><label><span>Стадия</span><select name="stage"><option value="">Не выбрана</option>{% for stage in ['Предпроектная документация', 'Строительный проект', 'Архитектурный проект'] %}<option value="{{ stage }}" {% if object.stage == stage %}selected{% endif %}>{{ stage }}</option>{% endfor %}</select></label><label><span>Наименование объекта</span><input name="name" value="{{ object.name }}" required></label><label><span>Заказчик</span><input name="customer" value="{{ object.customer }}" list="customer-suggestions" autocomplete="off"></label><button type="submit">Сохранить</button></form></details>
                 <form action="{{ url_for('web.archive_object', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quiet-button" type="submit"><i class="bi bi-archive" aria-hidden="true"></i> В архив</button></form>
                 <form action="{{ url_for('web.delete_object', object_id=object.id) }}" method="post" onsubmit="return confirm('Проект, его документы, чек-лист и исходные файлы будут удалены без возможности восстановления. Перед этим скачайте архив, если он нужен. Удалить проект?');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger active-project-delete" type="submit"><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button></form>
-            </footer>
+            </footer>{% endif %}
         </article>
     {% endfor %}<p class="project-search-empty" data-project-search-empty hidden>По вашему запросу проекты не найдены.</p></div>
     {% else %}<div class="empty-state compact-empty"><h3>Пока нет проектов</h3><p>Создайте проект, чтобы добавить документы.</p></div>{% endif %}

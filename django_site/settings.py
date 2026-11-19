@@ -35,6 +35,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
+    "migration_portal.middleware.ProjectAccessMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
 TEMPLATES = [
@@ -94,7 +95,22 @@ MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
 MAIL_APP_PASSWORD = os.getenv("MAIL_APP_PASSWORD", "")
 MAIL_FROM = os.getenv("MAIL_FROM", "") or MAIL_USERNAME
 MAIL_RECIPIENT = os.getenv("MAIL_RECIPIENT", "")
-LOGIN_URL = "/admin/login/"
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = MAIL_SERVER
+EMAIL_PORT = MAIL_PORT
+EMAIL_HOST_USER = MAIL_USERNAME
+EMAIL_HOST_PASSWORD = "".join(MAIL_APP_PASSWORD.split())
+EMAIL_USE_TLS = MAIL_PORT != 465
+EMAIL_USE_SSL = MAIL_PORT == 465
+EMAIL_TIMEOUT = 30
+DEFAULT_FROM_EMAIL = MAIL_FROM
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 10}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 CSRF_TRUSTED_ORIGINS = [origin for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin]
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

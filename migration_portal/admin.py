@@ -3,6 +3,28 @@ from django.contrib import admin
 from migration_portal import models
 
 
+@admin.register(models.Organization)
+class OrganizationAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "created_at")
+    search_fields = ("name",)
+    list_filter = ("is_active",)
+
+
+@admin.register(models.Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active")
+    search_fields = ("name",)
+    list_filter = ("is_active",)
+
+
+@admin.register(models.UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "organization", "access_level", "is_gip")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "middle_name")
+    list_filter = ("access_level", "is_gip", "organization")
+    filter_horizontal = ("allowed_customers", "allowed_projects")
+
+
 @admin.register(models.Project)
 class ProjectAdmin(admin.ModelAdmin):
     list_display = ("id", "contract_number", "name", "customer", "archived_at")

@@ -208,3 +208,44 @@ class LegacyImportState(models.Model):
 
     class Meta:
         db_table = "migration_import_state"
+
+
+class Organization(models.Model):
+    name = models.CharField(max_length=240, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Customer(models.Model):
+    name = models.CharField(max_length=240, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class UserProfile(models.Model):
+    class AccessLevel(models.TextChoices):
+        BLOCKED = "blocked", "Заблокирован"
+        VIEW = "view", "Просмотр"
+        EDIT = "edit", "Редактирование"
+
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="profile")
+    middle_name = models.CharField(max_length=150, blank=True)
+    is_gip = models.BooleanField(default=False)
+    organization = models.ForeignKey(Organization, null=True, blank=True, on_delete=models.PROTECT, related_name="users")
+    access_level = models.CharField(max_length=12, choices=AccessLevel.choices, default=AccessLevel.BLOCKED)
+    allowed_customers = models.ManyToManyField(Customer, blank=True, related_name="permitted_users")
+    allowed_projects = models.ManyToManyField(Project, blank=True, related_name="permitted_users")
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} ({self.get_access_level_display()})"

@@ -1,0 +1,7 @@
+{% extends 'accounts/base.html' %}
+{% block title %}Вход · Архив ИРД{% endblock %}
+{% block content %}
+<section class="account-card auth-card"><p class="eyebrow">ЗАЩИЩЁННЫЙ ДОСТУП</p><h1>Войти в Архив ИРД</h1><p class="account-intro">Введите email и пароль учётной записи.</p>
+<form method="post" class="account-form">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>{% endfor %}<button class="account-primary" type="submit">Войти</button></form>
+<div class="account-links"><a href="{% url 'account_password_reset' %}">Забыли пароль?</a><a href="{% url 'account_register' %}">Создать учётную запись</a></div></section>
+{% endblock %}
