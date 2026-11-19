@@ -388,6 +388,9 @@ class RegexFieldExtractor:
             priority = 2 if re.search(r"\bисх(?:одящий)?\b", line, re.IGNORECASE) else 0
             if re.search(r"\bот\s*[«\"]?\d", line, re.IGNORECASE) or DATE_RE.search(line):
                 priority += 3
+            # A body reference is not an outgoing registration line.
+            if not priority:
+                continue
             candidates.append((priority, lines.index(line), number))
         if not candidates:
             return ""

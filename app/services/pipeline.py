@@ -213,6 +213,25 @@ class DocumentProcessingPipeline:
             if not self._title_is_explicit(parsed.official_title, text):
                 parsed.official_title = letter_title
         parsed.issuer = normalize_organization_forms(parsed.issuer)
+        # Protocol requisites sit directly below their standalone heading;
+        # an electronic registration stamp above it belongs to a different record.
+        protocol = re.search(
+            r"(?:^|\n)[ \t]*П[ \t]*Р[ \t]*О[ \t]*Т[ \t]*О[ \t]*К[ \t]*О[ \t]*Л[ \t]*\n"
+            r"[ \t]*(\d{2}[./-]\d{2}[./-]\d{4})[ \t]*№[ \t]*([\w/-]+)",
+            text, re.IGNORECASE,
+        )
+        if protocol:
+            protocol_date = self.regex_extractor._parse_date(protocol.group(1))
+            if protocol_date:
+                parsed.issue_date = protocol_date.isoformat()
+                parsed.document_number = protocol.group(2)
+                parsed.valid_until = (
+                    self.regex_extractor._extract_explicit_valid_until(text)
+                    or self.regex_extractor._calculate_valid_until_from_duration(text, parsed.issue_date)
+                )
+                parsed.no_expiration = not bool(parsed.valid_until)
+                if parsed.no_expiration:
+                    parsed.validity_text = ""
         parsed.raw_text = text
         return parsed
 

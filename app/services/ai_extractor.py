@@ -24,7 +24,7 @@ from app.prompts import EXTRACTION_PROMPT, EXTRACTION_SCHEMA
 
 
 logger = logging.getLogger(__name__)
-OPENAI_INPUT_CHUNK_CHARS = 12_000
+OPENAI_INPUT_CHUNK_CHARS = 60_000
 
 
 class AiFieldExtractor:
@@ -54,7 +54,7 @@ class AiFieldExtractor:
         schema["properties"]["working_title"].pop("enum", None)
 
         parsed_chunks = []
-        for chunk in self._split_text(text, 60_000):
+        for chunk in self._split_text(text, OPENAI_INPUT_CHUNK_CHARS):
             try:
                 response = client.responses.create(
                     model=_config("OPENAI_MODEL"),

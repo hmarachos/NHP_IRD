@@ -58,6 +58,8 @@ class Document(models.Model):
     status = models.TextField(default="processed", db_default="processed")
     error = models.TextField(null=True, blank=True)
     created_at = models.CharField(max_length=40, default="", db_default=TIMESTAMP_TEXT_DEFAULT)
+    processing_token = models.CharField(max_length=32, default="", blank=True)
+    processing_lease_until = models.DateTimeField(null=True, blank=True)
     document_number = models.TextField(default="", db_default="")
     archived_at = models.CharField(max_length=40, null=True, blank=True)
 
