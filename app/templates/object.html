@@ -540,7 +540,7 @@
         const header = checklistRows.querySelector('.checklist-table-head');
         const adjustableColumns = [0, 1, 2, 3, 4, 5];
         const defaults = [.25, 1.4, .7, .7, .45, .55, .08];
-        const minWidths = [32, 220, 110, 120, 112, 100, 80];
+        const minWidths = [32, 220, 110, 120, 112, 100, 56];
         const distributeWidths = (available, weights) => {
             const result = Array(weights.length).fill(0);
             let pending = weights.map((_, index) => index);
@@ -566,7 +566,7 @@
             const saved = JSON.parse(localStorage.getItem(columnStorageKey) || 'null');
             if (Array.isArray(saved) && saved.length === defaults.length && saved.every((value) => Number.isFinite(value) && value > 0)) {
                 columnWidths = saved.map((value, index) => index === saved.length - 1
-                    ? Math.min(84, Math.max(minWidths[index], value))
+                    ? Math.min(64, Math.max(minWidths[index], value))
                     : Math.max(minWidths[index], value));
                 const totalWidth = columnWidths.reduce((sum, value) => sum + value, 0);
                 if (totalWidth < availableWidth) columnWidths[1] += availableWidth - totalWidth;

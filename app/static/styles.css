@@ -327,7 +327,7 @@
 .checklist-table-head>span{overflow-wrap:anywhere;word-break:break-word;white-space:normal}
 .checklist-template-download{display:inline-flex;align-items:center;gap:5px;margin-top:5px;color:var(--accent-dark);font-size:11px;font-weight:700;text-decoration:none}
 .checklist-template-download:hover{color:var(--accent);text-decoration:underline}
-.checklist-table-head,.checklist-row{grid-template-columns:var(--checklist-grid-columns,minmax(32px,.25fr) minmax(220px,1.4fr) minmax(110px,.7fr) minmax(120px,.7fr) minmax(112px,.45fr) minmax(100px,.55fr) minmax(72px,.3fr))}
+.checklist-table-head,.checklist-row{grid-template-columns:var(--checklist-grid-columns,minmax(32px,.25fr) minmax(220px,1.4fr) minmax(110px,.7fr) minmax(120px,.7fr) minmax(112px,.45fr) minmax(100px,.55fr) minmax(56px,.3fr))}
 .checklist-table-head>span,.checklist-row>*{position:relative;min-width:0}
 .checklist-table-head>span+span,.checklist-row>*+*{border-left:1px solid #d5dfe1;padding-left:12px}
 .checklist-table-head>span+span{height:100%;display:flex;align-items:center;justify-content:center}
@@ -533,7 +533,7 @@
 .checklist-number,.checklist-status-label,.checklist-row-actions{align-self:stretch;display:flex;align-items:center;}
 .checklist-note-display,.checklist-expiry-cell{align-self:stretch;display:grid;align-content:center;}
 .checklist-number,.checklist-status-label{justify-content:center;}
-.checklist-row-actions{justify-self:stretch;width:100%;justify-content:flex-end;}
+.checklist-row-actions{justify-self:stretch;width:100%;justify-content:center;}
 .checklist-row>*:last-child{padding-left:4px;}
 .checklist-row-actions{gap:1px;flex-wrap:nowrap;}
 .checklist-row-actions>*{flex:0 0 24px;width:24px;}
