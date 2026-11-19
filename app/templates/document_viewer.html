@@ -4,11 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Предпросмотр документа</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261117-pdf-viewer-split-v2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261120-citation-highlight-v1') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="pdf-viewer-body">
-<main class="pdf-viewer" data-pdf-viewer data-document-id="{{ document_id }}" data-page-count="{{ page_count }}" data-initial-page="{{ initial_page }}" data-page-url-template="{{ url_for('web.document_viewer_page', document_id=document_id, page_index=0) }}">
+<main class="pdf-viewer" data-pdf-viewer data-document-id="{{ document_id }}" data-page-count="{{ page_count }}" data-initial-page="{{ initial_page }}" data-page-url-template="{{ page_url_template }}" data-highlight-url-template="{{ highlight_url_template }}">
+    <input type="hidden" data-viewer-csrf value="{{ csrf_token() }}">
     <nav class="pdf-viewer-toolbar" aria-label="Управление просмотром PDF">
         <button type="button" data-page-prev aria-label="Предыдущая страница" title="Предыдущая страница"><i class="bi bi-chevron-left"></i></button>
         <label class="pdf-page-counter"><input type="number" value="1" min="1" max="{{ page_count }}" data-current-page aria-label="Номер страницы"><span>/ {{ page_count }}</span></label>
@@ -18,20 +19,23 @@
         <span class="pdf-zoom-value" data-zoom-value>100%</span>
         <button type="button" data-zoom-in aria-label="Увеличить" title="Увеличить"><i class="bi bi-plus-lg"></i></button>
         <button type="button" data-fit-page title="По ширине страницы"><i class="bi bi-arrows-angle-expand"></i><span>По ширине</span></button>
-        <a href="{{ url_for('web.document_preview', document_id=document_id) }}" target="_blank" rel="noopener" title="Открыть PDF отдельно"><i class="bi bi-box-arrow-up-right"></i></a>
+        <a href="{{ original_url }}" target="_blank" rel="noopener" title="Открыть PDF отдельно"><i class="bi bi-box-arrow-up-right"></i></a>
     </nav>
     <div class="pdf-viewer-layout" data-pdf-layout>
         <aside class="pdf-thumbnails" data-pdf-thumbnails aria-label="Миниатюры страниц">
             {% for page in range(page_count) %}
             <button type="button" class="pdf-thumbnail{% if page == initial_page - 1 %} is-active{% endif %}" data-page-index="{{ page }}" aria-label="Страница {{ page + 1 }}" aria-pressed="{{ 'true' if page == initial_page - 1 else 'false' }}">
-                <img src="{{ url_for('web.document_viewer_page', document_id=document_id, page_index=page, thumbnail=1) }}" alt="" loading="{{ 'eager' if page == 0 else 'lazy' }}">
+                <img src="{{ thumbnail_urls[page] }}" alt="" loading="{{ 'eager' if page == 0 else 'lazy' }}">
                 <span>{{ page + 1 }}</span>
             </button>
             {% endfor %}
         </aside>
         <div class="pdf-viewer-splitter" data-pdf-splitter role="separator" aria-label="Изменить ширину миниатюр" aria-orientation="vertical" aria-valuemin="8" aria-valuemax="40" aria-valuenow="13" tabindex="0" title="Перетащите, чтобы изменить ширину области миниатюр"></div>
         <section class="pdf-page-viewport" data-page-viewport aria-label="Выбранная страница документа">
-            <img class="pdf-page-image" data-page-image src="{{ url_for('web.document_viewer_page', document_id=document_id, page_index=initial_page - 1) }}" alt="Страница {{ initial_page }} из {{ page_count }}">
+            <div class="pdf-page-stage" data-page-stage>
+                <img class="pdf-page-image" data-page-image src="{{ page_image_url }}" alt="Страница {{ initial_page }} из {{ page_count }}">
+                <div class="pdf-highlight-layer" data-highlight-layer aria-hidden="true"></div>
+            </div>
         </section>
     </div>
 </main>
@@ -45,6 +49,9 @@
     const pageInput = viewer.querySelector('[data-current-page]');
     const pageImage = viewer.querySelector('[data-page-image]');
     const viewport = viewer.querySelector('[data-page-viewport]');
+    const pageStage = viewer.querySelector('[data-page-stage]');
+    const highlightLayer = viewer.querySelector('[data-highlight-layer]');
+    let highlightText = '';
     const thumbnails = Array.from(viewer.querySelectorAll('[data-page-index]'));
     const splitter = viewer.querySelector('[data-pdf-splitter]');
     const splitStorageKey = 'ird-pdf-thumbnail-width-v2';
@@ -52,6 +59,7 @@
     let page = Math.max(0, Math.min(pageCount - 1, (Number(viewer.dataset.initialPage) || 1) - 1));
     let zoom = 100;
     let drag = null;
+    let pendingCenterRects = null;
     const setRatio = (ratio, persist = true) => {
         const value = Math.max(.08, Math.min(.4, Number(ratio) || .125));
         layout.style.setProperty('--pdf-thumbnails-width', `${value * 100}%`);
@@ -68,14 +76,63 @@
     } catch (_) { setRatio(.125, false); }
     const setZoom = (value) => {
         zoom = Math.max(50, Math.min(200, value));
-        pageImage.style.width = `${zoom}%`;
+        pageStage.style.width = `${zoom}%`;
         viewer.querySelector('[data-zoom-value]').textContent = `${zoom}%`;
     };
+    const centerHighlights = (rects) => {
+        if (!pageImage.complete || !pageImage.naturalHeight) {
+            pendingCenterRects = rects;
+            return;
+        }
+        pendingCenterRects = null;
+        const centerY = rects.reduce((sum, rect) => sum + rect.y + rect.height / 2, 0) / rects.length;
+        const pageTop = viewport.scrollTop + pageStage.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        const targetTop = pageTop + centerY * pageStage.offsetHeight - viewport.clientHeight / 2;
+        viewport.scrollTo({top: Math.max(0, targetTop), behavior: 'smooth'});
+    };
+    pageImage.addEventListener('load', () => {
+        if (pendingCenterRects?.length) centerHighlights(pendingCenterRects);
+    });
+    const showHighlights = async (pageIndex) => {
+        highlightLayer.replaceChildren();
+        if (!highlightText) return;
+        const url = new URL(viewer.dataset.highlightUrlTemplate.replace(/0(?=$|\?)/, String(pageIndex)), window.location.href);
+        try {
+            const token = viewer.querySelector('[data-viewer-csrf]')?.value || '';
+            const response = await fetch(url, {
+                method: 'POST',
+                body: new URLSearchParams({q: highlightText.slice(0, 1200), csrfmiddlewaretoken: token}),
+                headers: {'X-CSRFToken': token},
+                credentials: 'same-origin',
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            (payload.rects || []).forEach((rect) => {
+                const marker = document.createElement('span');
+                marker.className = 'pdf-text-highlight';
+                marker.style.left = `${rect.x * 100}%`;
+                marker.style.top = `${rect.y * 100}%`;
+                marker.style.width = `${rect.width * 100}%`;
+                marker.style.height = `${rect.height * 100}%`;
+                highlightLayer.append(marker);
+            });
+            if (pageIndex === page && payload.rects?.length) centerHighlights(payload.rects);
+        } catch (_) {
+            // The PDF remains fully usable if optional highlight OCR fails.
+        }
+    };
+    window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin || event.data?.type !== 'analytics-citation-highlight') return;
+        highlightText = String(event.data.text || '').slice(0, 1200);
+        showHighlights(page);
+    });
     const setPage = (index) => {
         page = Math.max(0, Math.min(pageCount - 1, Number(index) || 0));
+        pendingCenterRects = null;
         pageInput.value = String(page + 1);
         pageImage.src = pageUrl.replace('{page}', String(page));
         pageImage.alt = `Страница ${page + 1} из ${pageCount}`;
+        showHighlights(page);
         viewport.scrollTop = 0;
         thumbnails.forEach((button, i) => {
             const active = i === page;
@@ -113,6 +170,7 @@
         const current = Number(splitter.getAttribute('aria-valuenow')) / 100;
         setRatio(current + (event.key === 'ArrowRight' ? .02 : -.02));
     });
+    pageStage.style.width = '100%';
     setZoom(100);
     setPage(page);
 })();

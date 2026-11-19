@@ -37,7 +37,8 @@ class ProjectAccessMiddleware:
                 return None
             return redirect("account_profile")
         analytics_action = path.rstrip("/").endswith(("/analytics", "/analytics/cancel"))
-        if request.method not in ("GET", "HEAD", "OPTIONS") and profile.access_level != UserProfile.AccessLevel.EDIT and not self_service and not analytics_action:
+        viewer_highlight_action = "/viewer/highlights/" in path
+        if request.method not in ("GET", "HEAD", "OPTIONS") and profile.access_level != UserProfile.AccessLevel.EDIT and not self_service and not analytics_action and not viewer_highlight_action:
             return HttpResponseForbidden("У вашей учётной записи нет прав на редактирование.")
 
         project_id = view_kwargs.get("object_id")

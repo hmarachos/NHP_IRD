@@ -532,10 +532,31 @@ def document_viewer(request, document_id):
     except (TypeError, ValueError):
         initial_page = 1
     initial_page = min(max(initial_page, 1), max(page_count, 1))
-    return render(request, "document_viewer.html", {
-        "document_id": document_id, "page_count": page_count,
+    return render(request, "document_viewer.html", _document_viewer_context(
+        document_id, page_count, initial_page,
+        page_route="web_document_viewer_page",
+        highlight_route="web_document_viewer_highlights",
+        original_url=reverse("web_document_preview", args=[document_id]),
+    ), using="jinja2")
+
+
+def _document_viewer_context(record_id, page_count, initial_page, *, page_route, highlight_route, original_url):
+    from django.urls import reverse
+
+    page_url = reverse(page_route, args=[record_id, 0])
+    highlight_url = reverse(highlight_route, args=[record_id, 0])
+    return {
+        "document_id": record_id, "page_count": page_count,
         "initial_page": initial_page,
-    }, using="jinja2")
+        "page_url_template": page_url,
+        "page_image_url": page_url.replace("/0", f"/{initial_page - 1}"),
+        "thumbnail_urls": [
+            f"{page_url.replace('/0', f'/{index}')}?thumbnail=1"
+            for index in range(page_count)
+        ],
+        "highlight_url_template": highlight_url,
+        "original_url": original_url,
+    }
 
 
 @require_GET
@@ -571,6 +592,139 @@ def document_viewer_page(request, document_id, page_index):
     except Exception:
         logging.getLogger(__name__).exception("Could not render PDF page %s for document id=%s", page_index, document_id)
         return HttpResponse("Preview unavailable", status=415)
+
+
+def _stored_correspondence_path(letter):
+    root = Path(settings.MEDIA_ROOT).resolve()
+    name = letter.stored_filename or ""
+    candidate = Path(name)
+    source = (root / candidate).resolve()
+    if candidate.is_absolute() or candidate.name != name or source.parent != root or not source.is_file():
+        raise Http404
+    from app.services.word_documents import is_word_document, word_preview_path
+    return word_preview_path(source) if is_word_document(source) else source
+
+
+@require_GET
+def correspondence_viewer(request, letter_id):
+    letter = Correspondence.objects.filter(pk=letter_id).select_related("project").first()
+    if letter is None or letter.project.archived_at:
+        raise Http404
+    try:
+        pdf_path = _stored_correspondence_path(letter)
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        try:
+            page_count = len(pdf)
+        finally:
+            pdf.close()
+    except Http404:
+        raise
+    except Exception:
+        logging.getLogger(__name__).exception("Could not open PDF preview for correspondence id=%s", letter_id)
+        return HttpResponse("Preview unavailable", status=415)
+    try:
+        initial_page = int(request.GET.get("page", "1"))
+    except (TypeError, ValueError):
+        initial_page = 1
+    initial_page = min(max(initial_page, 1), max(page_count, 1))
+    return render(request, "document_viewer.html", _document_viewer_context(
+        letter_id, page_count, initial_page,
+        page_route="web_correspondence_viewer_page",
+        highlight_route="web_correspondence_viewer_highlights",
+        original_url=reverse("web_correspondence_preview", args=[letter_id]),
+    ), using="jinja2")
+
+
+def _render_correspondence_page(request, letter_id, page_index):
+    letter = Correspondence.objects.filter(pk=letter_id).select_related("project").first()
+    if letter is None or letter.project.archived_at:
+        raise Http404
+    return _render_pdf_viewer_page(request, _stored_correspondence_path(letter), f"letter-{letter_id}", page_index)
+
+
+def _render_pdf_viewer_page(request, pdf_path, cache_id, page_index):
+    try:
+        import pypdfium2 as pdfium
+        stat = pdf_path.stat()
+        cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{cache_id}-{stat.st_mtime_ns}-{stat.st_size}"
+        cache.mkdir(parents=True, exist_ok=True)
+        thumbnail = request.GET.get("thumbnail") == "1"
+        target = cache / f"{page_index}-{'thumb' if thumbnail else 'page'}.jpg"
+        if not target.is_file():
+            pdf = pdfium.PdfDocument(str(pdf_path))
+            try:
+                if page_index < 0 or page_index >= len(pdf):
+                    raise Http404
+                bitmap = pdf[page_index].render(scale=0.3 if thumbnail else 1.6)
+                bitmap.to_pil().convert("RGB").save(target, format="JPEG", quality=82 if thumbnail else 90, optimize=True)
+            finally:
+                pdf.close()
+        response = FileResponse(target.open("rb"), content_type="image/jpeg")
+        response["Cache-Control"] = "public, max-age=86400"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+    except Http404:
+        raise
+    except Exception:
+        logging.getLogger(__name__).exception("Could not render correspondence page %s id=%s", page_index, cache_id)
+        return HttpResponse("Preview unavailable", status=415)
+
+
+@require_GET
+def correspondence_viewer_page(request, letter_id, page_index):
+    return _render_correspondence_page(request, letter_id, page_index)
+
+
+@require_POST
+def document_viewer_highlights(request, document_id, page_index):
+    document = _document_or_404(document_id)
+    if document.project.archived_at:
+        raise Http404
+    return _viewer_highlight_response(request, _stored_document_path(document), f"document-{document_id}", page_index)
+
+
+@require_POST
+def correspondence_viewer_highlights(request, letter_id, page_index):
+    letter = Correspondence.objects.filter(pk=letter_id).select_related("project").first()
+    if letter is None or letter.project.archived_at:
+        raise Http404
+    return _viewer_highlight_response(request, _stored_correspondence_path(letter), f"letter-{letter_id}", page_index)
+
+
+def _viewer_highlight_response(request, source_path, cache_id, page_index):
+    import hashlib
+    import json
+
+    query = request.POST.get("q", "").strip()[:1200]
+    if not query:
+        return JsonResponse({"rects": []})
+    try:
+        pdf_path = source_path
+        from app.services.word_documents import is_word_document, word_preview_path
+        if is_word_document(pdf_path):
+            pdf_path = word_preview_path(pdf_path)
+        stat = pdf_path.stat()
+        cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{cache_id}-{stat.st_mtime_ns}-{stat.st_size}"
+        cache.mkdir(parents=True, exist_ok=True)
+        key = hashlib.sha256(f"{page_index}\0{query}".encode("utf-8")).hexdigest()[:24]
+        target = cache / f"highlight-{key}.json"
+        if target.is_file():
+            return JsonResponse(json.loads(target.read_text(encoding="utf-8")))
+        from app.services.document_highlight import highlight_paragraph
+        rects = highlight_paragraph(
+            pdf_path, page_index, query,
+            lang=settings.TESSERACT_LANG, dpi=settings.OCR_DPI,
+        )
+        payload = {"rects": rects}
+        old_cache = sorted(cache.glob("highlight-*.json"), key=lambda item: item.stat().st_mtime)
+        for old in old_cache[:-255]:
+            old.unlink(missing_ok=True)
+        target.write_text(json.dumps(payload), encoding="utf-8")
+        return JsonResponse(payload)
+    except Exception:
+        logging.getLogger(__name__).exception("Could not locate cited text in source=%s page=%s", cache_id, page_index)
+        return JsonResponse({"rects": []})
 
 
 @require_POST

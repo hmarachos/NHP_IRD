@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Аналитика проекта · {{ project.name }}{% endblock %}
+{% block page_top %}
+<div class="project-analytics-top"><header class="project-analytics-heading">
+    <div><p class="eyebrow">ПОИСК ПО ДОКУМЕНТАМ ПРОЕКТА</p><h1>Аналитика проекта</h1><p>Задайте вопрос по ИРД, письмам и согласованиям. В ответ попадут фрагменты только этого проекта.</p></div>
+    <div class="analytics-index-status"><i class="bi bi-database-check" aria-hidden="true"></i><span><strong>{{ indexed_count }}</strong> источников в поиске{% if pending_count %}<small>{{ pending_count }} файлов обрабатываются</small>{% else %}<small>Данные берутся из актуальных карточек и распознанного текста</small>{% endif %}</span></div>
+</header></div>
+{% endblock %}
 {% block content %}
 <section class="project-analytics-page">
-    <header class="project-analytics-heading">
-        <div><p class="eyebrow">ПОИСК ПО ДОКУМЕНТАМ ПРОЕКТА</p><h1>Аналитика проекта</h1><p>Задайте вопрос по ИРД, письмам и согласованиям. В ответ попадут фрагменты только этого проекта.</p></div>
-        <div class="analytics-index-status"><i class="bi bi-database-check" aria-hidden="true"></i><span><strong>{{ indexed_count }}</strong> источников в поиске{% if pending_count %}<small>{{ pending_count }} файлов обрабатываются</small>{% else %}<small>Данные берутся из актуальных карточек и распознанного текста</small>{% endif %}</span></div>
-    </header>
-
     <section class="analytics-ask panel" aria-labelledby="analytics-question-title">
         <div class="section-title"><span class="icon-badge"><i class="bi bi-chat-square-text" aria-hidden="true"></i></span><div><h2 id="analytics-question-title">Спросить по проекту</h2><p>Поля карточки имеют приоритет над распознанным текстом.</p></div></div>
         <form method="post" action="{{ url_for('web.project_analytics', object_id=project.id) }}" data-status-url="{{ url_for('web_project_analytics_status', object_id=project.id) }}" data-cancel-url="{{ url_for('web_cancel_project_analytics', object_id=project.id) }}" class="analytics-question-form" data-analytics-form>
@@ -19,9 +20,9 @@
 
     <p class="notice notice-error" data-analytics-error{% if not analytics_error %} hidden{% endif %}>{{ analytics_error }}</p>
     <section class="analytics-answer panel" data-analytics-answer{% if not answer %} hidden{% endif %}><p class="eyebrow">ОТВЕТ ПО ИСТОЧНИКАМ</p><div class="analytics-answer-text" data-analytics-answer-text>{{ answer }}</div></section>
-    <section class="analytics-sources section-block" data-analytics-sources{% if not sources %} hidden{% endif %}><div class="section-title"><div><h2>Источники ответа</h2><p>Откройте документ, чтобы проверить исходный материал.</p></div><span class="count-pill" data-analytics-source-count>{{ sources|length }}</span></div><div class="analytics-source-list" data-analytics-source-list>
+    <section class="analytics-sources section-block" data-analytics-sources{% if not sources %} hidden{% endif %}><details class="analytics-sources-accordion"><summary class="analytics-sources-summary"><span><strong>Источники ответа</strong><small>Откройте документ, чтобы проверить исходный материал.</small></span><span class="analytics-sources-summary-meta"><span class="count-pill" data-analytics-source-count>{{ sources|length }}</span><i class="bi bi-chevron-down" aria-hidden="true"></i></span></summary><div class="analytics-source-list" data-analytics-source-list>
         {% for source in sources %}<article class="analytics-source panel" data-source-citation="{{ source.citation }}" data-source-kind="{{ source.kind }}" data-source-url="{{ source.url }}" data-source-page="{{ source.page or '' }}" data-source-title="{{ source.title }}"><div class="analytics-source-heading"><span class="analytics-source-number">[{{ source.citation }}]</span><div><strong>{{ source.title }}</strong><small>{% if source.kind == 'document' %}Документ{% else %}Письмо{% endif %}{% if source.page %} · страница {{ source.page }}{% endif %}</small></div><a href="{{ source.url }}" target="_blank" rel="noopener">Открыть <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a></div><p class="analytics-source-fields"><strong>Реквизиты карточки:</strong> {{ source.metadata['Реквизиты карточки'] }}</p><details><summary>Фрагмент распознанного текста</summary><p>{{ source.text }}</p></details></article>{% endfor %}
-    </div></section>
+    </div></details></section>
     <dialog class="analytics-citation-dialog" data-citation-dialog aria-labelledby="citation-dialog-title"><header><div><p class="eyebrow">ОРИГИНАЛ ИСТОЧНИКА</p><h2 id="citation-dialog-title" data-citation-title></h2><small data-citation-page></small></div><button type="button" data-citation-close aria-label="Закрыть просмотр документа"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><iframe data-citation-frame title="Оригинал документа" src="about:blank"></iframe></dialog>
 </section>
 <script>
@@ -49,17 +50,25 @@
         title: article.dataset.sourceTitle,
     }));
 
-    const openCitation = (citation) => {
+    const openCitation = (citation, citationLink) => {
         const source = currentSources.find((item) => Number(item.citation) === Number(citation));
         if (!source || !citationDialog || !citationFrame) return;
-        const target = new URL(source.url, window.location.href);
+        const citationBlock = citationLink?.closest('li, p');
+        const highlightText = (citationBlock?.innerText || citationBlock?.textContent || '').trim();
+        const viewerUrl = source.kind === 'correspondence'
+            ? source.url.replace(/\/preview(?:\?.*)?$/, '/viewer')
+            : source.url;
+        const target = new URL(viewerUrl, window.location.href);
         if (target.origin !== window.location.origin) return;
         if (source.page) {
             if (source.kind === 'document') target.searchParams.set('page', String(source.page));
-            else target.hash = `page=${source.page}`;
+            else target.searchParams.set('page', String(source.page));
         }
         citationTitle.textContent = source.title || `Источник [${citation}]`;
         citationPage.textContent = source.page ? `Страница ${source.page}` : 'Первая страница';
+        citationFrame.onload = () => citationFrame.contentWindow?.postMessage(
+            {type: 'analytics-citation-highlight', text: highlightText}, window.location.origin,
+        );
         citationFrame.src = target.href;
         citationDialog.showModal();
     };
@@ -72,7 +81,7 @@
         const link = event.target.closest('[data-source-citation]');
         if (!link) return;
         event.preventDefault();
-        openCitation(link.dataset.sourceCitation);
+        openCitation(link.dataset.sourceCitation, link);
     });
 
     const escapeHtml = (value) => value.replace(/[&<>"']/g, (char) => ({
