@@ -1,0 +1,6 @@
+<header class="project-topbar" aria-label="Текущий проект">
+    <div class="project-topbar-context">
+        <strong>{{ active_project.name }}</strong>
+        <small>Договор {{ active_project.contract_number }}{% if active_project.stage %} · {{ active_project.stage }}{% endif %}</small>
+    </div>
+</header>
