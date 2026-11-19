@@ -13,6 +13,7 @@
     <div class="app-layout">
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <a class="brand app-sidebar-brand" href="{{ url_for('web.index') }}"><span class="brand-mark">И</span><span>Архив ИРД<small>Проектные документы</small></span></a>
+            {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
             <nav class="project-side-nav" aria-label="Разделы приложения">
                 <div class="project-nav-group"><a class="project-nav-item{% if request.endpoint == 'web.index' %} is-active{% endif %}" href="{{ url_for('web.index') }}"{% if request.endpoint == 'web.index' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item{% if request.endpoint in ['web.manage_templates', 'web.create_template', 'web.update_template', 'web.copy_template', 'web.delete_template', 'web.add_template_item', 'web.update_template_item', 'web.delete_template_item'] %} is-active{% endif %}" href="{{ url_for('web.manage_templates') }}"{% if request.endpoint == 'web.manage_templates' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div>
                 {% if active_project %}
@@ -38,7 +39,6 @@
                 {% endif %}
                 {% if request.user.is_authenticated %}<div class="project-nav-group project-nav-account">{% if request.user.is_superuser %}<a class="project-nav-item" href="{{ url_for('account_admin') }}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<a class="project-nav-item" href="{{ url_for('account_profile') }}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>{{ request.user.get_full_name() or request.user.email }}</span></a></div>{% endif %}
             </nav>
-            {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
             {% if request.user.is_authenticated %}<small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Developed by A. Kazantsau</a></small>{% endif %}
         </aside>
         <button class="sidebar-backdrop" type="button" aria-label="Закрыть меню" data-sidebar-close tabindex="-1"></button>

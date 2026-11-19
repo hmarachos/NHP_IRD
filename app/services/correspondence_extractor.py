@@ -1,4 +1,5 @@
 """Business-letter OCR field extraction independent from Flask request state."""
+from app.services.ai_client import ai_client
 import json
 import logging
 import re
@@ -33,7 +34,7 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
                 "required": list(values),
                 "additionalProperties": False,
             }
-            response = OpenAI(api_key=settings.OPENAI_API_KEY).responses.create(
+            response = ai_client(api_key=settings.OPENAI_API_KEY).responses.create(
                 model=settings.OPENAI_MODEL,
                 instructions=(
                     "Извлеки реквизиты делового письма на русском языке. Верни только данные самого письма: "

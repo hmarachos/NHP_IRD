@@ -1,3 +1,4 @@
+from app.services.ai_client import ai_client
 import copy
 import base64
 from io import BytesIO
@@ -42,7 +43,7 @@ class AiFieldExtractor:
         except ImportError:
             return self.fallback_extractor.extract(text)
 
-        client = OpenAI(api_key=_config("OPENAI_API_KEY"))
+        client = ai_client(api_key=_config("OPENAI_API_KEY"))
 
         # Keep the working title as a plain string in the strict output schema.
         # Several Russian document titles contain quotation marks, which the
@@ -50,9 +51,10 @@ class AiFieldExtractor:
         # supplies the allowed names, and the pipeline/classifier normalizes
         # any answer outside that list.
         schema = copy.deepcopy(EXTRACTION_SCHEMA)
+        schema["properties"]["working_title"].pop("enum", None)
 
         parsed_chunks = []
-        for chunk in self._split_text(text, OPENAI_INPUT_CHUNK_CHARS):
+        for chunk in self._split_text(text, 60_000):
             try:
                 response = client.responses.create(
                     model=_config("OPENAI_MODEL"),
@@ -113,7 +115,7 @@ class AiFieldExtractor:
                 },
                 "required": ["document_number", "issue_date"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Прочитай рукописные номер и дату выдачи архитектурно-планировочного задания "
@@ -162,7 +164,7 @@ class AiFieldExtractor:
                 "properties": {"document_number": {"type": "string"}, "issue_date": {"type": "string"}},
                 "required": ["document_number", "issue_date"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     f"Изучи изображение первой страницы документа. Распознай рукописные исходящий номер и дату выдачи "
@@ -210,7 +212,7 @@ class AiFieldExtractor:
                 },
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     "На изображении шапка технических требований ГАИ. Извлеки три реквизита. "
@@ -263,7 +265,7 @@ class AiFieldExtractor:
                 "properties": {"issue_date": {"type": "string"}, "valid_until": {"type": "string"}},
                 "required": ["issue_date", "valid_until"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     "На изображениях две строки технических условий РУП Белтелеком. "
@@ -314,7 +316,7 @@ class AiFieldExtractor:
                 "properties": {"issuer": {"type": "string"}, "document_number": {"type": "string"}, "issue_date": {"type": "string"}},
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Распознавай реквизиты технических условий филиала Минскэнерго. На первом изображении "
@@ -374,7 +376,7 @@ class AiFieldExtractor:
                 },
                 "required": ["issuer", "document_number", "issue_date"],
             }
-            response = OpenAI(api_key=_config("OPENAI_API_KEY")).responses.create(
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
                 model=_config("OPENAI_MODEL"),
                 instructions=(
                     "Извлеки реквизиты именно выдающего документа из изображения верхней части первой страницы. "
