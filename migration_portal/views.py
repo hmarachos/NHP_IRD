@@ -164,11 +164,15 @@ def project_notebook(request, object_id):
     entries = ProjectNotebookEntry.objects.filter(project=project)
     checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
     received_count = sum(item["status"] == "received" for item in checklist)
+    correspondence_count = Correspondence.objects.filter(
+        project=project, record_type="correspondence",
+    ).count()
     return render(request, "project_notebook.html", {
         "object": project,
         "entries": entries,
         "checklist": checklist,
         "received_count": received_count,
+        "correspondence_count": correspondence_count,
     }, using="jinja2")
 
 
@@ -1440,8 +1444,12 @@ def project_acts(request, object_id):
     ) for item in checklist)
     from migration_portal.models import HandoverAct
     acts = list(HandoverAct.objects.filter(project=project).order_by("-created_at", "-id").values())
+    correspondence_count = Correspondence.objects.filter(
+        project=project, record_type="correspondence",
+    ).count()
     return render(request, "project_acts.html", {
         "project": obj, "checklist": checklist, "received_count": received_count, "acts": acts,
+        "correspondence_count": correspondence_count,
         "mail_configured": bool(os.getenv("MAIL_USERNAME") and os.getenv("MAIL_APP_PASSWORD")),
     }, using="jinja2")
 
