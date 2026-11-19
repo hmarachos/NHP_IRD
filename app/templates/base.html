@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261119-author-mail-v3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261120-analytics-v2') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body data-access-level="{% if request.user.is_superuser %}edit{% else %}{{ request.user.profile.access_level }}{% endif %}">
@@ -27,13 +27,14 @@
                     {% for tab, label, icon in project_nav_items %}
                     {% set is_acts = tab == 'acts' %}
                     {% set is_active = is_acts and request.endpoint in ['web.project_acts', 'web.download_handover_act'] %}
-                    {% set badge = (received_count|string + '/' + checklist|length|string) if tab == 'checklist' else (correspondence|default([])|length if tab == 'correspondence' else (approvals|default([])|length if tab == 'approvals' else none)) %}
+                    {% set badge = (received_count|string + '/' + checklist|length|string) if tab == 'checklist' else ((correspondence_count if correspondence_count is defined else correspondence|default([])|length) if tab == 'correspondence' else (approvals|default([])|length if tab == 'approvals' else none)) %}
                     {% if request.endpoint == 'web.object_workspace' and not is_acts %}
                     <button type="button" class="project-nav-item" data-workspace-tab="{{ tab }}" aria-selected="false"><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</button>
                     {% else %}
                     <a class="project-nav-item{% if is_active %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) if is_acts else url_for('web.object_workspace', object_id=active_project.id, tab=tab) }}"{% if is_active %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</a>
                     {% endif %}
                     {% endfor %}
+                    {% if request.user.is_superuser or request.user.profile.show_ai_analytics %}<a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_analytics' %} is-active{% endif %}" href="{{ url_for('web.project_analytics', object_id=active_project.id) }}"{% if request.resolver_match.url_name == 'web_project_analytics' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-stars" aria-hidden="true"></i><span>Аналитика проекта</span></a>{% endif %}
                     <a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_notebook' %} is-active{% endif %}" href="/objects/{{ active_project.id }}/notebook"{% if request.resolver_match.url_name == 'web_project_notebook' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-journal-text" aria-hidden="true"></i><span>Записная книжка</span></a>
                 </div>
                 {% endif %}

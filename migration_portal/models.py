@@ -2,6 +2,7 @@
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Cast, Now
+import uuid
 
 
 TIMESTAMP_TEXT_DEFAULT = Cast(Now(), output_field=models.CharField(max_length=40))
@@ -206,6 +207,33 @@ class ChecklistExpiryNotification(models.Model):
         constraints = [models.UniqueConstraint(fields=["checklist_item", "valid_until"], name="checklist_expiry_unique")]
 
 
+class ProjectSearchRevision(models.Model):
+    project = models.OneToOneField(Project, primary_key=True, on_delete=models.CASCADE, db_column="project_id")
+    revision = models.UUIDField(default=uuid.uuid4, editable=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "project_search_revisions"
+
+
+class ProjectAnswerCache(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="project_id")
+    question_hash = models.CharField(max_length=64)
+    normalized_question = models.TextField()
+    source_revision = models.UUIDField()
+    model_name = models.CharField(max_length=120)
+    prompt_version = models.PositiveSmallIntegerField(default=1)
+    answer = models.TextField()
+    sources = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "project_answer_cache"
+        constraints = [models.UniqueConstraint(fields=["project", "question_hash"], name="qa_cache_project_question_uq")]
+        indexes = [models.Index(fields=["project", "expires_at"], name="qa_cache_project_exp_idx")]
+
+
 class LegacyImportState(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     source_path = models.TextField()
@@ -248,6 +276,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField("auth.User", on_delete=models.CASCADE, related_name="profile")
     middle_name = models.CharField(max_length=150, blank=True)
     is_gip = models.BooleanField(default=False)
+    show_ai_analytics = models.BooleanField(default=True)
     organization = models.ForeignKey(Organization, null=True, blank=True, on_delete=models.PROTECT, related_name="users")
     access_level = models.CharField(max_length=12, choices=AccessLevel.choices, default=AccessLevel.BLOCKED)
     allowed_customers = models.ManyToManyField(Customer, blank=True, related_name="permitted_users")

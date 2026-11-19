@@ -3,6 +3,10 @@ import logging
 import hashlib
 import json
 import re
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 import zipfile
 from html.parser import HTMLParser
 from io import BytesIO
@@ -11,6 +15,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_not_required
+from django.core.exceptions import PermissionDenied
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import connection, transaction
@@ -20,7 +25,7 @@ from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonRespons
 from django.http import FileResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils.http import content_disposition_header
 
 from app.services.expiry import add_years, attach_expiry, expiry_state, iso_date
@@ -40,6 +45,72 @@ from migration_portal.checklist_utils import (
     uses_customer_letter_subject,
 )
 from migration_portal.accounts import visible_customers, visible_projects
+
+logger = logging.getLogger(__name__)
+_ANALYTICS_JOBS = {}
+_ANALYTICS_JOBS_LOCK = threading.Lock()
+_ANALYTICS_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="project-analytics")
+
+
+def _analytics_public_sources(sources):
+    """Drop retrieval-only sets and scoring fields before returning sources as JSON."""
+    public_keys = {"citation", "title", "kind", "page", "text", "metadata", "url"}
+    return [{key: source[key] for key in public_keys if key in source} for source in sources]
+
+
+def _run_project_analytics_job(job_id, user_id, project_id, question, cancel_event):
+    from app.services.project_qa import (
+        ProjectQuestionCancelled, answer_project_question, retrieve_project_sources,
+    )
+    from app.services.project_answer_cache import (
+        get_cached_project_answer, project_search_revision, store_project_answer,
+    )
+
+    answer = ""
+    error = ""
+    cancelled = False
+    cache_hit = False
+    public_sources = []
+    try:
+        cached = get_cached_project_answer(project_id, question)
+        if cached:
+            answer = cached["answer"]
+            public_sources = cached["sources"]
+            cache_hit = True
+        else:
+            source_revision = project_search_revision(project_id)
+            sources = retrieve_project_sources(project_id, question)
+            public_sources = _analytics_public_sources(sources)
+        if cancel_event.is_set():
+            cancelled = True
+        elif cache_hit:
+            pass
+        elif not sources:
+            error = "В обработанных документах проекта не нашлось подходящих фрагментов. Проверьте формулировку вопроса или дождитесь распознавания новых файлов."
+        elif not settings.OPENAI_API_KEY or not settings.USE_AI:
+            error = "Поиск нашёл фрагменты, но ответы ИИ сейчас отключены."
+        else:
+            answer = answer_project_question(
+                question, sources, cancel_check=cancel_event.is_set,
+            )
+            store_project_answer(project_id, question, answer, sources, source_revision)
+    except ProjectQuestionCancelled:
+        cancelled = True
+    except Exception:
+        logger.exception("Project analytics answer failed project_id=%s", project_id)
+        error = "Не удалось подготовить ответ. Попробуйте ещё раз; найденные источники сохранены ниже."
+        public_sources = locals().get("public_sources", [])
+    with _ANALYTICS_JOBS_LOCK:
+        job = _ANALYTICS_JOBS.get(job_id)
+        if job and (job["user_id"], job["project_id"]) == (user_id, project_id):
+            job.update({
+                "status": "cancelled" if cancelled else "complete",
+                "answer": answer,
+                "error": error,
+                "sources": public_sources,
+                "cached": cache_hit,
+                "expires_at": time.monotonic() + 300,
+            })
 
 
 def _upload_storage():
@@ -87,16 +158,23 @@ def _sanitize_notebook_html(value):
 
 @require_GET
 def project_notebook(request, object_id):
-    project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
     if project is None:
         raise Http404
     entries = ProjectNotebookEntry.objects.filter(project=project)
-    return render(request, "project_notebook.html", {"object": project, "entries": entries})
+    checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
+    received_count = sum(item["status"] == "received" for item in checklist)
+    return render(request, "project_notebook.html", {
+        "object": project,
+        "entries": entries,
+        "checklist": checklist,
+        "received_count": received_count,
+    }, using="jinja2")
 
 
 @require_POST
 def save_notebook_entry(request, object_id):
-    project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
     if project is None:
         raise Http404
     entry_id = request.POST.get("entry_id")
@@ -115,7 +193,10 @@ def save_notebook_entry(request, object_id):
 
 @require_POST
 def delete_notebook_entry(request, object_id, entry_id):
-    entry = ProjectNotebookEntry.objects.filter(pk=entry_id, project_id=object_id, project__archived_at__isnull=True).first()
+    entry = ProjectNotebookEntry.objects.filter(
+        pk=entry_id,
+        project__in=visible_projects(request.user).filter(archived_at__isnull=True),
+    ).first()
     if entry is None:
         raise Http404
     entry.delete()
@@ -249,8 +330,12 @@ def upload_checklist_document(request, object_id, item_id):
             return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab=checklist")
         parsed = None
         if request.headers.get("X-IRD-Analyze") == "1":
-            from app.services.checklist_document_fields import project_assignment_fields
+            from app.services.checklist_document_fields import project_assignment_fields, extract_project_assignment_text
             parsed = project_assignment_fields(item.title, project.customer or "")
+            if parsed is not None:
+                parsed.raw_text = extract_project_assignment_text(
+                    final_path, tesseract_lang=settings.TESSERACT_LANG, dpi=settings.OCR_DPI,
+                )
             if parsed is None:
                 from app.services.pipeline import DocumentProcessingPipeline
                 from app.document_types import DOCUMENT_TYPES
@@ -442,7 +527,15 @@ def document_viewer(request, document_id):
     except Exception as exc:
         logging.getLogger(__name__).exception("Could not open PDF preview for document id=%s", document_id)
         return HttpResponse("Preview unavailable", status=415)
-    return render(request, "document_viewer.html", {"document_id": document_id, "page_count": page_count}, using="jinja2")
+    try:
+        initial_page = int(request.GET.get("page", "1"))
+    except (TypeError, ValueError):
+        initial_page = 1
+    initial_page = min(max(initial_page, 1), max(page_count, 1))
+    return render(request, "document_viewer.html", {
+        "document_id": document_id, "page_count": page_count,
+        "initial_page": initial_page,
+    }, using="jinja2")
 
 
 @require_GET
@@ -694,6 +787,190 @@ def object_workspace(request, object_id):
         "approvals": approvals, "correspondence_organizations": sorted(organizations, key=str.casefold),
         "error": "",
     }, using="jinja2")
+
+
+@require_http_methods(["GET", "POST"])
+def project_analytics(request, object_id):
+    """Answer a question from searchable text belonging to the open project only."""
+    from app.services.project_qa import (
+        ProjectQuestionCancelled, answer_project_question, retrieve_project_sources,
+    )
+
+    if not request.user.is_superuser and not request.user.profile.show_ai_analytics:
+        if request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"error": "ИИ-аналитика отключена для вашей учётной записи."}, status=403)
+        raise PermissionDenied("ИИ-аналитика отключена для вашей учётной записи.")
+
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
+    if project is None:
+        raise Http404
+
+    question = request.POST.get("question", "").strip()[:1000] if request.method == "POST" else ""
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if is_ajax and request.method == "POST":
+        if not question:
+            return JsonResponse({"error": "Введите вопрос по документам проекта.", "sources": []}, status=400)
+        try:
+            job_id = str(uuid.UUID(request.POST.get("request_id", "")))
+        except (ValueError, AttributeError):
+            job_id = str(uuid.uuid4())
+        cancel_event = threading.Event()
+        cancelled_before_start = False
+        with _ANALYTICS_JOBS_LOCK:
+            now = time.monotonic()
+            for expired_id, job in list(_ANALYTICS_JOBS.items()):
+                if job.get("expires_at", 0) and job["expires_at"] <= now:
+                    _ANALYTICS_JOBS.pop(expired_id, None)
+            previous = _ANALYTICS_JOBS.get(job_id)
+            cancelled_before_start = bool(
+                previous
+                and (previous["user_id"], previous["project_id"]) == (request.user.pk, project.pk)
+                and previous["status"] == "cancelled"
+            )
+            if not cancelled_before_start:
+                _ANALYTICS_JOBS[job_id] = {
+                    "user_id": request.user.pk,
+                    "project_id": project.pk,
+                    "cancel_event": cancel_event,
+                    "status": "processing",
+                    "answer": "",
+                    "error": "",
+                    "sources": [],
+                    "cached": False,
+                    "expires_at": 0,
+                }
+        if cancelled_before_start:
+            return JsonResponse({"request_id": job_id, "status": "cancelled", "sources": []}, status=409)
+        _ANALYTICS_EXECUTOR.submit(
+            _run_project_analytics_job,
+            job_id, request.user.pk, project.pk, question, cancel_event,
+        )
+        return JsonResponse({"request_id": job_id, "status": "processing", "sources": []}, status=202)
+
+    answer = ""
+    sources = []
+    error = ""
+    cancelled = False
+    answer_cached = False
+    if request.method == "POST" and not question:
+        error = "Введите вопрос по документам проекта."
+    elif request.method == "POST":
+        from app.services.project_answer_cache import (
+            get_cached_project_answer, project_search_revision, store_project_answer,
+        )
+        cached_answer = get_cached_project_answer(project.id, question)
+        if cached_answer:
+            answer = cached_answer["answer"]
+            sources = cached_answer["sources"]
+            answer_cached = True
+        else:
+            source_revision = project_search_revision(project.id)
+            sources = retrieve_project_sources(project.id, question)
+        if answer_cached:
+            pass
+        elif not sources:
+            error = "В обработанных документах проекта не нашлось подходящих фрагментов. Проверьте формулировку вопроса или дождитесь распознавания новых файлов."
+        elif not settings.OPENAI_API_KEY or not settings.USE_AI:
+            error = "Поиск нашёл фрагменты, но ответы ИИ сейчас отключены. Источники показаны ниже."
+        else:
+            try:
+                answer = answer_project_question(
+                    question, sources,
+                    cancel_check=None,
+                )
+                store_project_answer(project.id, question, answer, sources, source_revision)
+            except ProjectQuestionCancelled:
+                cancelled = True
+            except Exception:
+                logger.exception("Project analytics answer failed project_id=%s", project.id)
+                error = "Не удалось подготовить ответ. Попробуйте ещё раз; найденные источники сохранены ниже."
+
+    active_docs = Document.objects.filter(project=project, archived_at__isnull=True)
+    active_letters = Correspondence.objects.filter(project=project)
+    indexed_count = active_docs.exclude(status__in=["queued", "processing"]).exclude(raw_text__isnull=True).exclude(raw_text="").count()
+    indexed_count += active_letters.exclude(status__in=["queued", "processing"]).exclude(raw_text="").count()
+    pending_count = active_docs.filter(status__in=["queued", "processing"]).count()
+    pending_count += active_letters.filter(status__in=["queued", "processing"]).count()
+    checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
+    received_count = sum(item["status"] == "received" for item in checklist)
+    correspondence_count = active_letters.filter(record_type="correspondence").count()
+    return render(request, "project_analytics.html", {
+        "project": project, "object": project, "question": question,
+        "answer": answer, "sources": sources, "analytics_error": error,
+        "answer_cached": answer_cached,
+        "indexed_count": indexed_count, "pending_count": pending_count,
+        "checklist": checklist, "received_count": received_count,
+        "correspondence_count": correspondence_count,
+    }, using="jinja2")
+
+
+@require_GET
+def project_analytics_status(request, object_id):
+    if not request.user.is_superuser and not request.user.profile.show_ai_analytics:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"error": "ИИ-аналитика отключена для вашей учётной записи."}, status=403)
+        raise PermissionDenied("ИИ-аналитика отключена для вашей учётной записи.")
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
+    if project is None:
+        raise Http404
+    try:
+        job_id = str(uuid.UUID(request.GET.get("request_id", "")))
+    except (ValueError, AttributeError):
+        return JsonResponse({"error": "Некорректный идентификатор запроса."}, status=400)
+    with _ANALYTICS_JOBS_LOCK:
+        job = _ANALYTICS_JOBS.get(job_id)
+        if not job or (job["user_id"], job["project_id"]) != (request.user.pk, project.pk):
+            raise Http404
+        result = {
+            "status": job["status"],
+            "answer": job["answer"],
+            "error": job["error"],
+            "sources": job["sources"],
+            "cached": job.get("cached", False),
+        }
+    return JsonResponse(result)
+
+
+@require_POST
+def cancel_project_analytics(request, object_id):
+    if not request.user.is_superuser and not request.user.profile.show_ai_analytics:
+        raise PermissionDenied("ИИ-аналитика отключена для вашей учётной записи.")
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
+    if project is None:
+        raise Http404
+    try:
+        job_id = str(uuid.UUID(request.POST.get("request_id", "")))
+    except (ValueError, AttributeError):
+        return JsonResponse({"cancelled": False}, status=400)
+    with _ANALYTICS_JOBS_LOCK:
+        now = time.monotonic()
+        for expired_id, value in list(_ANALYTICS_JOBS.items()):
+            if value.get("expires_at", 0) and value["expires_at"] <= now:
+                _ANALYTICS_JOBS.pop(expired_id, None)
+        job = _ANALYTICS_JOBS.get(job_id)
+        if job and (job["user_id"], job["project_id"]) == (request.user.pk, project.pk):
+            job["cancel_event"].set()
+            job["status"] = "cancelled" if job["status"] != "complete" else job["status"]
+            job["expires_at"] = time.monotonic() + 300
+            cancelled = True
+        elif not job:
+            event = threading.Event()
+            event.set()
+            _ANALYTICS_JOBS[job_id] = {
+                "user_id": request.user.pk,
+                "project_id": project.pk,
+                "cancel_event": event,
+                "status": "cancelled",
+                "answer": "",
+                "error": "",
+                "sources": [],
+                "cached": False,
+                "expires_at": time.monotonic() + 120,
+            }
+            cancelled = True
+        else:
+            cancelled = False
+    return JsonResponse({"cancelled": cancelled})
 
 
 def _combine_images(files, output_path):
@@ -1395,6 +1672,8 @@ def update_object(request, object_id):
                 for offset, item in enumerate(new_items):
                     item.sort_order += next_order + offset
                 ProjectChecklistItem.objects.bulk_create(new_items)
+                from app.services.project_answer_cache import invalidate_project_answer_cache
+                invalidate_project_answer_cache(project.id)
     return redirect("web_index")
 
 
@@ -1707,6 +1986,8 @@ def add_checklist_item(request, object_id):
                     )
                     for index, item in enumerate(to_add)
                 ])
+                from app.services.project_answer_cache import invalidate_project_answer_cache
+                invalidate_project_answer_cache(project.id)
                 messages.success(request, f"Из шаблона «{template.name}» добавлено пунктов: {len(to_add)}.")
             else:
                 messages.info(request, f"Все пункты шаблона «{template.name}» уже есть в проекте.")

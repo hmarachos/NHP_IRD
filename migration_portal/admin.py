@@ -19,9 +19,9 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(models.UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "organization", "access_level", "is_gip")
+    list_display = ("user", "organization", "access_level", "is_gip", "show_ai_analytics")
     search_fields = ("user__email", "user__first_name", "user__last_name", "middle_name")
-    list_filter = ("access_level", "is_gip", "organization")
+    list_filter = ("access_level", "is_gip", "show_ai_analytics", "organization")
     filter_horizontal = ("allowed_customers", "allowed_projects")
 
 

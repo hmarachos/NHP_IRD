@@ -75,6 +75,7 @@ class UserAccessForm(forms.Form):
     middle_name = forms.CharField(label="Отчество", max_length=150, required=False)
     email = forms.EmailField(label="Email", max_length=150)
     is_gip = forms.BooleanField(label="Главный инженер проекта", required=False, widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}))
+    show_ai_analytics = forms.BooleanField(label="Показать ИИ аналитику", required=False, widget=forms.CheckboxInput(attrs={"class": "account-switch-input"}))
     organization = forms.ModelChoiceField(label="Место работы", queryset=Organization.objects.none())
     access_level = forms.ChoiceField(label="Уровень доступа", choices=UserProfile.AccessLevel.choices)
     allowed_customers = forms.ModelMultipleChoiceField(
@@ -116,9 +117,10 @@ class UserAccessForm(forms.Form):
         profile = self.profile_record
         profile.middle_name = self.cleaned_data["middle_name"].strip()
         profile.is_gip = self.cleaned_data["is_gip"]
+        profile.show_ai_analytics = self.cleaned_data["show_ai_analytics"]
         profile.organization = self.cleaned_data["organization"]
         profile.access_level = self.cleaned_data["access_level"]
-        profile.save()
+        profile.save(update_fields=["middle_name", "is_gip", "show_ai_analytics", "organization", "access_level"])
         profile.allowed_customers.set(self.cleaned_data["allowed_customers"])
         profile.allowed_projects.set(self.cleaned_data["allowed_projects"])
         return user

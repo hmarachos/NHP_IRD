@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% block title %}Аналитика проекта · {{ project.name }}{% endblock %}
+{% block content %}
+<section class="project-analytics-page">
+    <header class="project-analytics-heading">
+        <div><p class="eyebrow">ПОИСК ПО ДОКУМЕНТАМ ПРОЕКТА</p><h1>Аналитика проекта</h1><p>Задайте вопрос по ИРД, письмам и согласованиям. В ответ попадут фрагменты только этого проекта.</p></div>
+        <div class="analytics-index-status"><i class="bi bi-database-check" aria-hidden="true"></i><span><strong>{{ indexed_count }}</strong> источников в поиске{% if pending_count %}<small>{{ pending_count }} файлов обрабатываются</small>{% else %}<small>Данные берутся из актуальных карточек и распознанного текста</small>{% endif %}</span></div>
+    </header>
+
+    <section class="analytics-ask panel" aria-labelledby="analytics-question-title">
+        <div class="section-title"><span class="icon-badge"><i class="bi bi-chat-square-text" aria-hidden="true"></i></span><div><h2 id="analytics-question-title">Спросить по проекту</h2><p>Поля карточки имеют приоритет над распознанным текстом.</p></div></div>
+        <form method="post" action="{{ url_for('web.project_analytics', object_id=project.id) }}" data-status-url="{{ url_for('web_project_analytics_status', object_id=project.id) }}" data-cancel-url="{{ url_for('web_cancel_project_analytics', object_id=project.id) }}" class="analytics-question-form" data-analytics-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="analytics-question">Вопрос</label>
+            <textarea id="analytics-question" name="question" rows="3" maxlength="1000" placeholder="Например: какой номер письма заказчика содержит замечания к заданию?" required>{{ question }}</textarea>
+            <div class="analytics-form-footer"><small data-analytics-status aria-live="polite">{% if answer_cached %}Ответ получен из кеша.{% elif answer %}Ответ готов.{% else %}Ответ будет основан на найденных документах и письмах.{% endif %}</small><div class="analytics-form-actions"><button type="button" class="analytics-stop-button" data-analytics-stop hidden><i class="bi bi-stop-fill" aria-hidden="true"></i> Остановить</button><button type="submit" data-analytics-submit><i class="bi bi-search" aria-hidden="true"></i> Найти ответ</button></div></div>
+        </form>
+    </section>
+
+    <p class="notice notice-error" data-analytics-error{% if not analytics_error %} hidden{% endif %}>{{ analytics_error }}</p>
+    <section class="analytics-answer panel" data-analytics-answer{% if not answer %} hidden{% endif %}><p class="eyebrow">ОТВЕТ ПО ИСТОЧНИКАМ</p><div class="analytics-answer-text" data-analytics-answer-text>{{ answer }}</div></section>
+    <section class="analytics-sources section-block" data-analytics-sources{% if not sources %} hidden{% endif %}><div class="section-title"><div><h2>Источники ответа</h2><p>Откройте документ, чтобы проверить исходный материал.</p></div><span class="count-pill" data-analytics-source-count>{{ sources|length }}</span></div><div class="analytics-source-list" data-analytics-source-list>
+        {% for source in sources %}<article class="analytics-source panel" data-source-citation="{{ source.citation }}" data-source-kind="{{ source.kind }}" data-source-url="{{ source.url }}" data-source-page="{{ source.page or '' }}" data-source-title="{{ source.title }}"><div class="analytics-source-heading"><span class="analytics-source-number">[{{ source.citation }}]</span><div><strong>{{ source.title }}</strong><small>{% if source.kind == 'document' %}Документ{% else %}Письмо{% endif %}{% if source.page %} · страница {{ source.page }}{% endif %}</small></div><a href="{{ source.url }}" target="_blank" rel="noopener">Открыть <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a></div><p class="analytics-source-fields"><strong>Реквизиты карточки:</strong> {{ source.metadata['Реквизиты карточки'] }}</p><details><summary>Фрагмент распознанного текста</summary><p>{{ source.text }}</p></details></article>{% endfor %}
+    </div></section>
+    <dialog class="analytics-citation-dialog" data-citation-dialog aria-labelledby="citation-dialog-title"><header><div><p class="eyebrow">ОРИГИНАЛ ИСТОЧНИКА</p><h2 id="citation-dialog-title" data-citation-title></h2><small data-citation-page></small></div><button type="button" data-citation-close aria-label="Закрыть просмотр документа"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><iframe data-citation-frame title="Оригинал документа" src="about:blank"></iframe></dialog>
+</section>
+<script>
+(() => {
+    const form = document.querySelector('[data-analytics-form]');
+    if (!form) return;
+    const submit = form.querySelector('[data-analytics-submit]');
+    const stop = form.querySelector('[data-analytics-stop]');
+    const status = form.querySelector('[data-analytics-status]');
+    const errorBox = document.querySelector('[data-analytics-error]');
+    const answerBox = document.querySelector('[data-analytics-answer]');
+    const answerText = document.querySelector('[data-analytics-answer-text]');
+    const sourcesBox = document.querySelector('[data-analytics-sources]');
+    const sourceList = document.querySelector('[data-analytics-source-list]');
+    const sourceCount = document.querySelector('[data-analytics-source-count]');
+    const citationDialog = document.querySelector('[data-citation-dialog]');
+    const citationFrame = citationDialog?.querySelector('[data-citation-frame]');
+    const citationTitle = citationDialog?.querySelector('[data-citation-title]');
+    const citationPage = citationDialog?.querySelector('[data-citation-page]');
+    let controller = null;
+    let activeRequestId = null;
+    let currentSources = Array.from(sourceList.querySelectorAll('[data-source-citation]')).map((article) => ({
+        citation: Number(article.dataset.sourceCitation), kind: article.dataset.sourceKind,
+        url: article.dataset.sourceUrl, page: Number(article.dataset.sourcePage) || null,
+        title: article.dataset.sourceTitle,
+    }));
+
+    const openCitation = (citation) => {
+        const source = currentSources.find((item) => Number(item.citation) === Number(citation));
+        if (!source || !citationDialog || !citationFrame) return;
+        const target = new URL(source.url, window.location.href);
+        if (target.origin !== window.location.origin) return;
+        if (source.page) {
+            if (source.kind === 'document') target.searchParams.set('page', String(source.page));
+            else target.hash = `page=${source.page}`;
+        }
+        citationTitle.textContent = source.title || `Источник [${citation}]`;
+        citationPage.textContent = source.page ? `Страница ${source.page}` : 'Первая страница';
+        citationFrame.src = target.href;
+        citationDialog.showModal();
+    };
+    citationDialog?.querySelector('[data-citation-close]')?.addEventListener('click', () => citationDialog.close());
+    citationDialog?.addEventListener('click', (event) => {
+        if (event.target === citationDialog) citationDialog.close();
+    });
+    citationDialog?.addEventListener('close', () => { citationFrame.src = 'about:blank'; });
+    answerText?.addEventListener('click', (event) => {
+        const link = event.target.closest('[data-source-citation]');
+        if (!link) return;
+        event.preventDefault();
+        openCitation(link.dataset.sourceCitation);
+    });
+
+    const escapeHtml = (value) => value.replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[char]);
+    const renderInlineMarkdown = (value) => value.split(/(`[^`]+`)/g).map((part) => {
+        if (part.startsWith('`') && part.endsWith('`')) {
+            return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+        }
+        return escapeHtml(part)
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/__(.+?)__/g, '<strong>$1</strong>')
+            .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>')
+            .replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>')
+            .replace(/\[(\d+)\]/g, (match, number) => currentSources.some((source) => Number(source.citation) === Number(number))
+                ? `<a class="analytics-citation-link" href="#source-${number}" data-source-citation="${number}">[${number}]</a>`
+                : match);
+    }).join('');
+    const renderMarkdown = (value) => {
+        const output = [];
+        const paragraph = [];
+        let listType = null;
+        const closeList = () => {
+            if (listType) output.push(`</${listType}>`);
+            listType = null;
+        };
+        const flushParagraph = () => {
+            if (paragraph.length) output.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+            paragraph.length = 0;
+        };
+        (value || '').replace(/\r\n?/g, '\n').split('\n').forEach((line) => {
+            const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+            const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+            const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
+            const quote = line.match(/^\s*>\s?(.*)$/);
+            if (!line.trim()) {
+                flushParagraph();
+                closeList();
+            } else if (heading) {
+                flushParagraph(); closeList();
+                const level = heading[1].length;
+                output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+            } else if (ordered || unordered) {
+                flushParagraph();
+                const nextType = ordered ? 'ol' : 'ul';
+                if (listType !== nextType) { closeList(); output.push(`<${nextType}>`); listType = nextType; }
+                output.push(`<li>${renderInlineMarkdown((ordered || unordered)[1])}</li>`);
+            } else if (quote) {
+                flushParagraph(); closeList();
+                output.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+            } else {
+                closeList();
+                paragraph.push(line);
+            }
+        });
+        flushParagraph(); closeList();
+        return output.join('');
+    };
+    const renderAnswer = (text) => { if (answerText) answerText.innerHTML = renderMarkdown(text || ''); };
+    if (answerText?.textContent.trim()) renderAnswer(answerText.textContent);
+
+    const addText = (parent, tag, text, className) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        node.textContent = text || '';
+        parent.append(node);
+        return node;
+    };
+    const newRequestId = () => window.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+        const value = Math.random() * 16 | 0;
+        return (char === 'x' ? value : (value & 3 | 8)).toString(16);
+    });
+    const readJson = async (response) => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('application/json')) {
+            if (response.redirected && /\/accounts\/login\//.test(response.url)) {
+                throw new Error('Срок авторизации истёк. Войдите в систему и повторите запрос.');
+            }
+            throw new Error(`Сервер вернул страницу вместо данных (HTTP ${response.status}). Обновите страницу и попробуйте ещё раз.`);
+        }
+        return response.json();
+    };
+    const delay = (ms, signal) => new Promise((resolve, reject) => {
+        const onAbort = () => {
+            window.clearTimeout(timer);
+            reject(new DOMException('Запрос остановлен', 'AbortError'));
+        };
+        const timer = window.setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal.addEventListener('abort', onAbort, {once: true});
+    });
+    const renderSources = (sources) => {
+        currentSources = sources || [];
+        sourceList.replaceChildren();
+        sources.forEach((source) => {
+            const article = document.createElement('article');
+            article.className = 'analytics-source panel';
+            article.dataset.sourceCitation = String(source.citation);
+            article.dataset.sourceKind = source.kind || '';
+            article.dataset.sourceUrl = source.url || '';
+            article.dataset.sourcePage = source.page || '';
+            article.dataset.sourceTitle = source.title || '';
+            const heading = document.createElement('div');
+            heading.className = 'analytics-source-heading';
+            addText(heading, 'span', `[${source.citation}]`, 'analytics-source-number');
+            const titleGroup = document.createElement('div');
+            addText(titleGroup, 'strong', source.title);
+            addText(titleGroup, 'small', `${source.kind === 'document' ? 'Документ' : 'Письмо'}${source.page ? ` · страница ${source.page}` : ''}`);
+            heading.append(titleGroup);
+            const link = document.createElement('a');
+            link.href = source.url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = 'Открыть ↗';
+            heading.append(link);
+            article.append(heading);
+            const metadata = document.createElement('p');
+            metadata.className = 'analytics-source-fields';
+            addText(metadata, 'strong', 'Реквизиты карточки: ');
+            metadata.append(document.createTextNode(source.metadata['Реквизиты карточки'] || 'не заполнены'));
+            article.append(metadata);
+            const details = document.createElement('details');
+            addText(details, 'summary', 'Фрагмент распознанного текста');
+            addText(details, 'p', source.text);
+            article.append(details);
+            sourceList.append(article);
+        });
+        sourceCount.textContent = String(sources.length);
+        sourcesBox.hidden = !sources.length;
+    };
+
+    stop.addEventListener('click', () => {
+        if (!controller) return;
+        const requestId = activeRequestId;
+        const token = form.querySelector('[name="csrf_token"]')?.value || '';
+        const cancelBody = new URLSearchParams({request_id: requestId || '', csrfmiddlewaretoken: token});
+        fetch(form.dataset.cancelUrl, {
+            method: 'POST',
+            body: cancelBody,
+            headers: {'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': token},
+            credentials: 'same-origin',
+            keepalive: true,
+        }).catch(() => {});
+        controller.abort();
+        controller = null;
+        activeRequestId = null;
+        submit.disabled = false;
+        stop.hidden = true;
+        submit.innerHTML = '<i class="bi bi-search" aria-hidden="true"></i> Найти ответ';
+        status.textContent = 'Запрос остановлен. Можно задать новый вопрос.';
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (controller) controller.abort();
+        controller = new AbortController();
+        const activeController = controller;
+        activeRequestId = newRequestId();
+        const requestId = activeRequestId;
+        const payload = new FormData(form);
+        payload.append('request_id', requestId);
+        const token = form.querySelector('[name="csrf_token"]')?.value || '';
+        errorBox.hidden = true;
+        submit.disabled = true;
+        submit.innerHTML = '<span class="analytics-spinner" aria-hidden="true"></span> Обрабатываем…';
+        stop.hidden = false;
+        status.textContent = 'Ищем документы и готовим ответ…';
+        answerBox.hidden = true;
+        sourcesBox.hidden = true;
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: payload,
+                headers: {'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': token},
+                credentials: 'same-origin',
+                signal: activeController.signal,
+            });
+            let data = await readJson(response);
+            if (!response.ok) throw new Error(data.error || 'Не удалось выполнить запрос.');
+            if (data.status === 'processing' && data.request_id) {
+                const statusUrl = new URL(form.dataset.statusUrl, window.location.origin);
+                statusUrl.searchParams.set('request_id', data.request_id);
+                while (activeController === controller) {
+                    await delay(900, activeController.signal);
+                    const statusResponse = await fetch(statusUrl, {
+                        headers: {'X-Requested-With': 'XMLHttpRequest'},
+                        credentials: 'same-origin',
+                        signal: activeController.signal,
+                    });
+                    data = await readJson(statusResponse);
+                    if (!statusResponse.ok) throw new Error(data.error || 'Не удалось получить результат запроса.');
+                    if (data.status !== 'processing') break;
+                }
+            }
+            if (activeController !== controller) return;
+            if (data.status === 'cancelled') {
+                status.textContent = 'Запрос остановлен. Можно задать новый вопрос.';
+                return;
+            }
+            if (data.error) {
+                errorBox.textContent = data.error;
+                errorBox.hidden = false;
+            }
+            renderSources(data.sources || []);
+            if (data.answer) {
+                renderAnswer(data.answer);
+                answerBox.hidden = false;
+            }
+            status.textContent = data.error ? 'Не удалось подготовить ответ.' : (data.cached ? 'Ответ получен из кеша.' : 'Ответ готов.');
+        } catch (error) {
+            if (error.name !== 'AbortError' && activeController === controller) {
+                errorBox.textContent = error instanceof TypeError
+                    ? 'Не удалось связаться с сервером. Проверьте подключение и повторите запрос.'
+                    : (error.message || 'Не удалось выполнить запрос. Попробуйте ещё раз.');
+                errorBox.hidden = false;
+                status.textContent = 'Запрос завершился с ошибкой.';
+            }
+        } finally {
+            if (activeController === controller) {
+                controller = null;
+                activeRequestId = null;
+                submit.disabled = false;
+                submit.innerHTML = '<i class="bi bi-search" aria-hidden="true"></i> Найти ответ';
+                stop.hidden = true;
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

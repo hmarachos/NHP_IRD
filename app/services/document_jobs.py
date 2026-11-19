@@ -11,7 +11,7 @@ from django.db import transaction, close_old_connections
 from django.db.models import Q
 
 from app.document_types import DOCUMENT_TYPES
-from app.services.checklist_document_fields import project_assignment_fields
+from app.services.checklist_document_fields import project_assignment_fields, extract_project_assignment_text
 from app.services.pipeline import DocumentProcessingPipeline
 from migration_portal.checklist_utils import allows_multiple_documents, apply_checklist_document_title, normalize
 from migration_portal.document_matching import find_duplicate
@@ -61,7 +61,11 @@ def run_pending_document_jobs(limit: int = 2) -> int:
                 Q(document_id=document.id) | Q(checklistdocument__document_id=document.id)
             ).select_related("project").first()
             parsed = project_assignment_fields(link.title, link.project.customer or "") if link else None
-            if parsed is None:
+            if parsed is not None:
+                parsed.raw_text = extract_project_assignment_text(
+                    path, tesseract_lang=settings.TESSERACT_LANG, dpi=settings.OCR_DPI,
+                )
+            else:
                 pipeline = DocumentProcessingPipeline(
                     document_types=DOCUMENT_TYPES,
                     tesseract_lang=settings.TESSERACT_LANG,

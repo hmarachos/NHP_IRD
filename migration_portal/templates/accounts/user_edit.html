@@ -21,7 +21,7 @@
         <div class="customer-access-summary"><div><span class="customer-access-count" data-project-count>Выбрано: 0</span><div class="customer-access-chips" data-project-chips></div><p class="customer-access-empty" data-project-empty>Объекты не выбраны.</p></div><button class="account-secondary" type="button" data-open-project-picker>Выбрать объекты</button></div>
         {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
       </fieldset>
-    {% elif field.name == 'is_gip' or field.name == 'is_active' %}
+    {% elif field.name == 'is_gip' or field.name == 'show_ai_analytics' or field.name == 'is_active' %}
       <div class="account-switch-field"><label class="account-switch-row"><span>{{ field.label }}</span>{{ field }}</label>{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>
     {% else %}
       <label>{{ field.label }}{{ field }}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</label>

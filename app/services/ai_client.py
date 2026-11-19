@@ -50,6 +50,12 @@ class CachedResponses:
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
+    def retrieve(self, response_id, **params):
+        return self.client.responses.retrieve(response_id, **params)
+
+    def cancel(self, response_id):
+        return self.client.responses.cancel(response_id)
+
     def _create(self, **request):
         root = Path(settings.MEDIA_ROOT).parent / 'ai-response-cache'
         # Separate credentials without ever persisting the credential itself.
@@ -82,7 +88,10 @@ class CachedResponses:
         return response
 
 
-def ai_client(api_key):
+def ai_client(api_key, timeout=None):
     from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client_options = {"api_key": api_key}
+    if timeout is not None:
+        client_options.update(timeout=timeout, max_retries=0)
+    client = OpenAI(**client_options)
     return SimpleNamespace(responses=CachedResponses(client, hashlib.sha256(api_key.encode()).hexdigest()))

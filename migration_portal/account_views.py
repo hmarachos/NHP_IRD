@@ -161,6 +161,7 @@ def user_edit(request, user_id):
     initial = {
         "last_name": user.last_name, "first_name": user.first_name, "middle_name": profile.middle_name,
         "email": user.email, "is_gip": profile.is_gip, "organization": profile.organization_id,
+        "show_ai_analytics": profile.show_ai_analytics,
         "access_level": profile.access_level, "allowed_customers": profile.allowed_customers.all(),
         "allowed_projects": profile.allowed_projects.all(), "is_active": user.is_active,
     }

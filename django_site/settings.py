@@ -23,7 +23,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "migration_portal",
+    "migration_portal.apps.MigrationPortalConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
