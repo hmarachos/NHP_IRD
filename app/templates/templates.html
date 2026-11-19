@@ -61,7 +61,7 @@
                     <input name="description" value="{{ item.description }}" placeholder="Пояснение (необязательно)" aria-label="Пояснение" data-template-autosave>
                     <span class="template-save-status" aria-live="polite"></span>
                 </form>
-                <form action="{{ url_for('web.delete_template_item', item_id=item.id) }}" method="post" onsubmit="return confirm('Удалить документ из шаблона?');">
+                <form action="{{ url_for('web.delete_template_item', item_id=item.id) }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-danger" type="submit" aria-label="Удалить пункт">Удалить</button>
                 </form>
             </div>
