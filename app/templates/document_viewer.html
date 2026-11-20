@@ -60,6 +60,9 @@
     let zoom = 100;
     let drag = null;
     let pendingCenterRects = null;
+    let pageAdvanceLocked = false;
+    let pageAdvanceTimer = null;
+    let wheelDownAtEnd = false;
     const setRatio = (ratio, persist = true) => {
         const value = Math.max(.08, Math.min(.4, Number(ratio) || .125));
         layout.style.setProperty('--pdf-thumbnails-width', `${value * 100}%`);
@@ -141,6 +144,27 @@
             if (active) button.scrollIntoView({block: 'nearest'});
         });
     };
+    const advanceOnScroll = (deltaY) => {
+        if (!deltaY || pageAdvanceLocked) return;
+        if (deltaY > 0) {
+            const remaining = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+            if (page >= pageCount - 1 || remaining > 70) return;
+        } else if (page <= 0 || viewport.scrollTop > 70) {
+            return;
+        }
+        pageAdvanceLocked = true;
+        setPage(page + (deltaY > 0 ? 1 : -1));
+        window.clearTimeout(pageAdvanceTimer);
+        pageAdvanceTimer = window.setTimeout(() => { pageAdvanceLocked = false; }, 450);
+    };
+    viewport.addEventListener('wheel', (event) => advanceOnScroll(event.deltaY), {passive: true});
+    let touchStartY = null;
+    viewport.addEventListener('touchstart', (event) => { touchStartY = event.touches[0]?.clientY ?? null; }, {passive: true});
+    viewport.addEventListener('touchend', (event) => {
+        const endY = event.changedTouches[0]?.clientY;
+        if (touchStartY !== null && endY !== undefined) advanceOnScroll(touchStartY - endY);
+        touchStartY = null;
+    }, {passive: true});
     thumbnails.forEach((button) => button.addEventListener('click', () => setPage(Number(button.dataset.pageIndex))));
     pageInput.addEventListener('change', () => setPage((Number(pageInput.value) || 1) - 1));
     viewer.querySelector('[data-page-prev]').addEventListener('click', () => setPage(page - 1));

@@ -417,7 +417,11 @@ def _link_checklist_document(project_id, item, document):
         ChecklistDocument.objects.get_or_create(checklist_item=item, document=document, defaults={"sort_order": next_order})
         primary = item.document if item.document_id and not item.document.archived_at else document
     else:
-        ChecklistDocument.objects.filter(checklist_item=item).exclude(document=document).delete()
+        # Keep archived versions linked so the checklist and document dialog can
+        # show the complete revision history alongside the active file.
+        ChecklistDocument.objects.filter(
+            checklist_item=item, document__archived_at__isnull=True,
+        ).exclude(document=document).delete()
         ChecklistDocument.objects.update_or_create(
             checklist_item=item, document=document, defaults={"sort_order": 0},
         )
@@ -585,26 +589,66 @@ def document_viewer(request, document_id):
         page_route="web_document_viewer_page",
         highlight_route="web_document_viewer_highlights",
         original_url=reverse("web_document_preview", args=[document_id]),
+        cache_version=f"{pdf_path.stat().st_mtime_ns}-{pdf_path.stat().st_size}",
     ), using="jinja2")
 
 
-def _document_viewer_context(record_id, page_count, initial_page, *, page_route, highlight_route, original_url):
+def _document_viewer_context(record_id, page_count, initial_page, *, page_route, highlight_route, original_url, cache_version=""):
     from django.urls import reverse
 
     page_url = reverse(page_route, args=[record_id, 0])
+    page_base = page_url.rsplit("/", 1)[0]
+    versioned_page_url = f"{page_url}?v={cache_version}"
     highlight_url = reverse(highlight_route, args=[record_id, 0])
     return {
         "document_id": record_id, "page_count": page_count,
         "initial_page": initial_page,
-        "page_url_template": page_url,
-        "page_image_url": page_url.replace("/0", f"/{initial_page - 1}"),
+        "page_url_template": versioned_page_url,
+        "page_image_url": f"{page_base}/{initial_page - 1}?v={cache_version}",
+        "page_image_urls": [f"{page_base}/{index}?v={cache_version}" for index in range(page_count)],
         "thumbnail_urls": [
-            f"{page_url.replace('/0', f'/{index}')}?thumbnail=1"
+            f"{page_base}/{index}?v={cache_version}&thumbnail=1"
             for index in range(page_count)
         ],
         "highlight_url_template": highlight_url,
         "original_url": original_url,
     }
+
+
+def _cached_pdf_page(pdf_path, cache_id, page_index, thumbnail=False):
+    import pypdfium2 as pdfium
+
+    stat = pdf_path.stat()
+    cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{cache_id}-{stat.st_mtime_ns}-{stat.st_size}"
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / f"{page_index}-{'thumb' if thumbnail else 'page'}.jpg"
+    valid_cache = False
+    try:
+        if target.is_file() and target.stat().st_size > 4:
+            with target.open("rb") as cached_image:
+                valid_cache = cached_image.read(2) == bytes((255, 216))
+                cached_image.seek(-2, os.SEEK_END)
+                valid_cache = valid_cache and cached_image.read(2) == bytes((255, 217))
+    except OSError:
+        valid_cache = False
+
+    if not valid_cache:
+        temp_target = cache / f".{target.name}.{uuid.uuid4().hex}.tmp"
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        try:
+            if page_index < 0 or page_index >= len(pdf):
+                raise Http404
+            bitmap = pdf[page_index].render(scale=0.3 if thumbnail else 1.6)
+            bitmap.to_pil().convert("RGB").save(
+                temp_target, format="JPEG", quality=82 if thumbnail else 90, optimize=True,
+            )
+            if temp_target.stat().st_size <= 4:
+                raise OSError("Rendered PDF page is empty")
+            os.replace(temp_target, target)
+        finally:
+            pdf.close()
+            temp_target.unlink(missing_ok=True)
+    return target
 
 
 @require_GET
@@ -616,23 +660,10 @@ def document_viewer_page(request, document_id, page_index):
     from app.services.word_documents import is_word_document, word_preview_path
     try:
         pdf_path = word_preview_path(source) if is_word_document(source) else source
-        import pypdfium2 as pdfium
-        stat = pdf_path.stat()
-        cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{document_id}-{stat.st_mtime_ns}-{stat.st_size}"
-        cache.mkdir(parents=True, exist_ok=True)
         thumbnail = request.GET.get("thumbnail") == "1"
-        target = cache / f"{page_index}-{'thumb' if thumbnail else 'page'}.jpg"
-        if not target.is_file():
-            pdf = pdfium.PdfDocument(str(pdf_path))
-            try:
-                if page_index < 0 or page_index >= len(pdf):
-                    raise Http404
-                bitmap = pdf[page_index].render(scale=0.3 if thumbnail else 1.6)
-                bitmap.to_pil().convert("RGB").save(target, format="JPEG", quality=82 if thumbnail else 90, optimize=True)
-            finally:
-                pdf.close()
+        target = _cached_pdf_page(pdf_path, f"{document_id}", page_index, thumbnail)
         response = FileResponse(target.open("rb"), content_type="image/jpeg")
-        response["Cache-Control"] = "public, max-age=86400"
+        response["Cache-Control"] = "no-cache, must-revalidate"
         response["X-Content-Type-Options"] = "nosniff"
         return response
     except Http404:
@@ -681,6 +712,7 @@ def correspondence_viewer(request, letter_id):
         page_route="web_correspondence_viewer_page",
         highlight_route="web_correspondence_viewer_highlights",
         original_url=reverse("web_correspondence_preview", args=[letter_id]),
+        cache_version=f"{pdf_path.stat().st_mtime_ns}-{pdf_path.stat().st_size}",
     ), using="jinja2")
 
 
@@ -693,23 +725,10 @@ def _render_correspondence_page(request, letter_id, page_index):
 
 def _render_pdf_viewer_page(request, pdf_path, cache_id, page_index):
     try:
-        import pypdfium2 as pdfium
-        stat = pdf_path.stat()
-        cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{cache_id}-{stat.st_mtime_ns}-{stat.st_size}"
-        cache.mkdir(parents=True, exist_ok=True)
         thumbnail = request.GET.get("thumbnail") == "1"
-        target = cache / f"{page_index}-{'thumb' if thumbnail else 'page'}.jpg"
-        if not target.is_file():
-            pdf = pdfium.PdfDocument(str(pdf_path))
-            try:
-                if page_index < 0 or page_index >= len(pdf):
-                    raise Http404
-                bitmap = pdf[page_index].render(scale=0.3 if thumbnail else 1.6)
-                bitmap.to_pil().convert("RGB").save(target, format="JPEG", quality=82 if thumbnail else 90, optimize=True)
-            finally:
-                pdf.close()
+        target = _cached_pdf_page(pdf_path, cache_id, page_index, thumbnail)
         response = FileResponse(target.open("rb"), content_type="image/jpeg")
-        response["Cache-Control"] = "public, max-age=86400"
+        response["Cache-Control"] = "no-cache, must-revalidate"
         response["X-Content-Type-Options"] = "nosniff"
         return response
     except Http404:
@@ -802,7 +821,8 @@ def archive_document(request, document_id):
             }:
                 item.status = "missing"
                 item.save(update_fields=["status", "updated_at"])
-        ChecklistDocument.objects.filter(document=document).delete()
+        if request.headers.get("X-Preserve-Checklist-Link") != "1":
+            ChecklistDocument.objects.filter(document=document).delete()
         document.save(update_fields=["archived_at"])
     messages.success(request, "Документ перемещён в архив проекта. Файл сохранён.")
     return redirect("web_object_workspace", object_id=document.project_id)
@@ -813,8 +833,13 @@ def restore_document(request, document_id):
     document = _document_or_404(document_id)
     if not document.archived_at:
         raise Http404
-    document.archived_at = None
-    document.save(update_fields=["archived_at"])
+    checklist_item_id = request.POST.get("checklist_item_id", "").strip()
+    with transaction.atomic():
+        document.archived_at = None
+        document.save(update_fields=["archived_at"])
+        if checklist_item_id:
+            item = _checklist_item_or_404(document.project_id, checklist_item_id)
+            _link_checklist_document(document.project_id, item, document)
     messages.success(request, "Документ восстановлен вместе с исходным файлом.")
     return redirect("web_object_workspace", object_id=document.project_id)
 
@@ -889,9 +914,9 @@ def object_workspace(request, object_id):
             title = document.get("working_title") or document.get("official_title")
             if not title:
                 continue
-            item = ProjectChecklistItem.objects.filter(
+            item = next((candidate for candidate in ProjectChecklistItem.objects.filter(
                 project=project, status="missing", validity_years=0,
-            ).order_by("id").first()
+            ).order_by("id") if normalize(candidate.title) == normalize(title)), None)
             if item and not allows_multiple_documents(item.title) and normalize(item.title) == normalize(title):
                 _link_checklist_document(project.id, item, Document.objects.get(pk=document["id"]))
     archived_documents = [attach_document_title(attach_expiry(row, warning_days)) for row in Document.objects.filter(
@@ -930,7 +955,7 @@ def object_workspace(request, object_id):
         if document and not document["archived_at"]:
             checklist_documents.setdefault(link.checklist_item_id, []).append(document)
         elif document:
-            archived_item_document_ids.setdefault(link.checklist_item_id, link.document_id)
+            archived_item_document_ids.setdefault(link.checklist_item_id, []).append(link.document_id)
             archived_document_item_ids.setdefault(link.document_id, []).append(link.checklist_item_id)
     for item in checklist:
         if item["document_id"] in active_by_id if item["document_id"] else False:
@@ -946,7 +971,9 @@ def object_workspace(request, object_id):
                       and normalize_title(doc["working_title"] or doc["original_filename"]) in {title, linked_title}), None)
         if match:
             archived_item_ids.add(item["id"])
-            archived_item_document_ids.setdefault(item["id"], match["id"])
+            item_archives = archived_item_document_ids.setdefault(item["id"], [])
+            if match["id"] not in item_archives:
+                item_archives.append(match["id"])
             archived_document_item_ids.setdefault(match["id"], []).append(item["id"])
     existing_sources = {row["source_template_item_id"] for row in checklist}
     existing_titles = {normalize_title(row["title"]) for row in checklist}
