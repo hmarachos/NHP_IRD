@@ -164,6 +164,11 @@ def retrieve_project_sources(project_id, question, limit=6):
         return []
     preferred_routes = _route_question(question)
 
+    requested_dates = {
+        f"{int(day):02d}.{int(month):02d}.{year}"
+        for day, month, year in re.findall(r"(?<!\d)([0-3]?\d)[./-]([01]?\d)[./-]((?:19|20)\d{2})(?!\d)", question or "")
+    }
+    requested_numbers = set(re.findall(r"№\s*([0-9][0-9A-Za-zА-Яа-я./-]*)", question or ""))
     card_question = bool(re.search(r"номер|дат[ауы]|когда.*выдан|кем.*выдан|кто.*выдал", question or "", re.IGNORECASE))
     candidates = []
     active_documents = Document.objects.filter(
@@ -358,6 +363,12 @@ def retrieve_project_sources(project_id, question, limit=6):
     document_frequency = Counter(
         term for item in candidates for term in item["text_matches"]
     )
+    title_terms_by_source = {
+        (item["kind"], item["id"]): _matched_terms(query_terms, item["title"])
+        for item in candidates
+    }
+    title_frequency = Counter(term for matches in title_terms_by_source.values() for term in matches)
+    source_count = max(1, len(title_terms_by_source))
     total_chunks = max(1, len(candidates))
     available_routes = [
         route for route in preferred_routes
@@ -371,6 +382,20 @@ def retrieve_project_sources(project_id, question, limit=6):
         )
         item["document_score"] = len(item["document_matches"])
         item["score"] = item["text_score"] * 5 + item["document_score"] * 0.15
+        title_matches = title_terms_by_source[(item["kind"], item["id"])]
+        item["score"] += 10 * sum(
+            math.log((source_count + 1) / (title_frequency[term] + 1)) + 1
+            for term in title_matches
+        )
+        requisites = item["metadata"]["Реквизиты карточки"]
+        exact_requisites = sum(
+            bool(re.search(r"(?:^|; )дата: " + re.escape(value) + r"(?:;|$)", requisites))
+            for value in requested_dates
+        ) + sum(
+            bool(re.search(r"(?:^|; )номер: " + re.escape(value.rstrip(".")) + r"(?:;|$)", requisites))
+            for value in requested_numbers
+        )
+        item["score"] += 70 * exact_requisites
         if card_question and item["page"] == 1:
             item["score"] += 18
         if item["layout_role"] and item["layout_matches"]:

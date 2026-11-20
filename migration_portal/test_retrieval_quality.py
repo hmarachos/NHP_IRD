@@ -97,6 +97,22 @@ class RetrievalQualityTests(TestCase):
         self.assertEqual(sources[0]["page"], 1)
         self.assertIn("TEST/42", sources[0]["metadata"]["Реквизиты карточки"])
 
+    def test_named_correspondent_in_title_is_not_lost_among_generic_body_matches(self):
+        target = Correspondence.objects.create(project=self.project, direction="incoming", subject="Ответ Минсельхозпрода", raw_text="Цех отнесён к производственным объектам.")
+        for index in range(8):
+            Correspondence.objects.create(project=self.project, direction="incoming", subject=f"Письмо {index}", raw_text="В своём ответе рассматриваем, к каким объектам относится цех убоя. Просим направить ответ.")
+        run_pending_preparations()
+        sources = retrieve_project_sources(self.project.pk, "К каким объектам Минсельхозпрод отнёс цех убоя в своём ответе?")
+        self.assertIn(target.pk, [source["id"] for source in sources])
+
+    def test_explicit_letter_date_selects_that_card_before_similar_later_letters(self):
+        target = Correspondence.objects.create(project=self.project, direction="incoming", subject="Исходные данные", letter_date="2026-06-09", number="TEST/2256", raw_text="Исходные данные необходимо предоставить до 15.06.2026.")
+        Correspondence.objects.create(project=self.project, direction="incoming", subject="Исходные данные", letter_date="2026-06-16", raw_text="Просим предоставить исходные данные и согласовать планировку до 17.06.2026.")
+        run_pending_preparations()
+        sources = retrieve_project_sources(self.project.pk, "До какого срока просили предоставить исходные данные в письме №TEST/2256 от 09.06.2026?")
+        self.assertEqual(sources[0]["id"], target.pk)
+        self.assertIn("15.06.2026", sources[0]["text"])
+
     def test_result_limit_is_respected_when_question_requests_multiple_groups(self):
         self.document("Задание на проектирование", "--- page 1 ---\nЭлектроснабжение проекта.")
         self.document("Технические условия на электроснабжение", "--- page 1 ---\nЭлектроснабжение проекта.")

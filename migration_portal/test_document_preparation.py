@@ -164,7 +164,7 @@ class ConcurrentPreparationTests(TransactionTestCase):
     def test_card_edit_during_preparation_is_queued_after_publication(self):
         import threading
         from concurrent.futures import ThreadPoolExecutor
-        from django.db import close_old_connections
+        from django.db import connections
         from app.services.document_preparation import prepare_document
 
         project = Project.objects.create(name="Объект", contract_number="42")
@@ -182,7 +182,7 @@ class ConcurrentPreparationTests(TransactionTestCase):
             try:
                 return prepare_document(prepared_id)
             finally:
-                close_old_connections()
+                connections.close_all()
 
         def edit():
             try:
@@ -191,7 +191,7 @@ class ConcurrentPreparationTests(TransactionTestCase):
                 editing.set()
                 source.save(update_fields=["document_number"])
             finally:
-                close_old_connections()
+                connections.close_all()
 
         with patch("app.services.document_preparation._sanitize_ocr_text", side_effect=normalize), ThreadPoolExecutor(max_workers=2) as pool:
             future = pool.submit(prepare)

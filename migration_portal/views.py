@@ -714,11 +714,11 @@ def _viewer_highlight_response(request, source_path, cache_id, page_index):
         stat = pdf_path.stat()
         cache = Path(settings.BASE_DIR) / "instance" / "preview-cache" / f"{cache_id}-{stat.st_mtime_ns}-{stat.st_size}"
         cache.mkdir(parents=True, exist_ok=True)
-        key = hashlib.sha256(f"{page_index}\0{query}".encode("utf-8")).hexdigest()[:24]
+        from app.services.document_highlight import HIGHLIGHT_VERSION, highlight_paragraph
+        key = hashlib.sha256(f"{HIGHLIGHT_VERSION}\0{page_index}\0{query}".encode("utf-8")).hexdigest()[:24]
         target = cache / f"highlight-{key}.json"
         if target.is_file():
             return JsonResponse(json.loads(target.read_text(encoding="utf-8")))
-        from app.services.document_highlight import highlight_paragraph
         rects = highlight_paragraph(
             pdf_path, page_index, query,
             lang=settings.TESSERACT_LANG, dpi=settings.OCR_DPI,

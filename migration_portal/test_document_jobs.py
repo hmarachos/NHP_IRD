@@ -70,7 +70,7 @@ class ConcurrentDocumentLeaseTests(TransactionTestCase):
     def test_second_worker_skips_active_first_worker(self):
         import threading
         from concurrent.futures import ThreadPoolExecutor
-        from django.db import close_old_connections
+        from django.db import connections
         started, release = threading.Event(), threading.Event()
         with tempfile.TemporaryDirectory() as directory, override_settings(MEDIA_ROOT=directory):
             Path(directory, 'test.pdf').touch()
@@ -84,7 +84,7 @@ class ConcurrentDocumentLeaseTests(TransactionTestCase):
                 try:
                     return run_pending_document_jobs(1)
                 finally:
-                    close_old_connections()
+                    connections.close_all()
             with patch('app.services.document_jobs.DocumentProcessingPipeline') as pipeline, ThreadPoolExecutor(max_workers=1) as pool:
                 pipeline.return_value.process.side_effect = process
                 future = pool.submit(worker)
