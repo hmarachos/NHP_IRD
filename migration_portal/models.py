@@ -1,5 +1,5 @@
 """Django-owned PostgreSQL schema corresponding to the legacy IRD records."""
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.db.models.functions import Cast, Now
 import uuid
@@ -64,6 +64,11 @@ class Document(models.Model):
     document_number = models.TextField(default="", db_default="")
     archived_at = models.CharField(max_length=40, null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        # Persist the preparation job and cache invalidation with the card.
+        with transaction.atomic():
+            return super().save(*args, **kwargs)
+
     class Meta:
         db_table = "documents"
         indexes = [
@@ -91,6 +96,11 @@ class Correspondence(models.Model):
     record_type = models.TextField(default="correspondence", db_default="correspondence")
     valid_until = models.TextField(default="", db_default="")
     created_at = models.CharField(max_length=40, default="", db_default=TIMESTAMP_TEXT_DEFAULT)
+
+    def save(self, *args, **kwargs):
+        # Persist the preparation job and cache invalidation with the card.
+        with transaction.atomic():
+            return super().save(*args, **kwargs)
 
     class Meta:
         db_table = "correspondence"
@@ -284,3 +294,38 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.get_full_name()} ({self.get_access_level_display()})"
+
+
+class PreparedDocument(models.Model):
+    """Durable preparation job and atomically published search representation."""
+    document = models.OneToOneField(Document, null=True, blank=True, on_delete=models.CASCADE, related_name="prepared")
+    correspondence = models.OneToOneField(Correspondence, null=True, blank=True, on_delete=models.CASCADE, related_name="prepared")
+    normalized_text = models.TextField(default="")
+    page_mapping = models.CharField(max_length=16, default="unavailable")
+    metadata = models.JSONField(default=dict)
+    input_hash = models.CharField(max_length=64, default="")
+    text_hash = models.CharField(max_length=64, default="")
+    requested_revision = models.UUIDField(default=uuid.uuid4, editable=False)
+    pipeline_version = models.PositiveIntegerField(default=0)
+    revision = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=12, default="pending", db_index=True)
+    error = models.TextField(default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=(Q(document__isnull=False, correspondence__isnull=True) | Q(document__isnull=True, correspondence__isnull=False)),
+            name="prepared_exactly_one_source",
+        )]
+
+
+class DocumentChunk(models.Model):
+    prepared = models.ForeignKey(PreparedDocument, on_delete=models.CASCADE, related_name="chunks")
+    revision = models.PositiveIntegerField()
+    position = models.PositiveIntegerField()
+    page = models.PositiveIntegerField(null=True)
+    text = models.TextField()
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [models.UniqueConstraint(fields=["prepared", "position"], name="chunk_source_position_uq")]

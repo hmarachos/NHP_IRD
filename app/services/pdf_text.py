@@ -85,7 +85,10 @@ class PdfTextExtractor:
         try:
             reader = PdfReader(str(pdf_path))
             pages = [page.extract_text() or "" for page in reader.pages]
-            return "\n\n".join(pages).strip()
+            return "\n\n".join(
+                f"--- page {index} ---\n{text.strip()}"
+                for index, text in enumerate(pages, start=1)
+            ).strip()
         except Exception:
             return ""
 

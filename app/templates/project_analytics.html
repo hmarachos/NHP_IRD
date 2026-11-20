@@ -8,6 +8,7 @@
 {% endblock %}
 {% block content %}
 <section class="project-analytics-page">
+    {% if preparation_error_count %}<p class="notice notice-error">Не удалось подготовить для поиска {{ preparation_error_count }} источников. Обратитесь к администратору для повторной обработки.</p>{% endif %}
     <section class="analytics-ask panel" aria-labelledby="analytics-question-title">
         <div class="section-title"><span class="icon-badge"><i class="bi bi-chat-square-text" aria-hidden="true"></i></span><div><h2 id="analytics-question-title">Спросить по проекту</h2><p>Поля карточки имеют приоритет над распознанным текстом.</p></div></div>
         <form method="post" action="{{ url_for('web.project_analytics', object_id=project.id) }}" data-status-url="{{ url_for('web_project_analytics_status', object_id=project.id) }}" data-cancel-url="{{ url_for('web_cancel_project_analytics', object_id=project.id) }}" class="analytics-question-form" data-analytics-form>

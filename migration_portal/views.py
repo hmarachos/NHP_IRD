@@ -162,6 +162,9 @@ def project_notebook(request, object_id):
     if project is None:
         raise Http404
     entries = ProjectNotebookEntry.objects.filter(project=project)
+    preparation_error_count = PreparedDocument.objects.filter(status="error").filter(
+        Q(document__in=active_docs) | Q(correspondence__in=active_letters)
+    ).count()
     checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
     received_count = sum(item["status"] == "received" for item in checklist)
     correspondence_count = Correspondence.objects.filter(
@@ -1045,10 +1048,17 @@ def project_analytics(request, object_id):
 
     active_docs = Document.objects.filter(project=project, archived_at__isnull=True)
     active_letters = Correspondence.objects.filter(project=project)
-    indexed_count = active_docs.exclude(status__in=["queued", "processing"]).exclude(raw_text__isnull=True).exclude(raw_text="").count()
-    indexed_count += active_letters.exclude(status__in=["queued", "processing"]).exclude(raw_text="").count()
+    from migration_portal.models import PreparedDocument
+    ready = PreparedDocument.objects.filter(status="ready")
+    indexed_count = ready.filter(document__in=active_docs, document__status="processed").count()
+    indexed_count += ready.filter(correspondence__in=active_letters, correspondence__status="processed").count()
     pending_count = active_docs.filter(status__in=["queued", "processing"]).count()
     pending_count += active_letters.filter(status__in=["queued", "processing"]).count()
+    pending_count += active_docs.exclude(status__in=["queued", "processing"]).filter(prepared__status="pending").count()
+    pending_count += active_letters.exclude(status__in=["queued", "processing"]).filter(prepared__status="pending").count()
+    preparation_error_count = PreparedDocument.objects.filter(status="error").filter(
+        Q(document__in=active_docs) | Q(correspondence__in=active_letters)
+    ).count()
     checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
     received_count = sum(item["status"] == "received" for item in checklist)
     correspondence_count = active_letters.filter(record_type="correspondence").count()
@@ -1057,6 +1067,7 @@ def project_analytics(request, object_id):
         "answer": answer, "sources": sources, "analytics_error": error,
         "answer_cached": answer_cached,
         "indexed_count": indexed_count, "pending_count": pending_count,
+        "preparation_error_count": preparation_error_count,
         "checklist": checklist, "received_count": received_count,
         "correspondence_count": correspondence_count,
     }, using="jinja2")

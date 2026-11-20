@@ -3,25 +3,18 @@ import re
 import json
 import time
 import math
-import unicodedata
 from collections import Counter, defaultdict
+from types import SimpleNamespace
 
 from django.conf import settings
 from django.urls import reverse
 
+from app.services.document_text import _merge_overlapping_chunks
 from app.services.ai_client import ai_client
-from migration_portal.models import ChecklistDocument, Correspondence, Document, ProjectChecklistItem
+from migration_portal.models import ChecklistDocument, Correspondence, Document, ProjectChecklistItem, PreparedDocument
 
 
 _WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё]+", re.UNICODE)
-_PAGE_RE = re.compile(r"---\s*page\s+(\d+)\s*---", re.IGNORECASE)
-_LIST_ITEM_START_RE = re.compile(r"\n[ \t]*(?:\d+(?:\.\d+)*[.)]?|[•●▪◦‣–—-])[ \t]+")
-_PARAGRAPH_BOUNDARY_RE = re.compile(r"\n[ \t]*\n+")
-_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?;:])[ \t\n]+")
-_LINE_BOUNDARY_RE = re.compile(r"\n+")
-_SPACE_BOUNDARY_RE = re.compile(r"\s+")
-_OCR_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b\u200c\u200d\ufeff]")
-_OCR_GARBAGE_LINE_RE = re.compile(r"^[\s|/\\_=~`^*•·.,:;!?'\"()\[\]{}<>—–-]+$")
 _OCR_CONFUSABLES = str.maketrans({
     "a": "а", "b": "в", "c": "с", "e": "е", "h": "н", "k": "к",
     "m": "м", "o": "о", "p": "р", "t": "т", "x": "х", "y": "у",
@@ -50,6 +43,7 @@ _SITE_CONTENT_TERMS = {
     "мойка", "автомойка", "агзс", "газонаполнительный", "газовый",
     "заправка", "заправочный", "автомобиль",
 }
+_QUERY_NOISE_PREFIXES = ("как", "почему", "указан", "требует", "нужно", "просил", "запрашива", "содержит", "составля")
 _STOP_PREFIXES = ("како", "что", "это", "согла", "следу", "необход", "предусмотр", "проектирован")
 _ASSIGNMENT_INTENT_RE = re.compile(
     r"задан\w*|генплан|генеральн\w*\s+план|"
@@ -84,26 +78,6 @@ def _normalize_token(token):
     if re.search(r"[а-я]", token):
         token = token.translate(_OCR_CONFUSABLES)
     return token
-
-
-def _sanitize_ocr_text(text):
-    """Conservatively clean OCR for retrieval while leaving stored originals intact."""
-    text = unicodedata.normalize("NFKC", text or "")
-    text = text.replace("\u00a0", " ").replace("\u00ad", "")
-    text = _OCR_CONTROL_RE.sub("", text).replace("\r\n", "\n").replace("\r", "\n")
-    # Remove the line break after OCR hyphens but keep the hyphen itself: it can
-    # be either a wrap mark or a meaningful compound-word separator.
-    text = re.sub(r"(?<=[A-Za-zА-Яа-яЁё])[-‑–]\s*\n\s*(?=[A-Za-zА-Яа-яЁё])", "-", text)
-    lines = []
-    for line in text.split("\n"):
-        line = re.sub(r"[\t ]+", " ", line).strip()
-        if not line or _OCR_GARBAGE_LINE_RE.fullmatch(line):
-            continue
-        # Drop adjacent repeated OCR header/footer lines, keeping the first copy.
-        if len(line) >= 18 and lines and line.casefold() == lines[-1].casefold():
-            continue
-        lines.append(line)
-    return "\n".join(lines)
 
 
 def _term_hits(query_terms, text):
@@ -143,7 +117,11 @@ def _route_question(question):
         r"замен\w*|треб\w*|актуальн\w*|сейчас|текущ\w*",
         question or "", re.IGNORECASE,
     ))
-    if initial_data and correspondence and status_question:
+    historical = bool(re.search(r"просил|запрашива|ранее|в\s+письм", question or "", re.IGNORECASE))
+    current = bool(re.search(r"сейчас|текущ|актуальн|действующ", question or "", re.IGNORECASE))
+    if correspondence and historical and not current:
+        routes = ["correspondence"] + [route for route in routes if route != "correspondence"]
+    elif initial_data and correspondence and status_question:
         routes = ["initial_data", "correspondence"] + [route for route in routes if route not in {"initial_data", "correspondence"}]
     return routes
 
@@ -160,99 +138,33 @@ def _source_route_label(source):
     return labels.get(group, "документы проекта")
 
 
-def _chunk_end(text, start, limit):
-    """Prefer complete paragraphs, list items, and sentences near the size target."""
-    target = min(len(text), start + limit)
-    if target == len(text):
-        return target
-    earliest = start + max(1, int(limit * 0.62))
-    for pattern, boundary_side in (
-        (_PARAGRAPH_BOUNDARY_RE, "end"),
-        (_LIST_ITEM_START_RE, "start"),
-        (_SENTENCE_BOUNDARY_RE, "end"),
-        (_LINE_BOUNDARY_RE, "end"),
-        (_SPACE_BOUNDARY_RE, "end"),
-    ):
-        boundaries = [
-            match.start() if boundary_side == "start" else match.end()
-            for match in pattern.finditer(text, earliest, target + 1)
-        ]
-        boundaries = [boundary for boundary in boundaries if boundary > start]
-        if boundaries:
-            return boundaries[-1]
-    # Pathological OCR can produce a single long unbroken run. Keep progress
-    # while protecting a real word boundary whenever one exists nearby.
-    boundary = text.rfind(" ", earliest, target)
-    if boundary > start:
-        return boundary + 1
-    return target
-
-
-def _next_chunk_start(text, end, overlap, previous_start):
-    """Keep the requested overlap while moving its edge out of the middle of a word."""
-    target = max(previous_start + 1, end - overlap)
-    start = target
-    lower_bound = max(previous_start + 1, target - 80)
-    while start > lower_bound and start < len(text) and not text[start - 1].isspace() and not text[start].isspace():
-        start -= 1
-    if start > lower_bound or (start < len(text) and text[start].isspace()):
-        return start
-    # Avoid pathological one-character progress through OCR tables containing
-    # an unusually long unbroken run.
-    return target
-
-
-def _merge_overlapping_chunks(parts, max_overlap=400):
-    """Reassemble same-page chunks without assuming every overlap is identical."""
-    if not parts:
-        return ""
-    merged = parts[0]
-    for part in parts[1:]:
-        overlap_limit = min(len(merged), len(part), max_overlap)
-        overlap = next(
-            (size for size in range(overlap_limit, 0, -1) if merged.endswith(part[:size])),
-            0,
-        )
-        merged += part[overlap:]
-    return merged
-
-
-def _text_chunks(text, limit=1400, overlap=180):
-    text = _sanitize_ocr_text(text).strip()
-    if not text:
-        return []
-    pages = []
-    markers = list(_PAGE_RE.finditer(text))
-    if markers:
-        if markers[0].start():
-            pages.append((None, text[:markers[0].start()]))
-        for index, marker in enumerate(markers):
-            end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
-            pages.append((int(marker.group(1)), text[marker.end():end]))
-    else:
-        pages = [(None, text)]
-
-    chunks = []
-    for page, page_text in pages:
-        start = 0
-        while start < len(page_text):
-            end = _chunk_end(page_text, start, limit)
-            part = page_text[start:end].strip()
-            if part:
-                chunks.append((page, part))
-            if end >= len(page_text):
-                break
-            start = _next_chunk_start(page_text, end, overlap, start)
-    return chunks
+def _page_continuation(text, next_page, next_text, query_terms):
+    # A requirement may end mid-sentence at a physical page boundary. Return
+    # its continuation as a separately cited source, preserving the new page.
+    tail = re.sub(r"\n\s*\d+\s*$", "", text).rstrip()
+    if not tail or tail[-1] in ".!?;:":
+        return None
+    paragraph = tail.rsplit("\n\n", 1)[-1][-400:]
+    if len(_matched_terms(query_terms, paragraph)) < min(2, len(query_terms)):
+        return None
+    fragment = next_text[:600]
+    boundary = re.search(r"(?<=[.!?])\s+", fragment)
+    if boundary:
+        fragment = fragment[:boundary.start()]
+    elif len(next_text) > 600:
+        fragment = fragment.rsplit(" ", 1)[0]
+    return next_page, fragment.strip()
 
 
 def retrieve_project_sources(project_id, question, limit=6):
     """Rank snippets from active OCR records, scoped in SQL before ranking."""
-    query_terms = _terms(question)
+    all_terms = _terms(question)
+    query_terms = {term for term in all_terms if not term.startswith(_QUERY_NOISE_PREFIXES)} or all_terms
     if not query_terms:
         return []
     preferred_routes = _route_question(question)
 
+    card_question = bool(re.search(r"номер|дат[ауы]|когда.*выдан|кем.*выдан|кто.*выдал", question or "", re.IGNORECASE))
     candidates = []
     active_documents = Document.objects.filter(
         project_id=project_id, project__archived_at__isnull=True,
@@ -276,11 +188,19 @@ def retrieve_project_sources(project_id, question, limit=6):
         if item not in checklist_state_by_document[link["document_id"]]:
             checklist_state_by_document[link["document_id"]].append(item)
 
-    docs = active_documents.exclude(raw_text__isnull=True).exclude(raw_text="").only(
-        "id", "original_filename", "working_title", "official_title", "issuer",
-        "document_number", "issue_date", "valid_until", "note", "raw_text",
-    ).exclude(status__in=["queued", "processing"])
-    for row in docs.iterator():
+    prepared = {
+        row.document_id: row for row in PreparedDocument.objects.filter(
+            document__in=active_documents, status="ready",
+        ).only("id", "document_id", "correspondence_id", "metadata", "revision").prefetch_related("chunks")
+    }
+    prepared_letters = {
+        row.correspondence_id: row for row in PreparedDocument.objects.filter(
+            correspondence__project_id=project_id, status="ready",
+        ).only("id", "document_id", "correspondence_id", "metadata", "revision").prefetch_related("chunks")
+    }
+    docs = active_documents.filter(pk__in=prepared, status="processed").only("id")
+    for record in docs.iterator():
+        row = SimpleNamespace(id=record.id, **prepared[record.id].metadata)
         title = row.working_title or row.official_title or row.original_filename
         checklist_state = []
         linked_items = checklist_state_by_document.get(row.id, [])
@@ -340,7 +260,14 @@ def retrieve_project_sources(project_id, question, limit=6):
                 "сейчас уже ли о об которых писали по"
             ))
         ) or bool(linked_items and generic_tu_status_question and is_tu_checklist_item)
-        chunks = _text_chunks(row.raw_text)
+        stored_chunks = [chunk for chunk in prepared[row.id].chunks.all() if chunk.revision == prepared[row.id].revision]
+        chunks = [(chunk.page, chunk.text) for chunk in stored_chunks]
+        followups = {}
+        for current, following in zip(stored_chunks, stored_chunks[1:]):
+            if current.page and following.page == current.page + 1:
+                continuation = _page_continuation(current.text, following.page, following.text, query_terms)
+                if continuation:
+                    followups[(current.page, current.text)] = continuation
         if layout_question and (is_assignment or is_apz):
             # These documents often split one requirement list into several OCR
             # chunks on the same PDF page. Rejoin those pieces for layout queries
@@ -376,6 +303,7 @@ def retrieve_project_sources(project_id, question, limit=6):
                     "kind": "document", "id": row.id, "title": title,
                     "source_groups": source_groups,
                     "page": page, "text": chunk, "score": 0,
+                    "next_fragment": followups.get((page, chunk)),
                     "text_matches": text_matches, "document_matches": document_matches,
                     "layout_matches": layout_matches,
                     "layout_role": layout_question and (is_assignment or is_apz),
@@ -392,12 +320,10 @@ def retrieve_project_sources(project_id, question, limit=6):
                 })
 
     letters = Correspondence.objects.filter(
-        project_id=project_id, project__archived_at__isnull=True,
-    ).exclude(raw_text="").exclude(status__in=["queued", "processing"]).only(
-        "id", "direction", "number", "letter_date", "sender", "recipient",
-        "subject", "summary", "original_filename", "raw_text",
-    )
-    for row in letters.iterator():
+        project_id=project_id, project__archived_at__isnull=True, pk__in=prepared_letters,
+    ).filter(status="processed").only("id")
+    for record in letters.iterator():
+        row = SimpleNamespace(id=record.id, **prepared_letters[record.id].metadata)
         title = row.subject or row.original_filename or f"Письмо № {row.number}"
         direction = "Входящее" if row.direction == "incoming" else "Исходящее"
         metadata = {
@@ -412,7 +338,10 @@ def retrieve_project_sources(project_id, question, limit=6):
             ])) or "не заполнены",
         }
         document_matches = _matched_terms(query_terms, " ".join(metadata.values()))
-        for page, chunk in _text_chunks(row.raw_text):
+        for stored_chunk in prepared_letters[row.id].chunks.all():
+            if stored_chunk.revision != prepared_letters[row.id].revision:
+                continue
+            page, chunk = stored_chunk.page, stored_chunk.text
             text_matches = _matched_terms(query_terms, chunk)
             if text_matches or document_matches:
                 candidates.append({
@@ -442,6 +371,8 @@ def retrieve_project_sources(project_id, question, limit=6):
         )
         item["document_score"] = len(item["document_matches"])
         item["score"] = item["text_score"] * 5 + item["document_score"] * 0.15
+        if card_question and item["page"] == 1:
+            item["score"] += 18
         if item["layout_role"] and item["layout_matches"]:
             item["score"] += 10 + min(len(item["layout_matches"]), 5) * 1.5
         if item["layout_relevant"] and item["layout_anchor"]:
@@ -455,6 +386,15 @@ def retrieve_project_sources(project_id, question, limit=6):
             priority = min(matching_routes)
             item["score"] += max(12, 45 - priority * 15)
         item["retrieval_routes"] = available_routes
+    continuations = []
+    for item in candidates:
+        following = item.pop("next_fragment", None)
+        if following:
+            item["score"] += 3
+            continuation = dict(item)
+            continuation.update(page=following[0], text=following[1], score=item["score"] - 0.01)
+            continuations.append(continuation)
+    candidates.extend(continuations)
     candidates.sort(key=lambda item: (
         -item["score"], -item["text_score"], -item["document_score"],
         item["title"].casefold(), item["id"], item["page"] or 0,
@@ -470,8 +410,8 @@ def retrieve_project_sources(project_id, question, limit=6):
 
     def add_candidate(item):
         identity = (item["kind"], item["id"])
-        chunk_identity = (*identity, item["page"])
-        if chunk_identity in seen_chunks or source_counts[identity] >= 2:
+        chunk_identity = (*identity, item["page"], item["text"])
+        if len(selected) >= limit or chunk_identity in seen_chunks or source_counts[identity] >= 2:
             return False
         seen_chunks.add(chunk_identity)
         source_counts[identity] += 1
@@ -485,6 +425,13 @@ def retrieve_project_sources(project_id, question, limit=6):
         for item in selection_candidates:
             if route in item["source_groups"] and add_candidate(item):
                 break
+    # Preserve a second passage from the main requested group after reserving
+    # one for every group. A letter's conclusion often lives on its next page.
+    if len(available_routes) > 1 and len(selected) < limit:
+        primary = available_routes[0]
+        for item in selection_candidates:
+            if primary in item["source_groups"] and add_candidate(item):
+                break
     for item in selection_candidates:
         add_candidate(item)
         if len(selected) >= limit:
@@ -497,6 +444,7 @@ def answer_project_question(question, sources, cancel_check=None):
         f"[{source['citation']}] Тип источника: {_source_route_label(source)}. {source['title']}"
         f"{', стр. ' + str(source['page']) if source['page'] else ''}\n"
         f"Реквизиты карточки (приоритет над OCR): {source['metadata']['Реквизиты карточки']}\n"
+        f"Состояние комплектности: {source['metadata'].get('Текущее состояние комплектности', 'не указано')}\n"
         f"OCR-фрагмент: {source['text']}"
         for source in sources
     )

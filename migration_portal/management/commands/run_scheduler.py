@@ -5,6 +5,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from app.services.document_jobs import run_pending_document_jobs
+from app.services.document_preparation import run_pending_preparations
 
 
 class Command(BaseCommand):
@@ -16,6 +17,9 @@ class Command(BaseCommand):
 
         def process_uploads():
             count = run_pending_document_jobs()
+            prepared_count = run_pending_preparations()
+            if prepared_count:
+                logging.getLogger(__name__).info("Подготовлено документов для RAG: %d", prepared_count)
             if count:
                 logging.getLogger(__name__).info("Обработано Django-загрузок: %d", count)
 

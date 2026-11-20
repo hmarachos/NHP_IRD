@@ -12,7 +12,7 @@ from django.utils import timezone
 from migration_portal.models import ProjectAnswerCache, ProjectSearchRevision
 
 
-CACHE_PROMPT_VERSION = 1
+CACHE_PROMPT_VERSION = 3
 CACHE_TTL = timedelta(days=30)
 _SOURCE_CACHE_FIELDS = ("citation", "title", "kind", "page", "text", "metadata", "url")
 
