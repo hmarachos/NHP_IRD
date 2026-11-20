@@ -79,7 +79,9 @@ STATICFILES_DIRS = [BASE_DIR / "app" / "static"]
 MEDIA_ROOT = os.getenv("UPLOAD_DIR", str(BASE_DIR / "instance" / "uploads"))
 ACTS_DIR = os.getenv("ACTS_DIR", str(BASE_DIR / "instance" / "acts"))
 MEDIA_URL = "/media/"
-DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("MAX_CONTENT_LENGTH", str(25 * 1024 * 1024)))
+# Keep Django's disk-spooling threshold; it does not restrict file size.
+DATA_UPLOAD_MAX_MEMORY_SIZE = None
+DATA_UPLOAD_MAX_NUMBER_FILES = None
 MIGRATION_SOURCE_DB = os.getenv("LEGACY_SQLITE_SOURCE_PATH", str(BASE_DIR / "instance" / "documents.db"))
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "rus+eng")
 OCR_DPI = int(os.getenv("OCR_DPI", "300"))

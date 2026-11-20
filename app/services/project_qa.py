@@ -464,7 +464,7 @@ def retrieve_project_sources(project_id, question, limit=6):
     return selected
 
 
-def answer_project_question(question, sources, cancel_check=None):
+def answer_project_question(question, sources, cancel_check=None, on_delta=None):
     context = "\n\n".join(
         f"[{source['citation']}] Тип источника: {_source_route_label(source)}. {source['title']}"
         f"{', стр. ' + str(source['page']) if source['page'] else ''}\n"
@@ -495,7 +495,8 @@ def answer_project_question(question, sources, cancel_check=None):
         ),
         input=f"Вопрос: {question}\n\nИсточники проекта:\n{context}",
         max_output_tokens=700,
-        background=True,
+        background=not bool(on_delta),
+        stream=bool(on_delta),
         text={"format": {
             "type": "json_schema",
             "name": "project_answer",
@@ -511,6 +512,30 @@ def answer_project_question(question, sources, cancel_check=None):
             },
         }},
     )
+    if on_delta:
+        response_id = None
+        streamed_text = ""
+        with response as stream:
+            for event in stream:
+                event_type = getattr(event, "type", "")
+                if event_type == "response.created":
+                    response_id = getattr(getattr(event, "response", None), "id", None)
+                elif event_type == "response.output_text.delta":
+                    delta = getattr(event, "delta", "")
+                    streamed_text += delta
+                    on_delta(delta)
+                elif event_type == "response.completed":
+                    response = getattr(event, "response", response)
+                elif event_type in {"response.failed", "error"}:
+                    raise RuntimeError("The model did not complete the streaming response")
+                if cancel_check and cancel_check() and response_id:
+                    try:
+                        responses.cancel(response_id)
+                    except Exception:
+                        pass
+                    raise ProjectQuestionCancelled
+        if streamed_text and not getattr(response, "output_text", None):
+            response.output_text = streamed_text
     if not getattr(response, "output_text", None):
         response_id = getattr(response, "id", None)
         if not response_id:

@@ -20,6 +20,12 @@ def restore_page_markers(raw_text, source_path):
             # This preamble is the existing extractor's OCR of the first-page
             # letterhead, not a separate unnumbered page.
             raw_text = f"--- page 1 ---\n{preamble}{raw_text[marker.end():]}"
+        if int(marker.group(1)) > 1 and preamble.strip():
+            # A later append leaves the old OCR byte-for-byte as a prefix. Map
+            # that prefix to complete initial PDF pages before the new markers.
+            mapped, mode = restore_page_markers(preamble, source_path)
+            if mode != "unavailable":
+                return mapped.rstrip() + "\n\n" + raw_text[marker.start():], mode
         return raw_text, "original"
     path = Path(source_path)
     if not path.is_file() or path.suffix.lower() != ".pdf":

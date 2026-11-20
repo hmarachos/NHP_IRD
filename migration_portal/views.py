@@ -28,6 +28,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils.http import content_disposition_header
 
+from app.services.document_titles import attach_document_title, clean_document_name, format_document_title
 from app.services.expiry import add_years, attach_expiry, expiry_state, iso_date
 from migration_portal.models import (
     ChecklistTemplate,
@@ -92,6 +93,7 @@ def _run_project_analytics_job(job_id, user_id, project_id, question, cancel_eve
         else:
             answer = answer_project_question(
                 question, sources, cancel_check=cancel_event.is_set,
+                on_delta=lambda delta: _append_analytics_delta(job_id, user_id, project_id, delta),
             )
             store_project_answer(project_id, question, answer, sources, source_revision)
     except ProjectQuestionCancelled:
@@ -106,6 +108,8 @@ def _run_project_analytics_job(job_id, user_id, project_id, question, cancel_eve
             job.update({
                 "status": "cancelled" if cancelled else "complete",
                 "answer": answer,
+                "stream_answer": answer,
+                "stream_seq": job.get("stream_seq", 0),
                 "error": error,
                 "sources": public_sources,
                 "cached": cache_hit,
@@ -113,8 +117,16 @@ def _run_project_analytics_job(job_id, user_id, project_id, question, cancel_eve
             })
 
 
+def _append_analytics_delta(job_id, user_id, project_id, delta):
+    with _ANALYTICS_JOBS_LOCK:
+        job = _ANALYTICS_JOBS.get(job_id)
+        if job and (job["user_id"], job["project_id"]) == (user_id, project_id) and job["status"] == "processing":
+            job["stream_answer"] += delta
+            job["stream_seq"] += 1
+
+
 def _upload_storage():
-    return StorageService(Path(settings.MEDIA_ROOT), int(os.getenv("MAX_UPLOAD_FILE_SIZE", str(25 * 1024 * 1024))))
+    return StorageService(Path(settings.MEDIA_ROOT))
 
 
 class _NotebookHTMLSanitizer(HTMLParser):
@@ -212,6 +224,8 @@ def delete_notebook_entry(request, object_id, entry_id):
 
 @require_POST
 def upload_documents(request, object_id):
+    if request.headers.get("X-IRD-Analyze") == "1":
+        return upload_checklist_document(request, object_id, None)
     project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
     if project is None:
         raise Http404
@@ -270,9 +284,12 @@ def upload_checklist_document(request, object_id, item_id):
     project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
     item = ProjectChecklistItem.objects.filter(
         pk=item_id, project_id=object_id, project__archived_at__isnull=True,
-    ).first()
-    if project is None or item is None:
+    ).first() if item_id is not None else None
+    if project is None or (item_id is not None and item is None):
         raise Http404
+    item_title = item.title if item else ""
+    if not request.FILES.getlist("files") and request.headers.get("X-IRD-Analyze") == "1":
+        return JsonResponse({"error": "Выберите файл документа."}, status=422)
     files = [f for f in request.FILES.getlist("files") if f and f.name]
     if not files:
         messages.error(request, "Выберите PDF, Word-файл или фотографии страниц документа.")
@@ -296,7 +313,7 @@ def upload_checklist_document(request, object_id, item_id):
             final_stored = f"{__import__('uuid').uuid4().hex}_checklist-pages.pdf"
             final_path = Path(settings.MEDIA_ROOT) / final_stored
             _combine_images(saved, final_path)
-            final_name, final_mime = f"{item.title[:100]}.pdf", "application/pdf"
+            final_name, final_mime = f"{item_title[:100] or 'Документ'}.pdf", "application/pdf"
             for _name, _stored, source_path, _mime in saved:
                 Path(source_path).unlink(missing_ok=True)
             saved = []
@@ -311,7 +328,8 @@ def upload_checklist_document(request, object_id, item_id):
             if hashlib.sha256(existing_path.read_bytes()).digest() != uploaded_digest:
                 continue
             final_path.unlink(missing_ok=True)
-            manual_assignment = project_assignment_fields(item.title, project.customer or "")
+            from app.services.checklist_document_fields import project_assignment_fields
+            manual_assignment = project_assignment_fields(item_title, project.customer or "")
             if manual_assignment is not None:
                 existing.working_title = manual_assignment.working_title
                 existing.official_title = ""
@@ -325,10 +343,11 @@ def upload_checklist_document(request, object_id, item_id):
                     "working_title", "official_title", "issuer", "document_number", "issue_date",
                     "valid_until", "no_expiration", "note",
                 ])
-            _link_checklist_document(project.id, item, existing)
+            if item:
+                _link_checklist_document(project.id, item, existing)
             if request.headers.get("X-IRD-Analyze") == "1":
-                return JsonResponse({"id": existing.id, "preview": reverse("web_document_preview", args=[existing.id]), "fields": {
-                    "working_title": existing.working_title or item.title, "official_title": existing.official_title or "",
+                return JsonResponse({"id": existing.id, "existing_document": True, "general_upload": item is None, "preview": reverse("web_document_preview", args=[existing.id]), "fields": {
+                    "working_title": clean_document_name(existing.working_title or item_title, existing.issuer, project.customer), "official_title": existing.official_title or "",
                     "issuer": existing.issuer or "", "document_number": existing.document_number or "",
                     "issue_date": existing.issue_date or "", "valid_until": existing.valid_until or "",
                     "no_expiration": existing.no_expiration,
@@ -338,7 +357,7 @@ def upload_checklist_document(request, object_id, item_id):
         parsed = None
         if request.headers.get("X-IRD-Analyze") == "1":
             from app.services.checklist_document_fields import project_assignment_fields, extract_project_assignment_text
-            parsed = project_assignment_fields(item.title, project.customer or "")
+            parsed = project_assignment_fields(item_title, project.customer or "")
             if parsed is not None:
                 parsed.raw_text = extract_project_assignment_text(
                     final_path, tesseract_lang=settings.TESSERACT_LANG, dpi=settings.OCR_DPI,
@@ -352,7 +371,7 @@ def upload_checklist_document(request, object_id, item_id):
                     ocr_dpi=settings.OCR_DPI,
                 )
                 parsed = pipeline.process(final_path)
-                apply_checklist_document_title(parsed, item.title)
+                apply_checklist_document_title(parsed, item_title)
             document = Document.objects.create(
                 project=project, contract_number=project.contract_number, object_name=project.name,
                 original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
@@ -362,9 +381,10 @@ def upload_checklist_document(request, object_id, item_id):
                 validity_text=parsed.validity_text, no_expiration=parsed.no_expiration,
                 raw_text=parsed.raw_text, status="processed",
             )
-            _link_checklist_document(project.id, item, document)
-            fields = _checklist_analysis_fields(parsed, item.title)
-            return JsonResponse({"id": document.id, "preview": reverse("web_document_preview", args=[document.id]), "fields": {
+            if item:
+                _link_checklist_document(project.id, item, document)
+            fields = _checklist_analysis_fields(parsed, item_title)
+            return JsonResponse({"id": document.id, "general_upload": item is None, "preview": reverse("web_document_preview", args=[document.id]), "fields": {
                 **fields,
             }})
         document = Document.objects.create(
@@ -372,8 +392,9 @@ def upload_checklist_document(request, object_id, item_id):
             original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
             status="queued",
         )
-        _link_checklist_document(project.id, item, document)
-        messages.success(request, f"Файл «{item.title}» принят. Распознавание выполняется в фоне.")
+        if item:
+            _link_checklist_document(project.id, item, document)
+        messages.success(request, f"Файл «{item_title}» принят. Распознавание выполняется в фоне.")
         return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab=checklist")
     except Exception as exc:
         for _name, _stored, source_path, _mime in saved:
@@ -425,7 +446,7 @@ def _checklist_analysis_fields(parsed, fallback_title):
         else (header_number or parsed.document_number or (number_match.group(1) if number_match else ""))
     )
     return {
-        "working_title": parsed.working_title or fallback_title,
+        "working_title": clean_document_name(parsed.working_title or fallback_title, parsed.issuer),
         "official_title": parsed.official_title or "",
         "issuer": parsed.issuer or "",
         "document_number": document_number,
@@ -471,10 +492,30 @@ def update_document_fields(request, document_id):
     document.official_title = request.POST.get("official_title", "").strip()
     document.issuer = request.POST.get("issuer", "").strip()
     document.document_number = request.POST.get("document_number", "").strip()
+    document.working_title = clean_document_name(
+        document.working_title, document.issuer, document.project.customer if document.project_id else '',
+    )
     document.issue_date = iso_date(request.POST.get("issue_date", "").strip())
     document.valid_until = "" if no_expiration else iso_date(request.POST.get("valid_until", "").strip())
     document.no_expiration = no_expiration
     document.save(update_fields=["working_title", "official_title", "issuer", "document_number", "issue_date", "valid_until", "no_expiration"])
+    if request.headers.get("X-Add-To-Checklist") == "1":
+        title = document.working_title or document.official_title or document.original_filename
+        with transaction.atomic():
+            Project.objects.select_for_update().get(pk=document.project_id)
+            item = ProjectChecklistItem.objects.filter(project_id=document.project_id, document=document).first()
+            if item is None:
+                item = next((row for row in ProjectChecklistItem.objects.filter(
+                    project_id=document.project_id, status="missing", validity_years=0,
+                ).order_by("id") if normalize(row.title) == normalize(title)), None)
+            if item is None:
+                order = ProjectChecklistItem.objects.filter(project_id=document.project_id).aggregate(value=Max("sort_order"))["value"]
+                item = ProjectChecklistItem.objects.create(
+                    project_id=document.project_id, title=title, sort_order=(order if order is not None else -1) + 1,
+                )
+            _link_checklist_document(document.project_id, item, document)
+    from app.services.email_notifications import queue_saved_document_notification
+    queue_saved_document_notification(document)
     if request.headers.get("X-Preserve-Checklist-Link") != "1":
         title = (document.working_title or "").strip().casefold()
         if title:
@@ -838,7 +879,7 @@ def object_workspace(request, object_id):
         "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "chief_engineer_id", "archived_at", "created_at",
     )}
     obj["chief_engineer_name"] = project.chief_engineer.get_full_name() if project.chief_engineer_id else ""
-    documents = [attach_expiry(row, warning_days) for row in Document.objects.filter(
+    documents = [attach_document_title(attach_expiry(row, warning_days)) for row in Document.objects.filter(
         project=project, archived_at__isnull=True,
     ).order_by("-created_at", "-id").values()]
     # Reconcile pre-existing uploads only on editable visits: GET requests from
@@ -853,7 +894,7 @@ def object_workspace(request, object_id):
             ).order_by("id").first()
             if item and not allows_multiple_documents(item.title) and normalize(item.title) == normalize(title):
                 _link_checklist_document(project.id, item, Document.objects.get(pk=document["id"]))
-    archived_documents = [attach_expiry(row, warning_days) for row in Document.objects.filter(
+    archived_documents = [attach_document_title(attach_expiry(row, warning_days)) for row in Document.objects.filter(
         project=project, archived_at__isnull=False,
     ).order_by("-archived_at", "-id").values()]
     active_by_id = {row["id"]: row for row in documents}
@@ -995,11 +1036,15 @@ def project_analytics(request, object_id):
                     "cancel_event": cancel_event,
                     "status": "processing",
                     "answer": "",
+                    "stream_answer": "",
+                    "stream_seq": 0,
                     "error": "",
                     "sources": [],
                     "cached": False,
                     "expires_at": 0,
                 }
+            elif previous:
+                previous.update({"answer": "", "stream_answer": "", "stream_seq": 0, "error": "", "sources": [], "cached": False})
         if cancelled_before_start:
             return JsonResponse({"request_id": job_id, "status": "cancelled", "sources": []}, status=409)
         _ANALYTICS_EXECUTOR.submit(
@@ -1093,6 +1138,8 @@ def project_analytics_status(request, object_id):
         result = {
             "status": job["status"],
             "answer": job["answer"],
+            "stream_answer": job.get("stream_answer", job["answer"]),
+            "stream_seq": job.get("stream_seq", 0),
             "error": job["error"],
             "sources": job["sources"],
             "cached": job.get("cached", False),
@@ -1120,6 +1167,9 @@ def cancel_project_analytics(request, object_id):
         if job and (job["user_id"], job["project_id"]) == (request.user.pk, project.pk):
             job["cancel_event"].set()
             job["status"] = "cancelled" if job["status"] != "complete" else job["status"]
+            job["answer"] = ""
+            job["stream_answer"] = ""
+            job["stream_seq"] = 0
             job["expires_at"] = time.monotonic() + 300
             cancelled = True
         elif not job:
@@ -1334,6 +1384,28 @@ def upload_correspondence(request, object_id):
         })
     messages.success(request, "Письмо добавлено. Проверьте распознанные реквизиты.")
     return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab={target_tab}")
+
+
+@require_POST
+def append_correspondence(request, object_id, letter_id):
+    _letter_or_404(object_id, letter_id)
+    from app.services.correspondence_attachments import append_correspondence_files
+    ocr_warnings = []
+    try:
+        added, total = append_correspondence_files(object_id, letter_id, request.FILES.getlist("files"), ocr_warnings=ocr_warnings)
+    except Http404:
+        raise
+    except ValueError as exc:
+        logging.getLogger(__name__).exception("Could not append correspondence id=%s", letter_id)
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception:
+        logging.getLogger(__name__).exception("Could not append correspondence id=%s", letter_id)
+        return JsonResponse({"error": "Не удалось добавить документ. Проверьте формат файлов и попробуйте ещё раз."}, status=400)
+    return JsonResponse({
+        "added_pages": added, "page_count": total,
+        "warning": " ".join(ocr_warnings),
+        "preview": reverse("web_correspondence_viewer", args=[letter_id]) + f"?page={total-added+1}",
+    })
 
 
 @require_POST

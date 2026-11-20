@@ -5,9 +5,9 @@ from app.services.filenames import secure_stem
 
 
 class StorageService:
-    def __init__(self, upload_dir: Path, max_file_size: int = 25 * 1024 * 1024):
+    def __init__(self, upload_dir: Path, max_file_size: int | None = None):
         self.upload_dir = upload_dir
-        self.max_file_size = max_file_size
+        self.max_file_size = None
 
     def save_pdf(self, file) -> tuple[str, str, Path]:
         original, stored, path, _mime = self.save_upload(file)
@@ -27,22 +27,36 @@ class StorageService:
         stream = getattr(file, "stream", None) or getattr(file, "file", None)
         if stream is None:
             raise ValueError("Не удалось прочитать загруженный файл.")
-        content = stream.read()
-        stream.seek(0)
-        if not content:
-            raise ValueError("Файл пустой.")
-        if len(content) > self.max_file_size:
-            raise ValueError("Размер файла превышает допустимые 25 МБ.")
-        mime_type = self._validate_content(content, suffix)
-
         stored_name = f"{uuid4().hex}_{safe_name}"
         path = self.upload_dir / stored_name
         self.upload_dir.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-        return original_name, stored_name, path, mime_type
+        try:
+            stream.seek(0)
+            written = 0
+            with path.open("wb") as destination:
+                while chunk := stream.read(1024 * 1024):
+                    destination.write(chunk)
+                    written += len(chunk)
+            if not written:
+                raise ValueError("Файл пустой.")
+            with path.open("rb") as source:
+                mime_type = self._validate_stream(source, suffix)
+            return original_name, stored_name, path, mime_type
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        finally:
+            stream.seek(0)
 
     @staticmethod
     def _validate_content(content: bytes, suffix: str) -> str:
+        import io
+        return StorageService._validate_stream(io.BytesIO(content), suffix)
+
+    @staticmethod
+    def _validate_stream(source, suffix: str) -> str:
+        content = source.read(1024)
+        source.seek(0)
         if suffix == ".pdf":
             if not content.lstrip().startswith(b"%PDF-"):
                 raise ValueError("Содержимое файла не похоже на PDF.")
@@ -53,7 +67,7 @@ class StorageService:
             import zipfile
 
             try:
-                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                with zipfile.ZipFile(source) as archive:
                     if "word/document.xml" not in archive.namelist():
                         raise ValueError("В DOCX-файле отсутствует документ Word.")
                     if archive.testzip() is not None:
@@ -83,12 +97,11 @@ class StorageService:
                 ".webp": {"WEBP"}, ".heic": {"HEIF", "HEIC"},
                 ".heif": {"HEIF", "HEIC"},
             }
-            with Image.open(io.BytesIO(content)) as image:
+            Image.MAX_IMAGE_PIXELS = None
+            with Image.open(source) as image:
                 image_format = (image.format or "").upper()
                 if image_format not in expected_formats[suffix]:
                     raise ValueError("Расширение файла не соответствует содержимому.")
-                if image.width * image.height > 40_000_000:
-                    raise ValueError("Изображение слишком большое (более 40 мегапикселей).")
                 image.verify()
                 formats = {
                     "JPEG": "image/jpeg",

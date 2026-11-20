@@ -233,6 +233,9 @@ class DocumentProcessingPipeline:
                 if parsed.no_expiration:
                     parsed.validity_text = ""
         parsed.raw_text = text
+        from app.services.document_titles import clean_document_name
+        parsed.working_title = clean_document_name(parsed.working_title, parsed.issuer)
+        parsed.official_title = clean_document_name(parsed.official_title, parsed.issuer)
         return parsed
 
     @staticmethod

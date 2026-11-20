@@ -2,6 +2,8 @@
 
 import re
 
+from app.services.document_titles import clean_document_name
+
 CUSTOMER_LETTER_ITEM_TITLE = "Сведения для разработки сметной документации (по типовой форме)"
 PROJECT_ASSIGNMENT_ITEM_TITLE = "Задание на проектирование"
 MULTI_DOCUMENT_ITEM_TITLES = {CUSTOMER_LETTER_ITEM_TITLE, PROJECT_ASSIGNMENT_ITEM_TITLE}
@@ -21,7 +23,7 @@ def uses_customer_letter_subject(title):
 
 
 def apply_checklist_document_title(parsed, item_title):
-    """Keep the user-selected checklist item as the working document title."""
+    """Prefer the recognized document name; use the checklist title as fallback."""
     normalized = normalize(item_title)
     if normalized == normalize("Письмо заказчика о заключении договора"):
         subject = _explicit_subject(parsed.raw_text)
@@ -35,15 +37,21 @@ def apply_checklist_document_title(parsed, item_title):
                 subject = subject[:1].lower() + subject[1:]
             else:
                 subject = "о " + subject[:1].lower() + subject[1:]
-            parsed.working_title = f"Письмо {subject}"[:300]
+            parsed.working_title = f"Письмо {subject}"
             return
     if uses_customer_letter_subject(item_title):
         subject = _explicit_subject(parsed.raw_text)
         if subject:
-            parsed.working_title = subject[:300]
-            parsed.official_title = subject[:300]
+            parsed.working_title = subject
+            parsed.official_title = subject
             return
-    parsed.working_title = (item_title or "")[:300]
+    recognized_title = (parsed.official_title or "").strip()
+    working_title = (parsed.working_title or "").strip()
+    if normalize(recognized_title) == normalize("Неопределенный документ"):
+        recognized_title = ""
+    if normalize(working_title) == normalize("Неопределенный документ"):
+        working_title = ""
+    parsed.working_title = clean_document_name(recognized_title or working_title or (item_title or "").strip(), parsed.issuer)
 
 
 def _explicit_subject(text):

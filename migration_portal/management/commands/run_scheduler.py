@@ -27,7 +27,12 @@ class Command(BaseCommand):
 
         # Email delivery is controlled explicitly by deployment configuration.
         if os.getenv("DJANGO_ENABLE_EMAIL_NOTIFICATIONS", "false").lower() in {"1", "true", "yes", "on"}:
-            from app.services.email_notifications import run_daily_notifications
+            from app.services.email_notifications import run_daily_notifications, send_pending_document_notifications
+
+            scheduler.add_job(
+                send_pending_document_notifications, "interval", seconds=15,
+                id="django-saved-document-expiry-notifications", max_instances=1, coalesce=True,
+            )
 
             def notifications():
                 run_daily_notifications()

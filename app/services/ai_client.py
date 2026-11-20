@@ -69,6 +69,8 @@ class CachedResponses:
         except (OSError, ValueError, KeyError, TypeError):
             pass
         response = self.client.responses.create(**request)
+        if request.get('stream'):
+            return response
         usage = response.usage.model_dump() if getattr(response, 'usage', None) else {}
         logger.info('AI usage model=%s usage=%s', request.get('model'), json.dumps(usage))
         if getattr(response, 'status', None) != 'completed' or not response.output_text:

@@ -45,6 +45,7 @@ urlpatterns = [
     path("objects/<int:object_id>/documents", views.upload_documents, name="web_upload_documents"),
     path("objects/<int:object_id>/correspondence", views.upload_correspondence, name="web_upload_correspondence"),
     path("objects/<int:object_id>/correspondence/<int:letter_id>", views.update_correspondence, name="web_update_correspondence"),
+    path("objects/<int:object_id>/correspondence/<int:letter_id>/attachments", views.append_correspondence, name="web_append_correspondence"),
     path("objects/<int:object_id>/correspondence/<int:letter_id>/delete", views.delete_correspondence, name="web_delete_correspondence"),
     path("correspondence/<int:letter_id>/file", views.correspondence_file, name="web_correspondence_file"),
     path("correspondence/<int:letter_id>/preview", views.correspondence_preview, name="web_correspondence_preview"),

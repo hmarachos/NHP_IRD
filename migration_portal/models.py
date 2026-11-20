@@ -206,6 +206,15 @@ class ExpiryNotification(models.Model):
         constraints = [models.UniqueConstraint(fields=["document", "notification_type"], name="expiry_document_type_unique")]
 
 
+class PendingExpiryNotification(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE)
+    valid_until = models.CharField(max_length=10)
+    next_attempt_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["document", "valid_until"], name="pending_expiry_document_unique")]
+
+
 class ChecklistExpiryNotification(models.Model):
     id = models.AutoField(primary_key=True)
     checklist_item = models.ForeignKey(ProjectChecklistItem, on_delete=models.CASCADE, db_column="checklist_item_id")

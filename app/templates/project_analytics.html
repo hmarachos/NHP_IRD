@@ -252,6 +252,7 @@
         submit.innerHTML = '<span class="analytics-spinner" aria-hidden="true"></span> Обрабатываем…';
         stop.hidden = false;
         status.textContent = 'Ищем документы и готовим ответ…';
+        renderAnswer('');
         answerBox.hidden = true;
         sourcesBox.hidden = true;
         try {
@@ -267,6 +268,7 @@
             if (data.status === 'processing' && data.request_id) {
                 const statusUrl = new URL(form.dataset.statusUrl, window.location.origin);
                 statusUrl.searchParams.set('request_id', data.request_id);
+                let streamSeq = 0;
                 while (activeController === controller) {
                     await delay(900, activeController.signal);
                     const statusResponse = await fetch(statusUrl, {
@@ -276,6 +278,12 @@
                     });
                     data = await readJson(statusResponse);
                     if (!statusResponse.ok) throw new Error(data.error || 'Не удалось получить результат запроса.');
+                    if (data.stream_seq > streamSeq && data.stream_answer) {
+                        streamSeq = data.stream_seq;
+                        renderAnswer(data.stream_answer);
+                        answerBox.hidden = false;
+                        status.textContent = 'Формируем ответ…';
+                    }
                     if (data.status !== 'processing') break;
                 }
             }
