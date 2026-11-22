@@ -38,13 +38,20 @@ services:
     depends_on:
       django-db:
         condition: service_healthy
+      django-scheduler:
+        condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import Request, urlopen; urlopen(Request('http://127.0.0.1:8000/health/', headers={'X-Forwarded-Proto': 'https'}), timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   django-scheduler:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["python", "manage.py", "run_scheduler"]
-    profiles: ["post-migration"]
+    command: ["sh", "docker/django-scheduler-entrypoint.sh"]
     env_file:
       - .env
     environment:
@@ -55,6 +62,7 @@ services:
       DJANGO_POSTGRES_HOST: django-db
       DJANGO_POSTGRES_PORT: 5432
       LEGACY_SQLITE_SOURCE_PATH: /app/instance/documents.db
+      DJANGO_SKIP_MIGRATIONS: "true"
       DJANGO_ENABLE_EMAIL_NOTIFICATIONS: ${DJANGO_ENABLE_EMAIL_NOTIFICATIONS:-false}
     volumes:
       - ./instance:/app/instance

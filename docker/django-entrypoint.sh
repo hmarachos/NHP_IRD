@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
-python manage.py migrate --noinput
+if [ "${DJANGO_SKIP_MIGRATIONS:-false}" != "true" ]; then
+    python manage.py migrate --noinput
+fi
 
 exec "$@"

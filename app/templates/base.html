@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}СВОД · Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261122-text-normalization-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261122-svod-mobile-spacing-v7') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='svod-brand.css', v='1') }}">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='svod-mark.svg', v='1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='svod-brand.css', v='4') }}">
+    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='svod-favicon-64.png', v='20261122-transparent-icons-v2') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='svod-favicon-32.png', v='20261122-transparent-icons-v2') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='svod-favicon-16.png', v='20261122-transparent-icons-v2') }}">
 </head>
 <body data-access-level="{% if request.user.is_superuser %}edit{% else %}{{ request.user.profile.access_level }}{% endif %}">
     <script>
@@ -22,7 +24,7 @@
     <div class="app-layout">
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <div class="app-sidebar-brand-row">
-                <a class="brand app-sidebar-brand svod-brand" href="{{ url_for('web.index') }}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{{ url_for('static', filename='svod-mark.svg') }}" alt="" width="34" height="34"><span class="svod-brand-copy"><img class="svod-wordmark" src="{{ url_for('static', filename='svod-wordmark.svg') }}" alt="" width="112" height="29"><small class="svod-brand-slogan">ДОКУМЕНТЫ ПОД КОНТРОЛЕМ</small></span></a>
+                <a class="brand app-sidebar-brand svod-brand" href="{{ url_for('web.index') }}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{{ url_for('static', filename='svod-mark-reference.png', v='20261122-transparent-icons-v2') }}" alt="" width="34" height="34"><img class="svod-logo-image" src="{{ url_for('static', filename='svod-brand-reference.png', v='1') }}" alt="СВОД — Документы под контролем" width="180" height="44"></a>
                 <button class="sidebar-collapse-toggle" type="button" data-sidebar-collapse aria-controls="app-sidebar" aria-expanded="true" aria-label="Свернуть меню" title="Свернуть меню"><i class="bi bi-chevron-bar-left" aria-hidden="true"></i></button>
             </div>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
