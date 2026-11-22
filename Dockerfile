@@ -10,7 +10,9 @@ COPY requirements.txt requirements-runtime.txt requirements-django.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p instance/uploads
-RUN python manage.py collectstatic --noinput
+# collectstatic imports Django settings but does not use signing; runtime still
+# requires the real SECRET_KEY from the container environment.
+RUN SECRET_KEY=collectstatic-build-only-not-valid-at-runtime python manage.py collectstatic --noinput
 ENTRYPOINT ["sh", "docker/django-entrypoint.sh"]
 EXPOSE 8000
 CMD ["gunicorn", "--workers", "1", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:8000", "django_site.wsgi:application"]

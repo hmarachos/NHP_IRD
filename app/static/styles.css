@@ -770,24 +770,27 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
     body:not(.sidebar-collapsed) .app-sidebar .sidebar-collapse-toggle{transform:translateX(8px)}
     .sidebar-collapse-toggle:hover{border-color:transparent;background:rgba(255,255,255,.045);color:#c8d0d8}
     .sidebar-collapse-toggle:focus-visible{outline:2px solid #f28c28;outline-offset:2px}
-    .sidebar-collapse-toggle i{display:block;transition:transform .24s cubic-bezier(.2,.75,.25,1),color .2s ease}
-    body:not(.sidebar-collapsed) .sidebar-collapse-toggle:hover i{transform:translateX(-2px)}
+    .sidebar-collapse-toggle i{display:block;transition:transform .28s cubic-bezier(.2,.75,.25,1),color .2s ease}
+    .sidebar-collapse-toggle:hover i{transform:scale(1.12)}
     .app-sidebar .project-nav-item>span,.app-sidebar-brand>span:last-child,.app-sidebar .project-sidebar-download>span{overflow:hidden;max-width:190px;opacity:1;transform:translateX(0);white-space:nowrap;transition:max-width .24s ease,opacity .16s ease,transform .24s ease}
     .app-sidebar .project-nav-caption,.sidebar-author-credit{overflow:hidden;max-height:24px;opacity:1;transition:max-height .22s ease,opacity .16s ease,margin .22s ease,padding .22s ease}
     .app-sidebar .project-nav-group{min-width:0}
     .app-sidebar .project-nav-item{position:relative;transition:background-color .18s ease,color .18s ease,transform .18s ease}
     .app-sidebar .project-nav-item:hover{transform:translateX(2px)}
     .app-sidebar .project-nav-icon{flex:0 0 20px}
-    body.sidebar-collapsed .app-sidebar{padding-right:8px;padding-left:8px}
-    body.sidebar-collapsed .app-sidebar-brand-row{justify-content:space-between;gap:0;padding:4px 0 14px;margin-bottom:12px}
+    body.sidebar-collapsed .app-sidebar{padding-right:8px;padding-left:8px;overflow:visible}
+    body.sidebar-collapsed .app-sidebar-brand-row{position:relative}
+    body.sidebar-collapsed .app-sidebar-brand-row{justify-content:center;gap:0;padding:4px 0 14px;margin-bottom:12px}
     body.sidebar-collapsed .app-sidebar-brand{flex:0 0 30px;justify-content:center;gap:0}
     body.sidebar-collapsed .app-sidebar-brand .brand-mark{width:30px;height:30px;border-radius:9px}
     body.sidebar-collapsed .app-sidebar-brand>span:last-child,
     body.sidebar-collapsed .app-sidebar .project-nav-item>span,
     body.sidebar-collapsed .app-sidebar .project-sidebar-download>span{max-width:0;opacity:0;transform:translateX(-6px);pointer-events:none}
-    body.sidebar-collapsed .sidebar-collapse-toggle{width:24px;height:24px;flex-basis:24px;border-color:transparent;background:transparent;font-size:11px}
-    body.sidebar-collapsed .sidebar-collapse-toggle i{transform:rotate(180deg)}
-    body.sidebar-collapsed .sidebar-collapse-toggle:hover i{transform:translateX(2px) rotate(180deg)}
+    body.sidebar-collapsed .sidebar-collapse-toggle{position:absolute;top:12px;right:-14px;z-index:5;display:grid;width:28px;height:38px;place-items:center;padding:0;border:1px solid #3a4554;border-left:0;border-radius:0 9px 9px 0;background:#151d2a;color:#c9d2df;font-size:13px;opacity:0;pointer-events:none;transform:translateX(-8px);transition:opacity .16s ease,transform .2s cubic-bezier(.2,.75,.25,1),color .16s ease}
+    body.sidebar-collapsed .app-sidebar:hover .sidebar-collapse-toggle,body.sidebar-collapsed .app-sidebar:focus-within .sidebar-collapse-toggle{opacity:1;pointer-events:auto;transform:translateX(14px)}
+    body.sidebar-collapsed .sidebar-collapse-toggle:hover{background:#151d2a;color:#fff}
+    body.sidebar-collapsed .sidebar-collapse-toggle i{transform:none}
+    body.sidebar-collapsed .sidebar-collapse-toggle:hover i{transform:scale(1.12)}
     body.sidebar-collapsed .app-sidebar .project-side-nav{gap:12px}
     body.sidebar-collapsed .app-sidebar .project-nav-group{gap:5px}
     body.sidebar-collapsed .app-sidebar .project-nav-caption{max-height:0;padding:0;opacity:0}
@@ -955,7 +958,7 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
 .app-sidebar .project-sidebar-download{border-color:#3a4554;color:#ff9a38}
 .app-sidebar .project-sidebar-download:hover{color:#ffc176}
 
-/* Mobile navigation proportions based on the supplied phone reference. */
+/* Keep the mobile drawer compact and consistent with desktop navigation. */
 @media(max-width:760px){
     .app-sidebar{
         width:min(320px,78vw);
@@ -968,6 +971,7 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
         margin-bottom:14px;
         border-bottom:1px solid #3a4554;
     }
+    .app-sidebar .app-sidebar-brand{border-bottom:0}
     .app-sidebar .svod-brand{
         min-height:54px;
         max-width:calc(100% - 38px);
@@ -983,40 +987,39 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
         min-height:0;
         flex:1 1 auto;
         flex-direction:column;
-        gap:22px;
-        padding:18px 0 0;
-        overflow:hidden;
+        gap:14px;
+        padding:14px 0 0;
+        overflow:visible;
     }
     .app-sidebar .project-nav-group{
-        display:flex;
-        flex-direction:column;
+        display:grid;
         gap:4px;
-        padding:12px 9px;
+        padding:10px;
         border:1px solid #303b4b;
-        border-radius:20px;
+        border-radius:16px;
         background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
     }
-    .app-sidebar .project-nav-group:has(.project-nav-caption){padding-top:14px}
-    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2){flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#566274 transparent}
-    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2) .project-nav-caption{margin-bottom:10px}
-    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2) .project-nav-item{min-height:54px;font-size:14px}
+    .app-sidebar .project-nav-group:has(.project-nav-caption){padding-top:10px}
+    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2){flex:0 0 auto;min-height:0;overflow:visible}
+    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2) .project-nav-caption{margin-bottom:7px}
+    .app-sidebar .project-nav-group:not(.project-nav-account):nth-child(2) .project-nav-item{min-height:40px;font-size:13px}
     .app-sidebar .project-nav-caption{
         padding:0 9px;
-        margin:0 0 54px;
+        margin:0 0 7px;
         color:#d1d9e4;
-        font-size:10px;
+        font-size:9px;
         letter-spacing:.15em;
     }
     .app-sidebar .project-nav-item{
         width:100%;
-        min-height:88px;
+        min-height:40px;
         flex:0 0 auto;
-        gap:12px;
-        padding:14px 12px;
-        border-radius:16px;
-        font-size:15px;
+        gap:10px;
+        padding:8px 10px;
+        border-radius:9px;
+        font-size:13px;
     }
-    .app-sidebar .project-nav-icon{width:22px;font-size:19px}
+    .app-sidebar .project-nav-icon{width:20px;font-size:17px}
     .app-sidebar .project-nav-item.is-active::before,
     .app-sidebar .project-nav-item[aria-current="page"]::before,
     .app-sidebar .project-nav-item[aria-selected="true"]::before{
@@ -1025,17 +1028,17 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
         width:4px;
     }
     .app-sidebar .project-nav-account{
-        gap:9px;
+        gap:4px;
         margin-top:auto;
-        padding:12px 9px;
+        padding:10px;
     }
-    .app-sidebar .project-nav-account .project-nav-item{min-height:54px}
+    .app-sidebar .project-nav-account .project-nav-item{min-height:40px}
     .app-sidebar .sidebar-author-credit{
-        margin-top:18px;
-        padding:12px 0 0;
+        margin-top:8px;
+        padding:8px 0 0;
         border-top:1px solid #3a4554;
         color:#8996a9;
-        font-size:11px;
+        font-size:9px;
         text-align:center;
     }
 }
