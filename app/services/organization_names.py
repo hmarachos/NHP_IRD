@@ -24,3 +24,36 @@ def normalize_organization_forms(value: str) -> str:
     for pattern, abbreviation in _LEGAL_FORMS:
         normalized = re.sub(rf"\b{pattern}\b", abbreviation, normalized, flags=re.IGNORECASE)
     return normalized
+
+
+def normalize_user_text(value: str | None) -> str | None:
+    """Apply the shared organization-name and Russian-quote input conventions."""
+    if value is None:
+        return None
+    normalized = re.sub(
+        r"(?:РУП|республиканск\w*\s+(?:дочерн\w*\s+)?унитарн\w*\s+предприяти\w*)"
+        r"\s+по\s+обеспечению\s+нефтепродуктами",
+        "РУП",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+    result: list[str] = []
+    quote_depth = 0
+    for character in normalized:
+        if character == "«":
+            quote_depth += 1
+            result.append(character)
+        elif character == "»":
+            quote_depth = max(0, quote_depth - 1)
+            result.append(character)
+        elif character == '"':
+            if quote_depth:
+                result.append("»")
+                quote_depth -= 1
+            else:
+                result.append("«")
+                quote_depth += 1
+        else:
+            result.append(character)
+    return "".join(result)

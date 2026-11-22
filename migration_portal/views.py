@@ -335,12 +335,11 @@ def upload_checklist_document(request, object_id, item_id):
                 existing.official_title = ""
                 existing.issuer = manual_assignment.issuer
                 existing.document_number = ""
-                existing.issue_date = ""
                 existing.valid_until = ""
-                existing.no_expiration = False
+                existing.no_expiration = True
                 existing.note = ""
                 existing.save(update_fields=[
-                    "working_title", "official_title", "issuer", "document_number", "issue_date",
+                    "working_title", "official_title", "issuer", "document_number",
                     "valid_until", "no_expiration", "note",
                 ])
             if item:
@@ -463,6 +462,8 @@ def _checklist_analysis_fields(parsed, fallback_title):
 
     raw_text = parsed.raw_text or ""
     first_page = raw_text.split("--- page 2 ---", 1)[0]
+    from app.services.checklist_document_fields import PROJECT_ASSIGNMENT_TITLE
+    project_assignment = normalize(fallback_title) == normalize(PROJECT_ASSIGNMENT_TITLE)
     eroks_card = parsed.working_title == "Копия регистрационной карточки в ЕРОКС"
     beltelecom = RegexFieldExtractor._is_beltelecom_technical_conditions(raw_text)
     minskenergo = RegexFieldExtractor._is_minskenergo_electrical_conditions(raw_text)
@@ -470,7 +471,7 @@ def _checklist_analysis_fields(parsed, fallback_title):
     number_match = None
     if not (eroks_card or beltelecom or minskenergo):
         number_match = re.search(r"(?:№|N\s*|номер\s*)\s*([А-ЯЁA-Z0-9][А-ЯЁA-Z0-9./-]{1,30})", first_page, re.I)
-    document_number = "" if eroks_card else (
+    document_number = "" if (eroks_card or project_assignment) else (
         parsed.document_number if (beltelecom or minskenergo)
         else (header_number or parsed.document_number or (number_match.group(1) if number_match else ""))
     )
@@ -480,8 +481,8 @@ def _checklist_analysis_fields(parsed, fallback_title):
         "issuer": parsed.issuer or "",
         "document_number": document_number,
         "issue_date": iso_date(parsed.issue_date),
-        "valid_until": iso_date(parsed.valid_until),
-        "no_expiration": parsed.no_expiration,
+        "valid_until": "" if project_assignment else iso_date(parsed.valid_until),
+        "no_expiration": True if project_assignment else parsed.no_expiration,
     }
 
 
@@ -527,6 +528,15 @@ def update_document_fields(request, document_id):
     document.issue_date = iso_date(request.POST.get("issue_date", "").strip())
     document.valid_until = "" if no_expiration else iso_date(request.POST.get("valid_until", "").strip())
     document.no_expiration = no_expiration
+    from app.services.checklist_document_fields import PROJECT_ASSIGNMENT_TITLE
+    project_assignment = ProjectChecklistItem.objects.filter(project_id=document.project_id).filter(
+        Q(document_id=document.id) | Q(checklistdocument__document_id=document.id),
+        title__iexact=PROJECT_ASSIGNMENT_TITLE,
+    ).exists()
+    if project_assignment:
+        document.document_number = ""
+        document.valid_until = ""
+        document.no_expiration = True
     document.save(update_fields=["working_title", "official_title", "issuer", "document_number", "issue_date", "valid_until", "no_expiration"])
     if request.headers.get("X-Add-To-Checklist") == "1":
         title = document.working_title or document.official_title or document.original_filename
@@ -1408,8 +1418,38 @@ def upload_correspondence(request, object_id):
         extracted_values = _extract_correspondence_fields(raw_text)
         values.update(extracted_values)
         for key in ("number", "letter_date"):
-            if filename_values[key]:
+            if filename_values[key] and not values[key]:
                 values[key] = filename_values[key]
+        minskenergo_letter = bool(re.search(
+            r"минск(?:ие|их|ими)?\s+электрическ\w+\s+сет|минскэнерго",
+            raw_text,
+            re.IGNORECASE,
+        )) and record_type == "approval"
+        if minskenergo_letter:
+            # These incoming letters show the author's handwritten outgoing
+            # number/date above a printed "На № ... от ..." reference. OCR and
+            # generic extraction often mistake that reference for this letter's
+            # own date, so use a dedicated visual read of the handwritten line.
+            values["number"] = ""
+            values["letter_date"] = ""
+            from app.services.ai_extractor import AiFieldExtractor
+            from app.services.field_extractor import RegexFieldExtractor
+            handwritten = AiFieldExtractor(RegexFieldExtractor()).extract_minskenergo_correspondence_header(
+                extraction_path, raw_text,
+            )
+            handwritten_number = re.sub(r"^№\s*|\s+", "", handwritten.get("number", ""), flags=re.IGNORECASE)
+            if re.fullmatch(r"[A-ZА-ЯЁ0-9]+(?:[./-][A-ZА-ЯЁ0-9]+){0,5}", handwritten_number, re.IGNORECASE):
+                values["number"] = handwritten_number
+            handwritten_date = _normalize_letter_date(handwritten.get("letter_date", ""))
+            if handwritten_date:
+                values["letter_date"] = handwritten_date
+            if not values["number"] or not values["letter_date"]:
+                error = "Не удалось уверенно прочитать рукописные номер и дату письма. Проверьте реквизиты вручную."
+        # OCR/AI occasionally appends the letter date (and its timestamp) to
+        # the number. Apply this after filename fallbacks too, so every source
+        # follows the same rule before the draft is shown in the review modal.
+        from app.services.correspondence_extractor import _strip_appended_letter_date
+        values["number"] = _strip_appended_letter_date(values["number"], values["letter_date"])
         if not raw_text.strip():
             status, error = "error", "Не удалось распознать текст письма. Заполните реквизиты вручную."
     except Exception as exc:
@@ -1474,8 +1514,11 @@ def update_correspondence(request, object_id, letter_id):
     direction = request.POST.get("direction", letter.direction)
     if direction in {"incoming", "outgoing"}:
         letter.direction = direction
-    letter.number = request.POST.get("number", "").strip()[:100]
     letter.letter_date = _normalize_letter_date(request.POST.get("letter_date", ""))
+    from app.services.correspondence_extractor import _strip_appended_letter_date
+    letter.number = _strip_appended_letter_date(
+        request.POST.get("number", "").strip()[:100], letter.letter_date
+    )
     from app.services.organization_names import normalize_organization_forms
     letter.sender = normalize_organization_forms(request.POST.get("sender", "").strip())[:500]
     letter.recipient = normalize_organization_forms(request.POST.get("recipient", "").strip())[:500]
@@ -1872,12 +1915,14 @@ def create_object(request):
     if chief_engineer is None:
         messages.error(request, "Выберите активного пользователя с признаком «Главный инженер проекта».")
         return redirect("web_index")
+    self_assigned_gip_project = chief_engineer.pk == request.user.pk
     if not request.user.is_superuser:
         allowed_customer = visible_customers(request.user).filter(name__iexact=customer).first()
-        if allowed_customer is None:
-            messages.error(request, "Суперадминистратор должен назначить вам заказчика для новых проектов.")
+        if allowed_customer is not None:
+            customer = allowed_customer.name
+        elif not self_assigned_gip_project:
+            messages.error(request, "Выберите заказчика, назначенного вашей учётной записи.")
             return redirect("web_index")
-        customer = allowed_customer.name
     try:
         template_id = int(request.POST.get("template_id", "")) or None
     except (TypeError, ValueError):
@@ -1909,6 +1954,8 @@ def create_object(request):
                 )
                 for item in items
             ])
+    if self_assigned_gip_project and not request.user.is_superuser:
+        return redirect("web_index")
     return redirect("web_object_workspace", object_id=project.id)
 
 

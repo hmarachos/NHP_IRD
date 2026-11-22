@@ -45,6 +45,18 @@ def apply_checklist_document_title(parsed, item_title):
             parsed.working_title = subject
             parsed.official_title = subject
             return
+    # Long issuing-agency names often appear in the page header and get
+    # appended by classification to the document's own title. When the scan
+    # has a standalone title line, keep that short title in the editable name
+    # field and leave the agency in issuer.
+    first_page = (parsed.raw_text or "").split("--- page 2 ---", 1)[0]
+    standalone_title = re.search(
+        r"(?im)^\s*(ТЕХНИЧЕСКИЕ\s+ТРЕБОВАНИЯ)\s*[.:]?\s*$",
+        first_page,
+    )
+    if standalone_title:
+        parsed.working_title = "Технические требования"
+        return
     recognized_title = (parsed.official_title or "").strip()
     working_title = (parsed.working_title or "").strip()
     if normalize(recognized_title) == normalize("Неопределенный документ"):

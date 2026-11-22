@@ -19,7 +19,7 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
     first_page = re.split(r"---\s*page\s+2\s*---", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
     header_match = re.search(
         r"---\s*letterhead\s*---\s*(.*?)\s*---\s*document body\s*---",
-        cleaned,
+        first_page,
         re.IGNORECASE | re.DOTALL,
     )
     header_fields = _extract_correspondence_header_requisites(header_match.group(1) if header_match else "")
@@ -38,16 +38,18 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
                 model=settings.OPENAI_MODEL,
                 instructions=(
                     "Извлеки реквизиты делового письма на русском языке. Верни только данные самого письма: "
-                    "номер, дату письма в ISO YYYY-MM-DD, наименование отправителя и получателя с сокращёнными "
+                    "номер письма (только символы номера после знака №, без даты и времени), дату письма "
+                    "в ISO YYYY-MM-DD, наименование отправителя и получателя с сокращёнными "
                     "организационно-правовыми формами (например: унитарное предприятие — УП, "
                     "республиканское унитарное предприятие — РУП, общество с ограниченной ответственностью — ООО), "
                     "тему и краткое содержание в 1-3 предложениях. Учитывай шапку, исходящий номер и дату, "
-                    "в первую очередь проверь верхний колонтитул первой страницы: синюю строку с исходящим номером и датой. "
+                    "номер и дату ищи только на первой странице: сначала в синей строке исходящего номера и даты в шапке. "
+                    "Не используй номера и даты со следующих страниц, даже если они выглядят более полными. "
                     "Номер и дату бери из одной строки, если она есть. Учитывай адресата и подпись/организацию автора. "
                     "Не выдумывай отсутствующие значения; тогда верни пустую строку. "
                     "Срок действия документа не извлекай."
                 ),
-                input=cleaned[:24000],
+                input=first_page[:24000],
                 text={"format": {"type": "json_schema", "name": "correspondence_fields", "schema": schema, "strict": True}},
             )
             extracted = json.loads(response.output_text)
@@ -66,7 +68,9 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
 
     date_pattern = r"(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:19|20)\d{2}"
     if not values["letter_date"]:
-        match = re.search(rf"(?:от\s*)?({date_pattern})", first_page[:5000], re.IGNORECASE)
+        match = re.search(rf"\bот\s*({date_pattern})", first_page[:5000], re.IGNORECASE)
+        if not match:
+            match = re.search(rf"({date_pattern})", first_page[:5000], re.IGNORECASE)
         if match:
             values["letter_date"] = _normalize_letter_date(match.group(1))
     if not values["number"]:
@@ -113,6 +117,7 @@ def _extract_correspondence_fields(text: str) -> dict[str, str]:
                 break
         values["summary"] = body[:600].strip()
     values["letter_date"] = _normalize_letter_date(values["letter_date"])
+    values["number"] = _strip_appended_letter_date(values["number"], values["letter_date"])
     for key in ("sender", "recipient"):
         values[key] = normalize_organization_forms(values[key])
     return values
@@ -153,30 +158,33 @@ def _extract_correspondence_header_requisites(header: str) -> dict[str, str]:
     result = {"number": "", "letter_date": ""}
     if not header.strip():
         return result
-    date_pattern = re.compile(
-        r"(?<!\d)([0-3]?\d)\s*[./-]\s*([01]?\d)\s*[./-]\s*((?:19|20)\d{2})(?!\d)"
-    )
+    date_value_pattern = r"((?:[0-3]?\d)\s*[./-]\s*(?:[01]?\d)\s*[./-]\s*(?:19|20)\d{2})"
+    date_pattern = re.compile(rf"(?<!\d){date_value_pattern}(?!\d)")
+    explicit_date_pattern = re.compile(rf"\bот\s*{date_value_pattern}", re.IGNORECASE)
     number_pattern = re.compile(
         r"(?:исх(?:одящий|\.)?\s*)?(?:№|N(?:o|º|°)?|#)\s*([A-ZА-ЯЁ0-9]+(?:\s*[-./\\]\s*[A-ZА-ЯЁ0-9]+){0,6})",
         re.IGNORECASE,
     )
     lines = [re.sub(r"\s+", " ", line).strip() for line in header.splitlines() if line.strip()]
     for line in lines:
-        date_match = date_pattern.search(line)
         number_match = number_pattern.search(line)
-        if date_match and number_match:
+        explicit_date_match = explicit_date_pattern.search(line)
+        if explicit_date_match and number_match:
             result["letter_date"] = _normalize_letter_date(
-                f"{date_match.group(1)}.{date_match.group(2)}.{date_match.group(3)}"
+                explicit_date_match.group(1)
             )
             result["number"] = re.sub(r"\s+", "", number_match.group(1)).strip(" .,:;-")
             return result
     flattened = " ".join(lines)
-    date_match = date_pattern.search(flattened)
-    if date_match:
-        result["letter_date"] = _normalize_letter_date(
-            f"{date_match.group(1)}.{date_match.group(2)}.{date_match.group(3)}"
-        )
+    explicit_date_match = explicit_date_pattern.search(flattened)
     number_match = number_pattern.search(flattened)
+    date_match = explicit_date_match or next(
+        (candidate for candidate in date_pattern.finditer(flattened)
+         if not (number_match and candidate.start() < number_match.end() and candidate.end() > number_match.start())),
+        None,
+    )
+    if date_match:
+        result["letter_date"] = _normalize_letter_date(date_match.group(1))
     if number_match:
         result["number"] = re.sub(r"\s+", "", number_match.group(1)).strip(" .,:;-")
     return result
@@ -206,3 +214,21 @@ def _normalize_letter_date(value: str) -> str:
         return date(int(year), int(month), int(day)).isoformat()
     except ValueError:
         return ""
+
+
+def _strip_appended_letter_date(number: str, letter_date: str) -> str:
+    """Remove a date/time suffix accidentally joined to the outgoing number."""
+    number = (number or "").strip()
+    if not number:
+        return number
+
+    match = re.search(
+        r"(?:\s*от\s*|[/\\]\s*|\s+)"
+        r"(\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}|(?:19|20)\d{2}-\d{2}-\d{2})"
+        r"(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\s*$",
+        number,
+        re.IGNORECASE,
+    )
+    if not match:
+        return number
+    return number[:match.start()].rstrip(" /\\.,;:-")

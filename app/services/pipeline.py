@@ -207,7 +207,13 @@ class DocumentProcessingPipeline:
             parsed.working_title = self.classifier.classify(text, parsed.official_title)
         if self._should_use_classified_title(parsed.official_title, parsed.working_title):
             parsed.official_title = parsed.working_title
-        if self._is_untitled_outgoing_letter(text, parsed):
+        letter_subject = self._extract_standalone_letter_subject(text)
+        if letter_subject:
+            letter_title = f"Письмо «{letter_subject}»"
+            parsed.working_title = letter_title
+            if not self._title_is_explicit(parsed.official_title, text):
+                parsed.official_title = letter_title
+        elif self._is_untitled_outgoing_letter(text, parsed):
             letter_title = self._outgoing_letter_title(parsed.issuer)
             parsed.working_title = letter_title
             if not self._title_is_explicit(parsed.official_title, text):
@@ -252,6 +258,37 @@ class DocumentProcessingPipeline:
         return bool(has_letter_action and not DocumentProcessingPipeline._title_is_explicit(parsed.working_title, first_page))
 
     @staticmethod
+    def _extract_standalone_letter_subject(text: str) -> str:
+        """Read a short subject heading from the first page of a letter."""
+        first_page = text.split("--- page 2 ---", 1)[0]
+        if "--- page 1 ---" in first_page:
+            first_page = first_page.split("--- page 1 ---", 1)[1]
+        if not re.search(
+            r"\b(?:рассмотрев\s+(?:ваше\s+)?письмо|сообщает|сообщаем|просит|просим|"
+            r"информирует|информируем|направляет|направляем|уведомляет|уведомляем)\b",
+            first_page,
+            re.IGNORECASE,
+        ):
+            return ""
+
+        lines = [
+            re.sub(r"\s+", " ", line).strip(" \t-*•:—–")
+            for line in first_page.splitlines()[:70]
+        ]
+        for index, line in enumerate(lines):
+            if not re.match(r"^(?:о|об|по вопросу|касательно)\s+\S", line, re.IGNORECASE):
+                continue
+            parts = [line]
+            for continuation in lines[index + 1:index + 3]:
+                if not continuation or not re.match(r"^[а-яё]", continuation):
+                    break
+                parts.append(continuation)
+            subject = re.sub(r"\s+", " ", " ".join(parts)).strip(" .;:—–-«»\"")
+            if 4 <= len(subject) <= 180:
+                return subject
+        return ""
+
+    @staticmethod
     def _title_is_explicit(title: str, text: str) -> bool:
         """Accept a title only when it appears as a short, standalone heading."""
         normalized_title = DocumentClassifier._normalize(title or "")
@@ -263,7 +300,7 @@ class DocumentProcessingPipeline:
             normalized_line = DocumentClassifier._normalize(cleaned)
             if not normalized_line or len(cleaned) > 180:
                 continue
-            if normalized_title in normalized_line and not re.search(r"[.!?;]", cleaned):
+            if normalized_title == normalized_line and not re.search(r"[.!?;]", cleaned):
                 return True
         return False
 

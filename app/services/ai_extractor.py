@@ -340,6 +340,54 @@ class AiFieldExtractor:
             logger.exception("Minskenergo header extraction failed")
             return {}
 
+    def extract_minskenergo_correspondence_header(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
+        """Read the handwritten number/date above the printed incoming-letter reference."""
+        if not _config("USE_AI") or not _config("OPENAI_API_KEY"):
+            return {}
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(str(pdf_path))
+            if not len(pdf):
+                return {}
+            page = pdf[0].render(scale=9).to_pil().convert("RGB")
+            width, height = page.size
+            # On Minskenergo letters, the handwritten outgoing requisites are
+            # on the left just below the horizontal rule. The printed "На № …
+            # от …" line immediately underneath is the incoming reference.
+            crop = page.crop((int(width * .13), int(height * .285), int(width * .58), int(height * .35)))
+            crop.thumbnail((3200, 900))
+            buffer = BytesIO()
+            crop.save(buffer, format="JPEG", quality=96)
+            image_url = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+            schema = {
+                "type": "object", "additionalProperties": False,
+                "properties": {"number": {"type": "string"}, "letter_date": {"type": "string"}},
+                "required": ["number", "letter_date"],
+            }
+            response = ai_client(api_key=_config("OPENAI_API_KEY")).responses.create(
+                model=_config("OPENAI_MODEL"),
+                instructions=(
+                    "Распознай реквизиты входящего письма филиала «Минские электрические сети». "
+                    "На изображении слева под горизонтальной чертой есть рукописная пара: дата и номер "
+                    "исходящего письма отправителя (например, 17.09.2026 № 08/6140). Верни number="
+                    "08/6140 и letter_date=2026-09-17. Игнорируй печатную строку ниже, начинающуюся "
+                    "с «На №»: это реквизиты другого, входящего письма, и его дата не является датой "
+                    "данного письма. Не извлекай другие даты из текста. Если рукописное значение "
+                    "нечитаемо, оставь его пустым. OCR для контекста: " + ocr_text[:5000]
+                ),
+                input=[{"role": "user", "content": [
+                    {"type": "input_text", "text": "Прочитай только рукописные номер и дату над печатной строкой «На №»."},
+                    {"type": "input_image", "image_url": image_url, "detail": "high"},
+                ]}],
+                text={"format": {"type": "json_schema", "name": "minskenergo_letter_header", "schema": schema, "strict": True}},
+            )
+            data = json.loads(response.output_text)
+            return {key: str(data.get(key, "")).strip() for key in ("number", "letter_date")}
+        except Exception:
+            logger.exception("Minskenergo correspondence header extraction failed")
+            return {}
+
     def extract_document_header(self, pdf_path: Path, ocr_text: str) -> dict[str, str]:
         """Read issuer and issuance pair from the first-page letterhead/header.
 

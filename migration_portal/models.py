@@ -3,12 +3,26 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.db.models.functions import Cast, Now
 import uuid
+from app.services.organization_names import normalize_user_text
 
 
 TIMESTAMP_TEXT_DEFAULT = Cast(Now(), output_field=models.CharField(max_length=40))
 
 
-class ChecklistTemplate(models.Model):
+class NormalizedUserTextMixin:
+    normalized_text_fields: tuple[str, ...] = ()
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        fields = self.normalized_text_fields if update_fields is None else set(self.normalized_text_fields) & set(update_fields)
+        for field_name in fields:
+            setattr(self, field_name, normalize_user_text(getattr(self, field_name)))
+        return super().save(*args, **kwargs)
+
+
+class ChecklistTemplate(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("name", "description")
+
     id = models.AutoField(primary_key=True)
     name = models.TextField(unique=True)
     description = models.TextField(default="", db_default="")
@@ -19,7 +33,9 @@ class ChecklistTemplate(models.Model):
         db_table = "checklist_templates"
 
 
-class Project(models.Model):
+class Project(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("contract_number", "stage", "name", "customer")
+
     id = models.AutoField(primary_key=True)
     contract_number = models.TextField()
     contract_date = models.CharField(max_length=40, default="", db_default="")
@@ -39,7 +55,11 @@ class Project(models.Model):
         indexes = [models.Index(fields=["created_at", "id"], name="project_created_idx")]
 
 
-class Document(models.Model):
+class Document(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = (
+        "contract_number", "object_name", "working_title", "official_title", "issuer", "document_number", "note",
+    )
+
     id = models.AutoField(primary_key=True)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.SET_NULL, db_column="object_id")
     contract_number = models.TextField()
@@ -77,7 +97,9 @@ class Document(models.Model):
         ]
 
 
-class Correspondence(models.Model):
+class Correspondence(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("number", "sender", "recipient", "subject", "summary")
+
     id = models.AutoField(primary_key=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="object_id")
     direction = models.TextField()
@@ -108,7 +130,9 @@ class Correspondence(models.Model):
         indexes = [models.Index(fields=["project", "letter_date", "id"], name="correspond_project_date_idx")]
 
 
-class ProjectNotebookEntry(models.Model):
+class ProjectNotebookEntry(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("title",)
+
     id = models.AutoField(primary_key=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="project_id")
     title = models.TextField(default="", db_default="")
@@ -122,7 +146,9 @@ class ProjectNotebookEntry(models.Model):
         indexes = [models.Index(fields=["project", "updated_at"], name="notebook_project_date_idx")]
 
 
-class ChecklistTemplateItem(models.Model):
+class ChecklistTemplateItem(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("title", "description")
+
     id = models.AutoField(primary_key=True)
     template = models.ForeignKey(ChecklistTemplate, on_delete=models.CASCADE, db_column="template_id")
     title = models.TextField()
@@ -135,7 +161,9 @@ class ChecklistTemplateItem(models.Model):
         ordering = ["sort_order", "id"]
 
 
-class ProjectChecklistItem(models.Model):
+class ProjectChecklistItem(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("title", "description", "note")
+
     id = models.AutoField(primary_key=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, db_column="object_id")
     source_template_item = models.ForeignKey(ChecklistTemplateItem, null=True, blank=True, on_delete=models.SET_NULL, db_column="source_template_item_id")
@@ -263,7 +291,9 @@ class LegacyImportState(models.Model):
         db_table = "migration_import_state"
 
 
-class Organization(models.Model):
+class Organization(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("name",)
+
     name = models.CharField(max_length=240, unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -275,7 +305,9 @@ class Organization(models.Model):
         return self.name
 
 
-class Customer(models.Model):
+class Customer(NormalizedUserTextMixin, models.Model):
+    normalized_text_fields = ("name",)
+
     name = models.CharField(max_length=240, unique=True)
     is_active = models.BooleanField(default=True)
 

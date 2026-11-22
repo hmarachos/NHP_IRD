@@ -18,6 +18,9 @@ def project_assignment_fields(item_title: str, customer: str = "", raw_text: str
     return ParsedDocument(
         working_title=PROJECT_ASSIGNMENT_TITLE,
         issuer=(customer or "").strip()[:300],
+        document_number="",
+        valid_until="",
+        no_expiration=True,
         raw_text=raw_text,
     )
 
