@@ -4,16 +4,16 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#252a30"><title>{% block title %}Учётная запись · СВОД{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'styles.css' %}?v=20261119-directory-live-search-v1">
+  <link rel="stylesheet" href="{% static 'styles.css' %}?v=20261122-login-brand-v2">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  <link rel="stylesheet" href="{% static 'svod-brand.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'svod-brand.css' %}?v=20261122-login-brand-v2">
   <link rel="icon" type="image/svg+xml" href="{% static 'svod-mark.svg' %}?v=1">
 </head>
 <body class="account-page">
 <div class="account-app">
-  <aside class="project-sidebar app-sidebar account-sidebar"><a class="brand app-sidebar-brand svod-brand" href="{% url 'web_index' %}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{% static 'svod-mark.svg' %}" alt="" width="34" height="34"><span class="svod-brand-copy"><img class="svod-wordmark" src="{% static 'svod-wordmark.svg' %}" alt="" width="112" height="29"><small class="svod-brand-slogan">ДОКУМЕНТЫ ПОД КОНТРОЛЕМ</small></span></a>
+  <aside class="project-sidebar app-sidebar account-sidebar"><a class="brand app-sidebar-brand svod-brand" href="{% url 'web_index' %}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{% static 'svod-mark-reference.png' %}" alt="" width="34" height="34"><img class="svod-logo-image" src="{% static 'svod-brand-reference.png' %}" alt="СВОД — Документы под контролем" width="180" height="44"></a>
     {% if user.is_authenticated %}<nav class="project-side-nav" aria-label="Разделы приложения"><div class="project-nav-group"><a class="project-nav-item" href="{% url 'web_index' %}"><i class="project-nav-icon bi bi-grid-1x2" aria-hidden="true"></i><span>Проекты</span></a><a class="project-nav-item" href="{% url 'web_manage_templates' %}"><i class="project-nav-icon bi bi-card-list" aria-hidden="true"></i><span>Шаблоны</span></a></div><div class="project-nav-group project-nav-account">{% if user.is_superuser %}<a class="project-nav-item" href="{% url 'account_admin' %}"><i class="project-nav-icon bi bi-people" aria-hidden="true"></i><span>Управление доступом</span></a>{% endif %}<a class="project-nav-item" href="{% url 'account_profile' %}"><i class="project-nav-icon bi bi-person-circle" aria-hidden="true"></i><span>{{ user.get_full_name|default:user.email }}</span></a></div></nav>{% endif %}
-    {% if user.is_authenticated %}<small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Made by A.Kazantsev</a></small>{% endif %}
+    <small class="sidebar-author-credit"><a href="mailto:kazantsevalexander@gmail.com">Developed by A. Kazantsau</a></small>
   </aside>
   <main class="account-main">
     {% if messages %}{% for message in messages %}<div class="account-message {{ message.tags }}">{{ message }}</div>{% endfor %}{% endif %}

@@ -766,11 +766,12 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
     .app-sidebar{width:100%;min-width:0;overflow-x:clip;transition:background-color .2s ease}
     .app-sidebar-brand-row{display:flex;min-width:0;align-items:center;gap:8px;padding:4px 7px 18px;margin-bottom:16px;border-bottom:1px solid #3a4149}
     .app-sidebar-brand{min-width:0;flex:1;padding:0;margin:0;border:0}
-    .sidebar-collapse-toggle{display:grid;width:32px;height:32px;flex:0 0 32px;place-items:center;padding:0;border:1px solid transparent;border-radius:9px;background:transparent;color:#aeb7bf;font-size:14px;transition:color .18s ease,background-color .18s ease,border-color .18s ease,transform .28s cubic-bezier(.16,1,.3,1)}
+    .sidebar-collapse-toggle{display:grid;width:32px;height:32px;flex:0 0 32px;place-items:center;padding:0;border:1px solid transparent;border-radius:9px;background:transparent;color:#82909c;font-size:14px;transition:color .2s ease,background-color .2s ease,border-color .2s ease,transform .28s cubic-bezier(.16,1,.3,1)}
     body:not(.sidebar-collapsed) .app-sidebar .sidebar-collapse-toggle{transform:translateX(8px)}
-    .sidebar-collapse-toggle:hover{border-color:#414951;background:#343b42;color:#fff}
+    .sidebar-collapse-toggle:hover{border-color:transparent;background:rgba(255,255,255,.045);color:#c8d0d8}
     .sidebar-collapse-toggle:focus-visible{outline:2px solid #f28c28;outline-offset:2px}
-    .sidebar-collapse-toggle i{transition:transform .28s cubic-bezier(.16,1,.3,1)}
+    .sidebar-collapse-toggle i{display:block;transition:transform .24s cubic-bezier(.2,.75,.25,1),color .2s ease}
+    body:not(.sidebar-collapsed) .sidebar-collapse-toggle:hover i{transform:translateX(-2px)}
     .app-sidebar .project-nav-item>span,.app-sidebar-brand>span:last-child,.app-sidebar .project-sidebar-download>span{overflow:hidden;max-width:190px;opacity:1;transform:translateX(0);white-space:nowrap;transition:max-width .24s ease,opacity .16s ease,transform .24s ease}
     .app-sidebar .project-nav-caption,.sidebar-author-credit{overflow:hidden;max-height:24px;opacity:1;transition:max-height .22s ease,opacity .16s ease,margin .22s ease,padding .22s ease}
     .app-sidebar .project-nav-group{min-width:0}
@@ -784,8 +785,9 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
     body.sidebar-collapsed .app-sidebar-brand>span:last-child,
     body.sidebar-collapsed .app-sidebar .project-nav-item>span,
     body.sidebar-collapsed .app-sidebar .project-sidebar-download>span{max-width:0;opacity:0;transform:translateX(-6px);pointer-events:none}
-    body.sidebar-collapsed .sidebar-collapse-toggle{width:24px;height:24px;flex-basis:24px;border-color:#414951;background:#30363d;font-size:11px}
+    body.sidebar-collapsed .sidebar-collapse-toggle{width:24px;height:24px;flex-basis:24px;border-color:transparent;background:transparent;font-size:11px}
     body.sidebar-collapsed .sidebar-collapse-toggle i{transform:rotate(180deg)}
+    body.sidebar-collapsed .sidebar-collapse-toggle:hover i{transform:translateX(2px) rotate(180deg)}
     body.sidebar-collapsed .app-sidebar .project-side-nav{gap:12px}
     body.sidebar-collapsed .app-sidebar .project-nav-group{gap:5px}
     body.sidebar-collapsed .app-sidebar .project-nav-caption{max-height:0;padding:0;opacity:0}
@@ -1036,4 +1038,30 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
         font-size:11px;
         text-align:center;
     }
+}
+
+/* Keep the sign-in sidebar aligned with the project sidebar brand and footer. */
+.account-sidebar .app-sidebar-brand.svod-brand{
+    flex:0 0 auto;
+    width:100%;
+    min-height:54px;
+    margin:0 0 16px;
+    padding:0 7px 18px;
+    border:0;
+    border-bottom:1px solid #3a4554;
+    border-radius:0;
+    background:transparent;
+}
+.account-sidebar .svod-brand .svod-logo-image{
+    display:block;
+    width:100%;
+    max-width:190px;
+    max-height:54px;
+    object-fit:contain;
+    object-position:left center;
+}
+.account-sidebar .sidebar-author-credit{margin-top:auto}
+@media(max-width:760px){
+    .account-sidebar .app-sidebar-brand.svod-brand{width:100%;max-width:none;margin-bottom:12px}
+    .account-sidebar .sidebar-author-credit{margin-top:28px}
 }
