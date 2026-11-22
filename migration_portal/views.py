@@ -344,7 +344,10 @@ def upload_checklist_document(request, object_id, item_id):
                     "valid_until", "no_expiration", "note",
                 ])
             if item:
-                _link_checklist_document(project.id, item, existing)
+                if request.headers.get("X-Add-Checklist-File") == "1":
+                    _append_checklist_document(project.id, item, existing)
+                else:
+                    _link_checklist_document(project.id, item, existing)
             if request.headers.get("X-IRD-Analyze") == "1":
                 return JsonResponse({"id": existing.id, "existing_document": True, "general_upload": item is None, "preview": reverse("web_document_preview", args=[existing.id]), "fields": {
                     "working_title": clean_document_name(existing.working_title or item_title, existing.issuer, project.customer), "official_title": existing.official_title or "",
@@ -382,7 +385,10 @@ def upload_checklist_document(request, object_id, item_id):
                 raw_text=parsed.raw_text, status="processed",
             )
             if item:
-                _link_checklist_document(project.id, item, document)
+                if request.headers.get("X-Add-Checklist-File") == "1":
+                    _append_checklist_document(project.id, item, document)
+                else:
+                    _link_checklist_document(project.id, item, document)
             fields = _checklist_analysis_fields(parsed, item_title)
             return JsonResponse({"id": document.id, "general_upload": item is None, "preview": reverse("web_document_preview", args=[document.id]), "fields": {
                 **fields,
@@ -427,6 +433,25 @@ def _link_checklist_document(project_id, item, document):
         )
         primary = document
     item.document = primary
+    item.status = "received"
+    item.save(update_fields=["document", "status", "updated_at"])
+    return True
+
+
+def _append_checklist_document(project_id, item, document):
+    """Attach another file to a checklist item without detaching its current file."""
+    if document.project_id != project_id or document.archived_at:
+        raise Http404
+    if item.validity_years > 0 and item.title != "Инженерно-геодезические изыскания":
+        return False
+    if allows_multiple_documents(item.title):
+        return _link_checklist_document(project_id, item, document)
+    next_order = (ChecklistDocument.objects.filter(checklist_item=item).aggregate(value=Max("sort_order"))["value"] or -1) + 1
+    ChecklistDocument.objects.get_or_create(
+        checklist_item=item, document=document, defaults={"sort_order": next_order},
+    )
+    if not item.document_id or item.document.archived_at:
+        item.document = document
     item.status = "received"
     item.save(update_fields=["document", "status", "updated_at"])
     return True
@@ -518,8 +543,9 @@ def update_document_fields(request, document_id):
                     project_id=document.project_id, title=title, sort_order=(order if order is not None else -1) + 1,
                 )
             _link_checklist_document(document.project_id, item, document)
-    from app.services.email_notifications import queue_saved_document_notification
-    queue_saved_document_notification(document)
+    if request.headers.get("X-Autosave") != "1":
+        from app.services.email_notifications import queue_saved_document_notification
+        queue_saved_document_notification(document)
     if request.headers.get("X-Preserve-Checklist-Link") != "1":
         title = (document.working_title or "").strip().casefold()
         if title:
@@ -801,14 +827,12 @@ def archive_document(request, document_id):
     linked_items = list(ProjectChecklistItem.objects.filter(document=document, validity_years=0))
     with transaction.atomic():
         for item in linked_items:
-            replacement = None
-            if allows_multiple_documents(item.title):
-                link = ChecklistDocument.objects.filter(
-                    checklist_item=item, document__archived_at__isnull=True,
-                ).exclude(document=document).select_related("document").order_by(
-                    "sort_order", "created_at", "document_id",
-                ).first()
-                replacement = link.document if link else None
+            link = ChecklistDocument.objects.filter(
+                checklist_item=item, document__archived_at__isnull=True,
+            ).exclude(document=document).select_related("document").order_by(
+                "sort_order", "created_at", "document_id",
+            ).first()
+            replacement = link.document if link else None
             item.document = replacement
             item.status = "received" if replacement else "missing"
             item.save(update_fields=["document", "status", "updated_at"])
@@ -839,7 +863,10 @@ def restore_document(request, document_id):
         document.save(update_fields=["archived_at"])
         if checklist_item_id:
             item = _checklist_item_or_404(document.project_id, checklist_item_id)
-            _link_checklist_document(document.project_id, item, document)
+            if request.headers.get("X-Add-Checklist-File") == "1":
+                _append_checklist_document(document.project_id, item, document)
+            else:
+                _link_checklist_document(document.project_id, item, document)
     messages.success(request, "Документ восстановлен вместе с исходным файлом.")
     return redirect("web_object_workspace", object_id=document.project_id)
 
@@ -856,14 +883,12 @@ def delete_document(request, document_id):
     with transaction.atomic():
         linked_items = list(ProjectChecklistItem.objects.filter(document=document, validity_years=0))
         for item in linked_items:
-            replacement = None
-            if allows_multiple_documents(item.title):
-                replacement_link = ChecklistDocument.objects.filter(
-                    checklist_item=item, document__archived_at__isnull=True,
-                ).exclude(document=document).select_related("document").order_by(
-                    "sort_order", "created_at", "document_id",
-                ).first()
-                replacement = replacement_link.document if replacement_link else None
+            replacement_link = ChecklistDocument.objects.filter(
+                checklist_item=item, document__archived_at__isnull=True,
+            ).exclude(document=document).select_related("document").order_by(
+                "sort_order", "created_at", "document_id",
+            ).first()
+            replacement = replacement_link.document if replacement_link else None
             item.document = replacement
             item.status = "received" if replacement else "missing"
             item.save(update_fields=["document", "status", "updated_at"])
@@ -988,6 +1013,14 @@ def object_workspace(request, object_id):
         "items": choice["items"],
     } for choice in template_choices]
     multi_ids = {row["id"] for row in checklist if allows_multiple_documents(row["title"])}
+    multi_ids.update(
+        row["id"] for row in checklist
+        if len(checklist_documents.get(row["id"], [])) > 1
+        or (
+            len(checklist_documents.get(row["id"], [])) == 1
+            and checklist_documents[row["id"]][0]["id"] != row["document_id"]
+        )
+    )
     received_count = sum(bool(
         row["id"] in archived_item_ids
         or (row["id"] in multi_ids and checklist_documents.get(row["id"]))

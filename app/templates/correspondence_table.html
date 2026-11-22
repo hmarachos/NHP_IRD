@@ -20,7 +20,7 @@
          data-summary="{{ letter.summary }}" data-valid-until="{{ letter.valid_until }}"
          data-preview-label="{{ letter.subject or letter.original_filename or table_label }}">
         <span role="cell"><span class="correspondence-table-cell-text">{{ 'Входящее' if letter.direction == 'incoming' else 'Исходящее' }}</span></span>
-        <span role="cell" class="correspondence-table-number"><strong>{% if letter.number %}№ {{ letter.number }}{% endif %}</strong>{% if letter.letter_date %}<small>{{ letter.letter_date|ru_date }}</small>{% endif %}</span>
+        <span role="cell" class="correspondence-table-number"><strong>{% if letter.number %}№ {{ letter.number }}{% endif %}</strong>{% if letter.letter_date %}<small>от {{ letter.letter_date|ru_date }}</small>{% endif %}</span>
         <span role="cell" title="{{ letter.sender }}"><span class="correspondence-table-cell-text">{{ letter.sender }}</span></span>
         <span role="cell" title="{{ letter.recipient }}"><span class="correspondence-table-cell-text">{{ letter.recipient }}</span></span>
         <span role="cell" class="correspondence-table-subject" title="{{ letter.subject }}"><span class="correspondence-table-cell-text">{{ letter.subject }}</span></span>
