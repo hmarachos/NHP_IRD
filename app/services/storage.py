@@ -4,10 +4,14 @@ from uuid import uuid4
 from app.services.filenames import secure_stem
 
 
+MAX_UPLOAD_FILE_SIZE = 15 * 1024 * 1024
+MAX_IMAGE_PIXELS = 60_000_000
+
+
 class StorageService:
     def __init__(self, upload_dir: Path, max_file_size: int | None = None):
         self.upload_dir = upload_dir
-        self.max_file_size = None
+        self.max_file_size = MAX_UPLOAD_FILE_SIZE if max_file_size is None else max_file_size
 
     def save_pdf(self, file) -> tuple[str, str, Path]:
         original, stored, path, _mime = self.save_upload(file)
@@ -35,6 +39,8 @@ class StorageService:
             written = 0
             with path.open("wb") as destination:
                 while chunk := stream.read(1024 * 1024):
+                    if written + len(chunk) > self.max_file_size:
+                        raise ValueError("Размер файла не должен превышать 15 МиБ.")
                     destination.write(chunk)
                     written += len(chunk)
             if not written:
@@ -97,11 +103,12 @@ class StorageService:
                 ".webp": {"WEBP"}, ".heic": {"HEIF", "HEIC"},
                 ".heif": {"HEIF", "HEIC"},
             }
-            Image.MAX_IMAGE_PIXELS = None
             with Image.open(source) as image:
                 image_format = (image.format or "").upper()
                 if image_format not in expected_formats[suffix]:
                     raise ValueError("Расширение файла не соответствует содержимому.")
+                if image.width * image.height > MAX_IMAGE_PIXELS:
+                    raise ValueError("Размер изображения превышает допустимое число пикселей.")
                 image.verify()
                 formats = {
                     "JPEG": "image/jpeg",

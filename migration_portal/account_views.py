@@ -1,4 +1,5 @@
 import logging
+import hashlib
 
 from django.conf import settings
 from django.contrib import messages
@@ -15,6 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.views.decorators.http import require_POST
 from django.contrib.auth.views import PasswordChangeDoneView, PasswordChangeView
+from django.core.cache import cache
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.template.loader import render_to_string
 
@@ -53,6 +55,22 @@ def account_register(request):
     if request.user.is_authenticated:
         return redirect("account_profile")
     form = RegistrationForm(request.POST or None)
+    if request.method == "POST":
+        remote_address = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[-1].strip()
+        remote_address = remote_address or request.META.get("REMOTE_ADDR", "unknown")
+        address_key = hashlib.sha256(remote_address.encode("utf-8")).hexdigest()[:32]
+        throttle_key = f"registration-rate:{address_key}"
+        if cache.add(throttle_key, 1, timeout=15 * 60):
+            attempts = 1
+        else:
+            try:
+                attempts = cache.incr(throttle_key)
+            except ValueError:
+                cache.add(throttle_key, 1, timeout=15 * 60)
+                attempts = 1
+        if attempts > 5:
+            form.add_error(None, "Слишком много попыток регистрации. Попробуйте через 15 минут.")
+            return render(request, "accounts/register.html", {"form": form}, status=429)
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
         with transaction.atomic():

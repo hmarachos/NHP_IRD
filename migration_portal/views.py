@@ -129,6 +129,10 @@ def _upload_storage():
     return StorageService(Path(settings.MEDIA_ROOT))
 
 
+def _upload_size_exceeded(request):
+    return bool(getattr(request, "upload_file_too_large", False))
+
+
 class _NotebookHTMLSanitizer(HTMLParser):
     ALLOWED = {"p", "br", "strong", "b", "em", "i", "u", "s", "ul", "ol", "li", "blockquote", "h2", "h3"}
 
@@ -229,6 +233,9 @@ def upload_documents(request, object_id):
     project = Project.objects.filter(pk=object_id, archived_at__isnull=True).first()
     if project is None:
         raise Http404
+    if _upload_size_exceeded(request):
+        messages.error(request, "Размер каждого файла не должен превышать 15 МиБ.")
+        return redirect("web_object_workspace", object_id=object_id)
     files = [f for f in request.FILES.getlist("files") if f and f.name]
     if not files and request.FILES.get("pdf_file"):
         files = [request.FILES["pdf_file"]]
@@ -287,6 +294,12 @@ def upload_checklist_document(request, object_id, item_id):
     ).first() if item_id is not None else None
     if project is None or (item_id is not None and item is None):
         raise Http404
+    if _upload_size_exceeded(request):
+        message = "Размер каждого файла не должен превышать 15 МиБ."
+        if request.headers.get("X-IRD-Analyze") == "1":
+            return JsonResponse({"error": message}, status=413)
+        messages.error(request, message)
+        return redirect("web_object_workspace", object_id=object_id)
     item_title = item.title if item else ""
     if not request.FILES.getlist("files") and request.headers.get("X-IRD-Analyze") == "1":
         return JsonResponse({"error": "Выберите файл документа."}, status=422)
@@ -1351,6 +1364,12 @@ def upload_correspondence(request, object_id):
     record_type = request.POST.get("record_type", "correspondence")
     record_type = record_type if record_type in {"correspondence", "approval"} else "correspondence"
     target_tab = "approvals" if record_type == "approval" else "correspondence"
+    if _upload_size_exceeded(request):
+        message = "Размер каждого файла не должен превышать 15 МиБ."
+        if analyze:
+            return JsonResponse({"error": message}, status=413)
+        messages.error(request, message)
+        return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab={target_tab}")
     direction = request.POST.get("direction", "incoming")
     direction = direction if direction in {"incoming", "outgoing"} else "incoming"
     files = [f for f in request.FILES.getlist("files") if f and f.name]
@@ -1489,6 +1508,8 @@ def upload_correspondence(request, object_id):
 @require_POST
 def append_correspondence(request, object_id, letter_id):
     _letter_or_404(object_id, letter_id)
+    if _upload_size_exceeded(request):
+        return JsonResponse({"error": "Размер каждого файла не должен превышать 15 МиБ."}, status=413)
     from app.services.correspondence_attachments import append_correspondence_files
     ocr_warnings = []
     try:

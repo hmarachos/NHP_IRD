@@ -9,7 +9,9 @@ os.environ.setdefault(
     "DJANGO_DATABASE_PATH",
     os.getenv("DJANGO_DATABASE_PATH", str(BASE_DIR / "instance" / "django-documents.db")),
 )
-SECRET_KEY = os.getenv("SECRET_KEY", "replace-this-before-deploying")
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the environment before starting Django.")
 DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 ALLOWED_HOSTS = [
     host for host in [*os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(","), "testserver"] if host
@@ -82,6 +84,11 @@ MEDIA_URL = "/media/"
 # Keep Django's disk-spooling threshold; it does not restrict file size.
 DATA_UPLOAD_MAX_MEMORY_SIZE = None
 DATA_UPLOAD_MAX_NUMBER_FILES = None
+FILE_UPLOAD_HANDLERS = [
+    "migration_portal.upload_handlers.PerFileSizeUploadHandler",
+    "django.core.files.uploadhandler.MemoryFileUploadHandler",
+    "django.core.files.uploadhandler.TemporaryFileUploadHandler",
+]
 MIGRATION_SOURCE_DB = os.getenv("LEGACY_SQLITE_SOURCE_PATH", str(BASE_DIR / "instance" / "documents.db"))
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "rus+eng")
 OCR_DPI = int(os.getenv("OCR_DPI", "300"))
