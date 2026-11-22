@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">СВОД — документы</title>
+  <defs>
+    <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EDF6FF"/><stop offset="1" stop-color="#8BBFFE"/></linearGradient>
+    <linearGradient id="middle" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#89C7FF"/><stop offset="1" stop-color="#2878ED"/></linearGradient>
+    <linearGradient id="front" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#168EFF"/><stop offset="1" stop-color="#0751CB"/></linearGradient>
+  </defs>
+  <path d="M12 36Q12 28 21 25L71 7Q83 3 83 17V82Q83 88 76 91L21 114Q12 118 12 106Z" fill="url(#back)" stroke="#78B0EA" stroke-width="1.3"/>
+  <path d="M27 48Q27 40 36 37L88 18Q101 14 101 28V91Q101 98 94 100L38 123Q27 127 27 114Z" fill="url(#middle)" stroke="#3F8FEF" stroke-width="1.3"/>
+  <path d="M43 59Q43 51 52 48L104 29Q117 25 117 39V98Q117 105 109 108L55 126Q43 130 43 118Z" fill="url(#front)" stroke="#146BE3" stroke-width="1.3"/>
+</svg>
