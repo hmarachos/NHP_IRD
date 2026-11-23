@@ -62,7 +62,7 @@
 <dialog class="checklist-note-dialog" data-geodesy-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">ИНЖЕНЕРНЫЕ ИЗЫСКАНИЯ</p><h2>Инженерно-геодезические изыскания</h2></div><button type="button" class="checklist-add-close" data-close-geodesy aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-geodesy-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="missing"><input type="hidden" name="document_id" value=""><label for="geodesy-issue-date">Дата изысканий</label><input id="geodesy-issue-date" class="checklist-dialog-date" type="date" name="issue_date"><label for="geodesy-note">Примечание</label><textarea id="geodesy-note" name="note" rows="3" maxlength="2000" placeholder="Примечание к изысканиям" data-grow-textarea></textarea><div class="checklist-add-actions checklist-geodesy-actions"><button type="button" class="checklist-note-cancel" data-open-ird-upload data-upload-url="" data-item-title="Инженерно-геодезические изыскания" data-geodesy-upload><i class="bi bi-upload" aria-hidden="true"></i> Прикрепить файл (необязательно)</button><span></span><button type="button" class="checklist-note-cancel" data-close-geodesy>Отмена</button><button type="submit">Сохранить</button></div></form></dialog><dialog class="checklist-note-dialog checklist-properties-dialog" data-checklist-properties-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">СВОЙСТВА ДОКУМЕНТА</p><h2 data-checklist-properties-heading>Документ проекта</h2></div><button type="button" class="checklist-add-close" data-close-checklist-properties aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-checklist-properties-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label for="checklist-properties-title">Наименование документа</label><input id="checklist-properties-title" class="checklist-dialog-date" name="title" maxlength="300" required><label for="checklist-properties-description">Описание</label><textarea id="checklist-properties-description" name="description" rows="2" maxlength="500" placeholder="Описание документа" data-grow-textarea></textarea><label for="checklist-properties-note">Примечание</label><textarea id="checklist-properties-note" name="note" rows="2" maxlength="2000" placeholder="Примечание к документу" data-grow-textarea></textarea><div class="checklist-properties-date-row"><label for="checklist-properties-issue-date">Дата выдачи / документа<input id="checklist-properties-issue-date" class="checklist-dialog-date" type="date" name="issue_date"></label><label for="checklist-properties-validity">Срок действия (лет)<select id="checklist-properties-validity" class="checklist-dialog-date" name="validity_years"><option value="0">Не задан</option><option value="1">1 год</option><option value="2">2 года</option><option value="3">3 года</option><option value="5">5 лет</option><option value="10">10 лет</option></select></label></div><div class="checklist-add-actions checklist-properties-actions"><button type="submit" class="checklist-properties-delete" data-checklist-properties-delete formnovalidate><i class="bi bi-trash3" aria-hidden="true"></i> Удалить документ</button><span></span><button type="button" class="checklist-note-cancel" data-close-checklist-properties>Отмена</button><button type="submit" data-checklist-properties-save>Сохранить</button></div></form></dialog>
 <dialog class="checklist-add-dialog" data-checklist-add-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">КОМПЛЕКТНОСТЬ ПРОЕКТА</p><h2>Добавить документы</h2></div><button type="button" class="checklist-add-close" data-close-checklist-add aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-add-form" action="{{ url_for('web.add_checklist_item', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Способ добавления</span><select name="add_mode" data-checklist-add-mode><option value="template" {% if template_choices %}selected{% else %}disabled{% endif %}>Добавить все документы из шаблона</option><option value="custom" {% if not template_choices %}selected{% endif %}>Добавить один документ вручную</option></select></label><label data-checklist-template-field {% if not template_choices %}hidden{% endif %}><span>Шаблон</span><select name="template_id" data-checklist-template-select required {% if not template_choices %}disabled{% endif %}><option value="" disabled selected>Выберите шаблон</option>{% for choice in template_choices %}<option value="{{ choice.template.id }}">{{ choice.template.name }} · {{ choice.item_count }} пунктов</option>{% endfor %}</select></label><div class="checklist-template-preview" data-checklist-template-preview hidden></div><div class="checklist-add-custom-fields" data-checklist-custom-fields {% if template_choices %}hidden{% endif %}><label><span>Название нового документа</span><textarea name="title" rows="1" maxlength="300" placeholder="Например, заключение экспертизы" data-grow-textarea {% if template_choices %}disabled{% else %}required{% endif %}></textarea></label><label><span>Примечание <small class="checklist-add-optional">Необязательно</small></span><textarea name="note" rows="1" maxlength="2000" placeholder="Дополнительная информация" data-grow-textarea {% if template_choices %}disabled{% endif %}></textarea></label></div><div class="checklist-add-actions"><button type="submit" data-checklist-add-submit>Добавить документы</button></div></form><script type="application/json" data-template-choice-data>{{ template_choice_data|tojson }}</script></dialog>
 <datalist id="correspondence-organization-options">{% for organization in correspondence_organizations %}<option value="{{ organization }}">{% endfor %}</datalist>
-<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-save-toast" data-ird-save-toast role="status" aria-live="polite" hidden><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span data-ird-save-toast-text>Изменения сохранены</span></div><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения</span></label><section class="correspondence-attachment-order" data-correspondence-attachment-order hidden><p>Первый файл — письмо. Остальные — приложения. Установите порядок страниц перед загрузкой.</p><ol data-attachment-order-list></ol></section><button type="button" class="secondary-button" data-append-cancel hidden>Назад к письму</button><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><nav class="ird-document-strip" data-ird-document-strip role="tablist" aria-label="Загруженные документы" hidden></nav><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><section class="ird-files-panel" data-ird-files-panel hidden><header><i class="bi bi-folder2-open" aria-hidden="true"></i><strong>Документы</strong><span class="ird-files-count" data-ird-files-count>0</span><button type="button" class="btn btn-sm btn-primary ird-file-add" data-ird-add-file><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button></header><div class="ird-files-list" data-ird-files-list></div></section><label>Наименование документа<textarea name="working_title" rows="3" data-grow-textarea></textarea></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><textarea name="issuer" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><div class="ird-number-date-fields"><label>Номер документа<input name="document_number"></label><label>Дата выдачи<input type="date" name="issue_date"></label></div><div class="ird-date-fields"><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions" data-ird-new-document-actions hidden><button type="button" class="btn btn-sm btn-outline-secondary" data-ird-back><i class="bi bi-x-lg" aria-hidden="true"></i> Отмена</button><button type="button" class="btn btn-sm btn-outline-danger" data-ird-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div><div class="ird-archived-document-sources" data-card-document-archive hidden aria-hidden="true">{% for document in archived_documents %}<button type="button" data-open-archived-document data-archive-title="{{ (document.display_title or document.working_title or document.original_filename)|lower|trim }}" data-checklist-item-ids="{{ archived_document_item_ids.get(document.id, [])|join(',') }}" data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-working-title="{{ document.name_title or document.working_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>{{ document.display_title or document.working_title or document.original_filename }}</span></button>{% endfor %}</div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender" list="correspondence-organization-options" autocomplete="off"></label><label>Получатель<input name="recipient" list="correspondence-organization-options" autocomplete="off"></label><label>Тема письма<textarea name="subject" rows="1" data-grow-textarea></textarea></label><label>Краткое содержание<textarea name="summary" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Заменить</button><button type="button" data-correspondence-append hidden><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button><span data-correspondence-append-status role="status" aria-live="polite"></span><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
+<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-save-toast" data-ird-save-toast role="status" aria-live="polite" hidden><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span data-ird-save-toast-text>Изменения сохранены</span></div><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения</span></label><section class="correspondence-attachment-order" data-correspondence-attachment-order hidden><p>Первый файл — письмо. Остальные — приложения. Установите порядок страниц перед загрузкой.</p><ol data-attachment-order-list></ol></section><button type="button" class="secondary-button" data-append-cancel hidden>Назад к письму</button><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><nav class="ird-document-strip" data-ird-document-strip role="tablist" aria-label="Загруженные документы" hidden></nav><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><section class="ird-files-panel" data-ird-files-panel hidden><header><i class="bi bi-folder2-open" aria-hidden="true"></i><strong>Документы</strong><span class="ird-files-count" data-ird-files-count>0</span><button type="button" class="btn btn-sm btn-primary ird-file-add" data-ird-add-file><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button></header><div class="ird-files-list" data-ird-files-list></div></section><label data-batch-checklist-label hidden>Пункт комплектности<select name="checklist_item_id" data-batch-checklist disabled><option value="">Сохранить без привязки</option></select><small data-batch-checklist-hint>Предложение формируется по распознанному названию и тексту документа. Проверьте выбор перед сохранением.</small></label><label>Наименование документа<textarea name="working_title" rows="3" data-grow-textarea></textarea></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><textarea name="issuer" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><div class="ird-number-date-fields"><label>Номер документа<input name="document_number"></label><label>Дата выдачи<input type="date" name="issue_date"></label></div><div class="ird-date-fields"><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions" data-ird-new-document-actions hidden><button type="button" class="btn btn-sm btn-outline-secondary" data-ird-back><i class="bi bi-x-lg" aria-hidden="true"></i> Отмена</button><button type="button" class="btn btn-sm btn-outline-danger" data-ird-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div><div class="ird-archived-document-sources" data-card-document-archive hidden aria-hidden="true">{% for document in archived_documents %}<button type="button" data-open-archived-document data-archive-title="{{ (document.display_title or document.working_title or document.original_filename)|lower|trim }}" data-checklist-item-ids="{{ archived_document_item_ids.get(document.id, [])|join(',') }}" data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-working-title="{{ document.name_title or document.working_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>{{ document.display_title or document.working_title or document.original_filename }}</span></button>{% endfor %}</div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender" list="correspondence-organization-options" autocomplete="off"></label><label>Получатель<input name="recipient" list="correspondence-organization-options" autocomplete="off"></label><label>Тема письма<textarea name="subject" rows="1" data-grow-textarea></textarea></label><label>Краткое содержание<textarea name="summary" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Заменить</button><button type="button" data-correspondence-append hidden><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button><span data-correspondence-append-status role="status" aria-live="polite"></span><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
 <script>
 (() => {
     const workspace = document.querySelector('[data-project-workspace]');
@@ -436,19 +436,6 @@
         } catch (_) { window.alert('Не удалось сохранить данные изысканий.'); }
         finally { submit.disabled = false; }
     });
-    document.querySelectorAll('dialog').forEach((dialog) => {
-        let pointerStartedOnBackdrop = false;
-        dialog.addEventListener('pointerdown', (event) => { pointerStartedOnBackdrop = event.target === dialog; });
-        dialog.addEventListener('pointercancel', () => { pointerStartedOnBackdrop = false; });
-        dialog.addEventListener('click', (event) => {
-            const closeFromBackdrop = event.target === dialog && pointerStartedOnBackdrop;
-            pointerStartedOnBackdrop = false;
-            if (closeFromBackdrop) {
-                if (dialog.matches('[data-ird-review]')) dialog.dispatchEvent(new Event('ird-backdrop-close'));
-                else dialog.close();
-            }
-        });
-    });
     if (workspace) {
         const panels = Array.from(workspace.querySelectorAll('[data-workspace-panel]'));
         const navItems = Array.from(document.querySelectorAll('.app-sidebar [data-workspace-tab]'));
@@ -775,8 +762,19 @@
         let correspondenceMode = false, correspondenceRecordType = 'correspondence', correspondenceUpdateUrl = '';
         let pendingUploadDeleteUrl = '', pendingUploadSaved = true, closingAfterDelete = false;
         let checklistAppendMode = false, checklistAppendItemId = '';
+        let batchAssignedItemIds = new Set(), batchHadMultipleDocuments = false;
         let documentAutosaveTimer = null, documentAutosaveDirty = false, documentAutosaveRevision = 0, documentAutosavedRevision = 0, documentAutosavePromise = Promise.resolve();
         const documentFields = reviewForm.querySelector('[data-ird-document-fields]');
+        const resetNewDocumentFields = () => {
+            documentFields.querySelectorAll('input[name],select[name],textarea[name]').forEach((field) => {
+                if (field.name === 'checklist_item_id') return;
+                if (field.type === 'checkbox' || field.type === 'radio') field.checked = false;
+                else field.value = '';
+            });
+        };
+        const batchChecklistLabel = documentFields.querySelector('[data-batch-checklist-label]');
+        const batchChecklistSelect = documentFields.querySelector('[data-batch-checklist]');
+        const batchChecklistHint = documentFields.querySelector('[data-batch-checklist-hint]');
         const newDocumentActions = documentFields.querySelector('[data-ird-new-document-actions]');
         const setNewDocumentActionsVisible = (visible) => { newDocumentActions.hidden = !visible; };
         const saveToast = irdDialog.querySelector('[data-ird-save-toast]');
@@ -868,7 +866,24 @@
                             body,
                         });
                         if (!response.ok) throw new Error('Не удалось изменить статус файла.');
-                        window.location.reload();
+                        file.archived = action === 'archive';
+                        switchInput.checked = file.archived;
+                        const archiveSources = irdDialog.querySelector('[data-card-document-archive]');
+                        const activeSource = Array.from(checklistRow?.querySelectorAll('[data-open-ird-document]') || []).find((candidate) => candidate.dataset.documentId === file.id);
+                        if (file.archived) {
+                            const archivedSource = file.source.cloneNode(true);
+                            archivedSource.dataset.checklistItemIds = itemId;
+                            archivedSource.dataset.archived = 'true';
+                            archivedSource.setAttribute('data-open-archived-document', '');
+                            archiveSources.append(archivedSource);
+                            if (activeSource) activeSource.dataset.archived = 'true';
+                        } else {
+                            const archivedSource = Array.from(irdDialog.querySelectorAll('[data-open-archived-document]')).find((candidate) => candidate.dataset.documentId === file.id);
+                            archivedSource?.remove();
+                            if (activeSource) activeSource.dataset.archived = 'false';
+                        }
+                        reloadOnClose = true;
+                        renderChecklistFiles(checklistRow, file.id);
                     } catch (error) {
                         switchInput.disabled = false;
                         switchInput.checked = file.archived;
@@ -925,7 +940,7 @@
             uploadStage.hidden=false; loadingStage.hidden=true; reviewForm.hidden=true; errorBox.hidden=true;
             pendingUploadDeleteUrl=''; pendingUploadSaved=true;
             fileInput.value=''; startButton.disabled=true; startButton.textContent='Распознать документ';
-            try { await priorSave; } catch (_) { startButton.disabled=true; }
+            try { await priorSave; resetNewDocumentFields(); } catch (_) { startButton.disabled=true; }
         });
         const appendButton = correspondenceFields.querySelector('[data-correspondence-append]');
         const appendStatus = correspondenceFields.querySelector('[data-correspondence-append-status]');
@@ -950,20 +965,46 @@
                 const name = document.createElement('span');
                 name.textContent = entry.file.name;
                 const state = document.createElement('small');
-                state.textContent = entry.saved ? 'Сохранён' : 'На проверку';
+                state.textContent = entry.error && !entry.result ? 'Ошибка · повторить' : (entry.saved ? 'Сохранён' : 'На проверку');
                 button.append(name, state);
-                button.addEventListener('click', async () => { try { await flushDocumentAutosave(); } catch (_) { return; } captureSeparateDocument(); resetDocumentAutosave(); showSeparateDocument(index); });
+                button.addEventListener('click', async () => {
+                    if (entry.error && !entry.result) {
+                        try { await flushDocumentAutosave(); } catch (_) { return; }
+                        captureSeparateDocument();
+                        button.disabled = true;
+                        irdDialog.querySelector('[data-ird-loading-title]').textContent = `Повторно распознаём: ${entry.file.name}`;
+                        uploadStage.hidden = true; loadingStage.hidden = false; errorBox.hidden = true;
+                        try {
+                            const data = new FormData(); data.append('csrf_token', reviewForm.elements.csrf_token.value); (entry.files || [entry.file]).forEach((file) => data.append('files', file));
+                            const response = await fetch(uploadUrl, {method: 'POST', body: data, headers: {'X-IRD-Analyze': '1', 'Accept': 'application/json'}});
+                            const result = await response.json();
+                            if (!response.ok || result.error) throw new Error(result.error || 'Не удалось распознать документ.');
+                            entry.result = result; entry.error = ''; entry.fields = {...(result.fields || {}), note: ''};
+                            loadingStage.hidden = true; showSeparateDocument(index); renderSeparateDocumentStrip();
+                        } catch (error) { entry.error = error.message; loadingStage.hidden = true; showSeparateDocument(index); renderSeparateDocumentStrip(); }
+                        return;
+                    }
+                    try { await flushDocumentAutosave(); } catch (_) { return; }
+                    captureSeparateDocument(); resetDocumentAutosave(); showSeparateDocument(index);
+                });
                 documentStrip.append(button);
             });
-            documentStrip.hidden = separateDocuments.length < 2;
+            documentStrip.hidden = !batchHadMultipleDocuments && separateDocuments.length < 2 && !separateDocuments.some((entry) => entry.error && !entry.result);
         };
         const showSeparateDocument = (index) => {
             const entry = separateDocuments[index];
             if (!entry) return;
             activeSeparateDocument = index;
+            if (entry.error && !entry.result) {
+                activeSeparateDocument = index;
+                reviewForm.hidden = true; loadingStage.hidden = true; uploadStage.hidden = true;
+                errorBox.textContent = `${entry.file.name}: ${entry.error}. Нажмите на вкладку файла, чтобы повторить распознавание.`;
+                errorBox.hidden = false;
+                return;
+            }
             extracted = entry.result;
             resetDocumentAutosave();
-            documentStrip.hidden = separateDocuments.length < 2;
+            documentStrip.hidden = !batchHadMultipleDocuments && separateDocuments.length < 2;
             documentStrip.querySelectorAll('.ird-document-tab').forEach((button, tabIndex) => {
                 const active = tabIndex === index;
                 button.classList.toggle('is-active', active);
@@ -971,6 +1012,22 @@
             });
             reviewForm.querySelector('[data-ird-frame]').src = entry.result.preview;
             irdDialog.querySelector('[data-ird-heading]').textContent = entry.fields.working_title || entry.file.name;
+            batchChecklistLabel.hidden = !separateDocumentsMode;
+            batchChecklistSelect.disabled = !separateDocumentsMode;
+            if (separateDocumentsMode) {
+                const matches = entry.result.checklist_matches || [];
+                const selectedId = entry.fields.checklist_item_id || entry.result.suggested_checklist_item_id || '';
+                batchChecklistSelect.replaceChildren(new Option('Сохранить без привязки', ''));
+                for (const match of matches) {
+                    const suffix = match.has_document ? ` · уже есть: ${match.current_document_title || 'документ'}` : (batchAssignedItemIds.has(String(match.id)) ? ' · уже выбрано в этом пакете' : '');
+                    batchChecklistSelect.add(new Option(`${match.title}${suffix}`, String(match.id)));
+                }
+                batchChecklistSelect.value = matches.some((match) => String(match.id) === String(selectedId)) ? String(selectedId) : '';
+                const suggested = matches.find((match) => String(match.id) === String(entry.result.suggested_checklist_item_id));
+                batchChecklistHint.textContent = suggested ? `Предложение: ${suggested.title}. Проверьте выбор перед сохранением.` : 'Подходящего уверенного совпадения нет. Выберите пункт вручную или сохраните без привязки.';
+            } else {
+                batchChecklistSelect.value = '';
+            }
             for (const field of documentFields.querySelectorAll('input[name],select[name],textarea[name]')) {
                 if (field.type === 'checkbox') field.checked = false;
                 else field.value = '';
@@ -978,25 +1035,30 @@
                 if (field.type === 'checkbox') field.checked = Boolean(entry.fields[field.name]);
                 else field.value = entry.fields[field.name] || '';
             }
+            if (separateDocumentsMode) {
+                const selectedId = entry.fields.checklist_item_id || entry.result.suggested_checklist_item_id || '';
+                const matches = entry.result.checklist_matches || [];
+                batchChecklistSelect.value = matches.some((match) => String(match.id) === String(selectedId)) ? String(selectedId) : '';
+            }
             const deleteForm = irdDialog.querySelector('[data-ird-delete-form]');
             deleteForm.action = entry.result.existing_document ? '' : `/documents/${entry.result.id}/delete`;
             pendingUploadDeleteUrl = entry.result.existing_document || entry.saved ? '' : deleteForm.action;
-            pendingUploadSaved = entry.saved || Boolean(entry.result.existing_document);
+            pendingUploadSaved = separateDocumentsMode ? entry.saved : (entry.saved || Boolean(entry.result.existing_document));
             setNewDocumentActionsVisible(!pendingUploadSaved);
-            newDocumentActions.querySelector('[data-ird-delete]').hidden = pendingUploadSaved;
+            newDocumentActions.querySelector('[data-ird-delete]').hidden = pendingUploadSaved || Boolean(entry.result.existing_document);
             irdDialog.querySelectorAll('[data-ird-back]').forEach((button) => { button.hidden = true; });
             renderSeparateDocumentStrip();
             syncExpiryField();
             resizeDocumentTextareas();
         };
         const discardSeparateDocuments = async () => {
-            const pending = separateDocuments.filter((entry) => !entry.saved && !entry.result.existing_document);
+            const pending = separateDocuments.filter((entry) => entry.result && !entry.saved && !entry.result.existing_document);
             const results = await Promise.all(pending.map(async (entry) => {
                 const response = await fetch(`/documents/${entry.result.id}/delete`, {method: 'POST', headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': reviewForm.elements.csrf_token.value}});
                 return {id: entry.result.id, removed: response.ok || response.status === 404};
             }));
             const removedIds = new Set(results.filter((result) => result.removed).map((result) => result.id));
-            separateDocuments = separateDocuments.filter((entry) => !removedIds.has(entry.result.id));
+            separateDocuments = separateDocuments.filter((entry) => !entry.result || !removedIds.has(entry.result.id));
             return results.every((result) => result.removed);
         };
         const returnToLetter = () => {
@@ -1151,8 +1213,10 @@
         window.addEventListener('resize', () => setSplit(splitRatio, false));
         document.querySelectorAll('[data-open-ird-upload]').forEach((button) => button.addEventListener('click', () => {
             setCorrespondenceMode(false); correspondenceUpdateUrl = ''; correspondenceUploadOption.hidden = true; pendingUploadDeleteUrl=''; pendingUploadSaved=true; closingAfterDelete=false; checklistAppendMode=false; checklistAppendItemId='';
+            batchAssignedItemIds = new Set();
+            batchHadMultipleDocuments = false;
             irdDialog.querySelectorAll('[data-ird-back]').forEach((backButton) => { backButton.hidden = false; });
-            uploadUrl=button.dataset.uploadUrl; itemTitle=button.dataset.itemTitle; setNewDocumentActionsVisible(false); separateDocumentsMode=button.hasAttribute('data-separate-documents'); separateDocuments=[]; activeSeparateDocument=-1; documentStrip.replaceChildren(); documentStrip.hidden=true; correspondenceFiles=[]; renderCorrespondenceFiles(); const multiKind=button.dataset.multipleDocumentKind||''; const isCustomerLetter=multiKind==='customer-letter'; const isProjectAssignment=multiKind==='project-assignment'; irdDialog.querySelector('[data-ird-eyebrow]').textContent='РАСПОЗНАВАНИЕ ДОКУМЕНТА'; irdDialog.querySelector('[data-ird-issuer-label]').textContent=isProjectAssignment?'Наименование заказчика':'Орган, выдавший документ';irdDialog.querySelector('[data-ird-heading]').textContent=isCustomerLetter?'Письмо заказчика':itemTitle;irdDialog.querySelector('.ird-upload-stage>p').textContent=separateDocumentsMode?'Выберите несколько отдельных документов. Каждый файл будет распознан и сохранён отдельно.':(isCustomerLetter?'Загрузите одно письмо заказчика в PDF или Word либо страницы письма. После обработки можно добавить следующее письмо в ту же строку шаблона.':(isProjectAssignment?'Загрузите одну версию задания на проектирование в PDF или Word. После обработки можно добавить новую редакцию в эту же строку шаблона.':'Загрузите один документ в PDF или Word либо отдельные изображения его страниц.'));irdDialog.querySelector('[data-ird-delete]').hidden=true;irdDialog.querySelector('[data-ird-delete-form]').action='';
+            uploadUrl=button.dataset.uploadUrl; itemTitle=button.dataset.itemTitle; resetNewDocumentFields(); setNewDocumentActionsVisible(false); separateDocumentsMode=button.hasAttribute('data-separate-documents'); separateDocuments=[]; activeSeparateDocument=-1; documentStrip.replaceChildren(); documentStrip.hidden=true; correspondenceFiles=[]; renderCorrespondenceFiles(); const multiKind=button.dataset.multipleDocumentKind||''; const isCustomerLetter=multiKind==='customer-letter'; const isProjectAssignment=multiKind==='project-assignment'; irdDialog.querySelector('[data-ird-eyebrow]').textContent='РАСПОЗНАВАНИЕ ДОКУМЕНТА'; irdDialog.querySelector('[data-ird-issuer-label]').textContent=isProjectAssignment?'Наименование заказчика':'Орган, выдавший документ';irdDialog.querySelector('[data-ird-heading]').textContent=isCustomerLetter?'Письмо заказчика':itemTitle;irdDialog.querySelector('.ird-upload-stage>p').textContent=separateDocumentsMode?'Выберите несколько отдельных документов. Каждый файл будет распознан и сохранён отдельно.':(isCustomerLetter?'Загрузите одно письмо заказчика в PDF или Word либо страницы письма. После обработки можно добавить следующее письмо в ту же строку шаблона.':(isProjectAssignment?'Загрузите одну версию задания на проектирование в PDF или Word. После обработки можно добавить новую редакцию в эту же строку шаблона.':'Загрузите один документ в PDF или Word либо отдельные изображения его страниц.'));irdDialog.querySelector('[data-ird-delete]').hidden=true;irdDialog.querySelector('[data-ird-delete-form]').action='';
             uploadStage.hidden=false; loadingStage.hidden=true; reviewForm.hidden=true; reviewForm.classList.remove('is-preview-only'); reviewForm.querySelector('.ird-fields').hidden=false; splitter.hidden=false; errorBox.hidden=true; fileInput.value=''; startButton.disabled=true; startButton.textContent='Распознать документ'; extracted=null; reloadOnClose=false;
             irdDialog.showModal();
         }));
@@ -1367,27 +1431,24 @@
             loadingStage.hidden = false;
             errorBox.hidden = true;
             setCorrespondenceMode(false);
-            for (let index = 0; index < files.length; index++) {
-                const file = files[index];
-                irdDialog.querySelector('[data-ird-loading-title]').textContent = `Распознаём документ ${index + 1} из ${files.length}: ${file.name}`;
+            const photosAsOneDocument = files.length > 1 && files.every((file) => file.type.startsWith('image/'));
+            const jobs = photosAsOneDocument
+                ? [{file: {name: `Фотографии · ${files.length} страниц`}, files}]
+                : files.map((file) => ({file, files: [file]}));
+            batchHadMultipleDocuments = jobs.length > 1;
+            for (let index = 0; index < jobs.length; index++) {
+                const job = jobs[index];
+                irdDialog.querySelector('[data-ird-loading-title]').textContent = `Распознаём документ ${index + 1} из ${jobs.length}: ${job.file.name}`;
                 try {
                     const data = new FormData();
                     data.append('csrf_token', reviewForm.elements.csrf_token.value);
-                    data.append('files', file);
+                    job.files.forEach((file) => data.append('files', file));
                     const response = await fetch(uploadUrl, {method: 'POST', body: data, headers: {'X-IRD-Analyze': '1', 'Accept': 'application/json'}});
                     const result = await response.json();
-                    if (!response.ok || result.error) throw new Error(result.error || `Не удалось обработать файл «${file.name}».`);
-                    separateDocuments.push({file, result, fields: {...(result.fields || {}), note: ''}, saved: false});
+                    if (!response.ok || result.error) throw new Error(result.error || `Не удалось обработать файл «${job.file.name}».`);
+                    separateDocuments.push({file: job.file, files: job.files, result, fields: {...(result.fields || {}), note: '', checklist_item_id: result.suggested_checklist_item_id || ''}, saved: false});
                 } catch (error) {
-                    await discardSeparateDocuments();
-                    separateDocuments = [];
-                    documentStrip.hidden = true;
-                    loadingStage.hidden = true;
-                    uploadStage.hidden = false;
-                    errorBox.textContent = error.message;
-                    errorBox.hidden = false;
-                    startButton.disabled = false;
-                    return;
+                    separateDocuments.push({file: job.file, files: job.files, result: null, fields: {}, saved: false, error: error.message});
                 }
             }
             reviewForm.classList.remove('is-preview-only');
@@ -1397,7 +1458,16 @@
             loadingStage.hidden = true;
             startButton.disabled = false;
             irdDialog.querySelector('[data-ird-delete]').hidden = true;
-            showSeparateDocument(0);
+            const firstReady = separateDocuments.findIndex((entry) => entry.result);
+            if (firstReady < 0) {
+                uploadStage.hidden = false;
+                errorBox.textContent = 'Не удалось распознать выбранные файлы. Нажмите на вкладку с ошибкой, чтобы повторить попытку.';
+                errorBox.hidden = false;
+                renderSeparateDocumentStrip();
+                return;
+            }
+            showSeparateDocument(firstReady);
+            renderSeparateDocumentStrip();
         };
         const begin = async () => {
             try { await flushDocumentAutosave(); } catch (_) { return; }
@@ -1406,8 +1476,9 @@
             const wordFiles=files.filter(f => /\.docx?$/i.test(f.name));
             if (!correspondenceMode && !separateDocumentsMode && wordFiles.length && files.length !== 1) { errorBox.textContent='Загружайте один Word-файл за раз.'; errorBox.hidden=false; return; }
             if (files.some(f => !f.type.startsWith('image/') && f.type !== 'application/pdf' && !/\.(heic|heif|doc|docx)$/i.test(f.name))) { errorBox.textContent='Выберите файлы PDF, Word или изображения.'; errorBox.hidden=false; return; }
-            if (separateDocumentsMode && files.length > 1) { await beginSeparateDocuments(files); return; }
+            if (separateDocumentsMode) { await beginSeparateDocuments(files); return; }
             if (!correspondenceMode && files.length > 1 && files.some(f => f.type === 'application/pdf')) { errorBox.textContent='Для документа выберите один PDF или несколько изображений страниц.'; errorBox.hidden=false; return; }
+            if (!correspondenceMode) resetNewDocumentFields();
             uploadStage.hidden=true; loadingStage.hidden=false; errorBox.hidden=true;
             try {
                 const data=new FormData(); data.append('csrf_token', reviewForm.elements.csrf_token.value);
@@ -1439,6 +1510,7 @@
                     correspondenceBackButton.hidden=true;
                 } else {
                 resetDocumentAutosave();
+                resetNewDocumentFields();
                 setCorrespondenceMode(false); reviewForm.querySelector('.ird-fields').hidden=false;
                 Object.entries(result.fields).forEach(([key,value]) => { const field=documentFields.querySelector(`[name="${key}"]`); if (field && field.type==='checkbox') field.checked=Boolean(value); else if(field) field.value=value || ''; }); applyProjectAssignmentRules(itemTitle==='Задание на проектирование'); resizeDocumentTextareas();
                 const deleteForm=irdDialog.querySelector('[data-ird-delete-form]');
@@ -1465,8 +1537,9 @@
             const files=Array.from(fileInput.files||[]);
             if(correspondenceMode){correspondenceFiles.push(...files);fileInput.value='';renderCorrespondenceFiles();return;}
             startButton.disabled=!files.length;
-            irdDialog.querySelector('[data-ird-file-label]').textContent=separateDocumentsMode&&files.length>1?`${files.length} отдельных документов выбрано`:files.map(f=>f.name).join(', ') || 'PDF, Word или изображения страниц';
-            startButton.textContent=separateDocumentsMode&&files.length>1?'Распознать документы':'Распознать документ';
+            const photosAsOneDocument = separateDocumentsMode && files.length > 1 && files.every((file) => file.type.startsWith('image/'));
+            irdDialog.querySelector('[data-ird-file-label]').textContent=photosAsOneDocument?`${files.length} страниц одного документа выбрано`:(separateDocumentsMode&&files.length>1?`${files.length} отдельных документов выбрано`:files.map(f=>f.name).join(', ') || 'PDF, Word или изображения страниц');
+            startButton.textContent=separateDocumentsMode&&files.length>1&&!photosAsOneDocument?'Распознать документы':'Распознать документ';
         });
         const noExpiry=reviewForm.elements.namedItem('no_expiration');
         const expiryLabel=reviewForm.querySelector('[data-ird-valid-until]');
@@ -1527,11 +1600,11 @@
         const closeReviewDialog=async()=>{
             if(appendMode){if(!appendBusy)returnToLetter();return;}
             if(!correspondenceMode&&!reviewForm.hidden&&pendingUploadSaved){try{await flushDocumentAutosave();}catch(_){return;}}
-            if(separateDocumentsMode&&separateDocuments.length>1){
+            if(separateDocumentsMode&&separateDocuments.length>0){
                 const closeButton=irdDialog.querySelector('[data-ird-close]');closeButton.disabled=true;errorBox.hidden=true;
                 try{
                     if(!await discardSeparateDocuments())throw new Error('Не удалось отменить все несохранённые документы. Они остались в проекте.');
-                    reloadOnClose=separateDocuments.some((entry)=>entry.saved);
+                    reloadOnClose=reloadOnClose||separateDocuments.some((entry)=>entry.saved);
                     separateDocuments=[];activeSeparateDocument=-1;separateDocumentsMode=false;pendingUploadDeleteUrl='';pendingUploadSaved=true;irdDialog.close();
                 }catch(error){errorBox.textContent=error.message;errorBox.hidden=false;}
                 finally{closeButton.disabled=false;}
@@ -1547,8 +1620,7 @@
             finally{closeButton.disabled=false;}
         };
         irdDialog.querySelector('[data-ird-close]').addEventListener('click',closeReviewDialog);
-        irdDialog.addEventListener('ird-backdrop-close',closeReviewDialog);
-        irdDialog.addEventListener('cancel',event=>{if(appendMode){event.preventDefault();if(!appendBusy)returnToLetter();return;}if((separateDocumentsMode&&separateDocuments.length>1)||(pendingUploadDeleteUrl&&!pendingUploadSaved)){event.preventDefault();closeReviewDialog();}});
+        irdDialog.addEventListener('cancel',event=>{if(appendMode){event.preventDefault();if(!appendBusy)returnToLetter();return;}if((separateDocumentsMode&&separateDocuments.length>0)||(pendingUploadDeleteUrl&&!pendingUploadSaved)){event.preventDefault();closeReviewDialog();}});
         irdDialog.querySelectorAll('[data-ird-delete]').forEach((button)=>button.addEventListener('click',async()=>{
             const deleteForm=irdDialog.querySelector('[data-ird-delete-form]');
             const isUploadCancellation=button.dataset.cancelUpload==='true';
@@ -1585,7 +1657,7 @@
                 if(!documentId||correspondenceMode||documentFields.hidden||!pendingUploadSaved)return;
                 const fields=new FormData(); fields.set('csrf_token',reviewForm.elements.csrf_token.value);
                 documentFields.querySelectorAll('input[name],select[name],textarea[name]').forEach((field)=>{
-                    if(field.disabled)return;
+                    if(field.disabled || field.name === 'checklist_item_id')return;
                     if(field.type==='checkbox'){if(field.checked)fields.set(field.name,'on');return;}
                     fields.set(field.name,field.value);
                 });
@@ -1668,30 +1740,45 @@
                     if (!response.ok) throw new Error('Не удалось сохранить реквизиты письма.');
                     extracted=null;pendingUploadSaved=true;pendingUploadDeleteUrl='';window.location.reload();return;
                 }
-                if (separateDocumentsMode && separateDocuments.length > 1) {
+                if (separateDocumentsMode && separateDocuments.length > 0) {
                     captureSeparateDocument();
                     const current = separateDocuments[activeSeparateDocument];
-                    const savedFields = await saveCardRequest(`/documents/${current.result.id}/fields`, {method:'POST', body:fields, headers:{'X-Requested-With':'fetch','X-Preserve-Checklist-Link':'1',...(current.result.general_upload ? {'X-Add-To-Checklist':'1'} : {})}});
-                    if (!savedFields.ok) throw new Error('Не удалось сохранить реквизиты документа.');
+                    if (!current?.result) throw new Error('Сначала повторите распознавание этого файла.');
+                    const selectedId = fields.get('checklist_item_id');
+                    const candidate = (current.result.checklist_matches || []).find((match) => String(match.id) === String(selectedId));
+                    const itemAlreadyAssigned = selectedId && batchAssignedItemIds.has(String(selectedId));
+                    if ((candidate?.has_document || itemAlreadyAssigned) && !candidate?.allows_multiple && !window.confirm(`В пункте «${candidate.title}» уже ${itemAlreadyAssigned ? 'выбран документ из этого пакета' : `есть документ «${candidate.current_document_title || 'без названия'}»`}. Заменить его?`)) {
+                        save.disabled = false; save.textContent = saveLabel; return;
+                    }
+                    const savedFields = await saveCardRequest(`/documents/${current.result.id}/fields`, {method:'POST', body:fields, headers:{'X-Requested-With':'fetch','X-Preserve-Checklist-Link':'1'}});
+                    if (!savedFields.ok) { const detail = await savedFields.json().catch(() => ({})); throw new Error(detail.error || 'Не удалось сохранить реквизиты документа.'); }
                     const note = new URLSearchParams({csrf_token:fields.get('csrf_token'),note:reviewForm.elements.note.value});
                     const savedNote = await saveCardRequest(`/documents/${current.result.id}/note`, {method:'POST',body:note,headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'}});
                     if (!savedNote.ok) throw new Error('Не удалось сохранить примечание к документу.');
-                    current.saved = true;
-                    current.fields = Object.fromEntries(Array.from(documentFields.querySelectorAll('input[name],select[name],textarea[name]'), (field) => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
+                    separateDocuments.splice(activeSeparateDocument, 1);
+                    activeSeparateDocument = -1;
+                    if (selectedId) batchAssignedItemIds.add(String(selectedId));
                     pendingUploadSaved = true;
                     pendingUploadDeleteUrl = '';
                     renderSeparateDocumentStrip();
-                    const nextIndex = separateDocuments.findIndex((entry) => !entry.saved);
+                    const nextIndex = separateDocuments.findIndex((entry) => entry.result && !entry.saved);
                     if (nextIndex >= 0) {
                         showSeparateDocument(nextIndex);
                         save.disabled = false;
                         save.textContent = saveLabel;
                         return;
                     }
+                    const failedIndex = separateDocuments.findIndex((entry) => !entry.result);
+                    if (failedIndex >= 0) {
+                        showSeparateDocument(failedIndex);
+                        renderSeparateDocumentStrip();
+                        save.disabled = false; save.textContent = saveLabel;
+                        return;
+                    }
                     separateDocumentsMode = false;
                     separateDocuments = [];
                     reloadOnClose = true;
-                    window.location.reload();
+                    irdDialog.close();
                     return;
                 }
                 const a=await saveCardRequest(`/documents/${extracted.id}/fields`,{method:'POST',body:fields,headers:{'X-Requested-With':'fetch','X-Preserve-Checklist-Link':'1',...(extracted.general_upload ? {'X-Add-To-Checklist':'1'} : {})}}); if(!a.ok)throw new Error('Не удалось сохранить реквизиты.');

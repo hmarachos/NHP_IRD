@@ -1,5 +1,6 @@
 """Build consistent document captions from their stored requisites."""
 from functools import lru_cache
+from pathlib import Path
 import re
 
 from app.services.expiry import parse_document_date
@@ -53,6 +54,31 @@ def clean_document_name(title, issuer='', customer=''):
         for value in (organization, organization_genitive(organization)):
             title = re.sub(r'\s+(?:(?:заказчика|от|для)\s+)?' + re.escape(value) + r'\s*$', '', title, flags=re.I).strip()
     return title.strip(' ;,—-')
+
+
+def apply_filename_title_fallback(parsed, filename):
+    """Use the upload name when OCR has no usable title, retaining useful filename tags."""
+    filename_title = Path(filename or '').stem.strip()
+    if not filename_title:
+        return parsed
+
+    title = re.sub(r'\s+', ' ', parsed.working_title or '').strip()
+    if not title or title.casefold() in {'неопределенный документ', 'неопределённый документ'}:
+        parsed.working_title = filename_title
+        return parsed
+
+    # File names often carry an abbreviation and project identifier that do
+    # not appear in the printed title (for example, “ОВ АЗС 7”). Preserve those
+    # explicit tags without replacing a title that OCR read successfully.
+    existing = title.casefold()
+    missing_tags = []
+    for match in re.finditer(r'(?<!\w)([А-ЯЁA-Z]{2,})(?:\s+(\d{1,4}))?', filename_title):
+        tag = match.group(1) + (f' {match.group(2)}' if match.group(2) else '')
+        if tag.casefold() not in existing and not re.search(rf'(?<!\w){re.escape(match.group(1).casefold())}(?!\w)', existing):
+            missing_tags.append(tag)
+    if missing_tags:
+        parsed.working_title = f"{title} {' '.join(missing_tags)}"
+    return parsed
 
 
 def format_document_title(title, issuer='', issue_date='', document_number=''):

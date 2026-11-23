@@ -28,7 +28,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils.http import content_disposition_header
 
-from app.services.document_titles import attach_document_title, clean_document_name, format_document_title
+from app.services.document_titles import apply_filename_title_fallback, attach_document_title, clean_document_name, format_document_title
 from app.services.expiry import add_years, attach_expiry, expiry_state, iso_date
 from migration_portal.models import (
     ChecklistTemplate,
@@ -45,6 +45,7 @@ from migration_portal.checklist_utils import (
     allows_multiple_documents, apply_checklist_document_title, normalize,
     uses_customer_letter_subject,
 )
+from migration_portal.checklist_matching import suggest_checklist_items
 from migration_portal.accounts import visible_customers, visible_projects
 
 logger = logging.getLogger(__name__)
@@ -361,7 +362,8 @@ def upload_checklist_document(request, object_id, item_id):
                 else:
                     _link_checklist_document(project.id, item, existing)
             if request.headers.get("X-IRD-Analyze") == "1":
-                return JsonResponse({"id": existing.id, "existing_document": True, "general_upload": item is None, "preview": reverse("web_document_preview", args=[existing.id]), "fields": {
+                matches, suggested_item_id = suggest_checklist_items(project.id, existing) if item is None else ([], None)
+                return JsonResponse({"id": existing.id, "existing_document": True, "general_upload": item is None, "preview": reverse("web_document_preview", args=[existing.id]), "checklist_matches": matches, "suggested_checklist_item_id": suggested_item_id, "fields": {
                     "working_title": clean_document_name(existing.working_title or item_title, existing.issuer, project.customer), "official_title": existing.official_title or "",
                     "issuer": existing.issuer or "", "document_number": existing.document_number or "",
                     "issue_date": existing.issue_date or "", "valid_until": existing.valid_until or "",
@@ -387,6 +389,8 @@ def upload_checklist_document(request, object_id, item_id):
                 )
                 parsed = pipeline.process(final_path)
                 apply_checklist_document_title(parsed, item_title)
+            if item is None:
+                apply_filename_title_fallback(parsed, final_name)
             document = Document.objects.create(
                 project=project, contract_number=project.contract_number, object_name=project.name,
                 original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
@@ -402,7 +406,8 @@ def upload_checklist_document(request, object_id, item_id):
                 else:
                     _link_checklist_document(project.id, item, document)
             fields = _checklist_analysis_fields(parsed, item_title)
-            return JsonResponse({"id": document.id, "general_upload": item is None, "preview": reverse("web_document_preview", args=[document.id]), "fields": {
+            matches, suggested_item_id = suggest_checklist_items(project.id, parsed) if item is None else ([], None)
+            return JsonResponse({"id": document.id, "general_upload": item is None, "preview": reverse("web_document_preview", args=[document.id]), "checklist_matches": matches, "suggested_checklist_item_id": suggested_item_id, "fields": {
                 **fields,
             }})
         document = Document.objects.create(
@@ -484,6 +489,8 @@ def _checklist_analysis_fields(parsed, fallback_title):
     number_match = None
     if not (eroks_card or beltelecom or minskenergo):
         number_match = re.search(r"(?:№|N\s*|номер\s*)\s*([А-ЯЁA-Z0-9][А-ЯЁA-Z0-9./-]{1,30})", first_page, re.I)
+        if number_match and not re.search(r"\d", number_match.group(1)):
+            number_match = None
     document_number = "" if (eroks_card or project_assignment) else (
         parsed.document_number if (beltelecom or minskenergo)
         else (header_number or parsed.document_number or (number_match.group(1) if number_match else ""))
@@ -530,6 +537,19 @@ def document_detail(request, document_id):
 @require_POST
 def update_document_fields(request, document_id):
     document = _document_or_404(document_id)
+    requested_item_id = request.POST.get("checklist_item_id") if "checklist_item_id" in request.POST else None
+    selected_item = None
+    if requested_item_id:
+        try:
+            selected_item = ProjectChecklistItem.objects.filter(
+                pk=int(requested_item_id), project_id=document.project_id,
+            ).first()
+        except (TypeError, ValueError):
+            selected_item = None
+        if selected_item is None:
+            return JsonResponse({"error": "Выбранный пункт не относится к этому проекту."}, status=400)
+        if selected_item.validity_years > 0 and selected_item.title != "Инженерно-геодезические изыскания":
+            return JsonResponse({"error": "К этому пункту нельзя привязать файл."}, status=400)
     no_expiration = request.POST.get("no_expiration") == "on"
     document.working_title = request.POST.get("working_title", "").strip()
     document.official_title = request.POST.get("official_title", "").strip()
@@ -551,6 +571,8 @@ def update_document_fields(request, document_id):
         document.valid_until = ""
         document.no_expiration = True
     document.save(update_fields=["working_title", "official_title", "issuer", "document_number", "issue_date", "valid_until", "no_expiration"])
+    if selected_item is not None and not _link_checklist_document(document.project_id, selected_item, document):
+        return JsonResponse({"error": "Не удалось привязать документ к выбранному пункту."}, status=400)
     if request.headers.get("X-Add-To-Checklist") == "1":
         title = document.working_title or document.official_title or document.original_filename
         with transaction.atomic():

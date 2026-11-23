@@ -43,6 +43,12 @@ def queue_document_preparation(source):
         # Read persisted fields, including saves with update_fields and concurrent edits.
         source = type(source).objects.select_for_update().get(pk=source.pk)
         prepared, _ = PreparedDocument.objects.get_or_create(**{field: source})
+        if isinstance(source, Document) and source.archived_at:
+            prepared.chunks.all().delete()
+            PreparedDocument.objects.filter(pk=prepared.pk).update(
+                status="empty", error="", requested_revision=uuid.uuid4(), updated_at=timezone.now(),
+            )
+            return
         fingerprint = _fingerprint(source)
         if prepared.input_hash == fingerprint and prepared.status in {"ready", "empty"}:
             return
@@ -62,6 +68,13 @@ def prepare_document(prepared_id, requested_revision=None):
         prepared = PreparedDocument.objects.select_for_update().get(pk=prepared_id)
         if prepared.status != "pending" or (requested_revision is not None and prepared.requested_revision != requested_revision):
             return False
+        if isinstance(source, Document) and source.archived_at:
+            prepared.chunks.all().delete()
+            prepared.status = "empty"
+            prepared.error = ""
+            prepared.save(update_fields=["status", "error", "updated_at"])
+            invalidate_project_answer_cache(source.project_id)
+            return True
         # The worker owns the source lock through activation. Edits will queue a
         # newer job after this commit, so stale work cannot overwrite a newer card.
         if source.status in {"queued", "processing"}:
@@ -95,7 +108,7 @@ def prepare_document(prepared_id, requested_revision=None):
 
 def run_pending_preparations(limit=20):
     """Retryable DB queue; a failed publication rolls back its text and chunks."""
-    ids = list(PreparedDocument.objects.filter(status="pending").exclude(
+    ids = list(PreparedDocument.objects.filter(status="pending", document__archived_at__isnull=True).exclude(
         document__status__in=["queued", "processing"],
     ).exclude(correspondence__status__in=["queued", "processing"]).order_by("id").values_list("id", "requested_revision")[:limit])
     completed = 0

@@ -12,6 +12,7 @@ from django.db.models import Q
 
 from app.document_types import DOCUMENT_TYPES
 from app.services.checklist_document_fields import project_assignment_fields, extract_project_assignment_text
+from app.services.document_titles import apply_filename_title_fallback
 from app.services.pipeline import DocumentProcessingPipeline
 from migration_portal.checklist_utils import allows_multiple_documents, apply_checklist_document_title, normalize
 from migration_portal.document_matching import find_duplicate
@@ -74,6 +75,8 @@ def run_pending_document_jobs(limit: int = 2) -> int:
                 parsed = pipeline.process(path)
                 if link:
                     apply_checklist_document_title(parsed, link.title)
+                else:
+                    apply_filename_title_fallback(parsed, document.original_filename)
 
             with transaction.atomic():
                 owned = Document.objects.select_for_update().filter(pk=document.id, status="processing", processing_token=token).first()

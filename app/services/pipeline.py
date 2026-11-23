@@ -238,6 +238,11 @@ class DocumentProcessingPipeline:
                 parsed.no_expiration = not bool(parsed.valid_until)
                 if parsed.no_expiration:
                     parsed.validity_text = ""
+        # Whole-document extraction can turn a table heading such as “№ п/п”
+        # or nearby OCR noise into a letter-only document number. A document
+        # identifier needs at least one digit; otherwise leave the field blank.
+        if parsed.document_number and not re.search(r"\d", parsed.document_number):
+            parsed.document_number = ""
         parsed.raw_text = text
         from app.services.document_titles import clean_document_name
         parsed.working_title = clean_document_name(parsed.working_title, parsed.issuer)
