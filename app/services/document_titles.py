@@ -57,27 +57,18 @@ def clean_document_name(title, issuer='', customer=''):
 
 
 def apply_filename_title_fallback(parsed, filename):
-    """Use the upload name when OCR has no usable title, retaining useful filename tags."""
+    """Use the upload name only when OCR did not determine a document title."""
     filename_title = Path(filename or '').stem.strip()
     if not filename_title:
+        return parsed
+
+    if re.search(r'(?im)^\s*ТЕХНИЧЕСКИЕ\s+ТРЕБОВАНИЯ\s*[.:]?\s*$', parsed.raw_text or ''):
+        parsed.working_title = 'Технические требования'
         return parsed
 
     title = re.sub(r'\s+', ' ', parsed.working_title or '').strip()
     if not title or title.casefold() in {'неопределенный документ', 'неопределённый документ'}:
         parsed.working_title = filename_title
-        return parsed
-
-    # File names often carry an abbreviation and project identifier that do
-    # not appear in the printed title (for example, “ОВ АЗС 7”). Preserve those
-    # explicit tags without replacing a title that OCR read successfully.
-    existing = title.casefold()
-    missing_tags = []
-    for match in re.finditer(r'(?<!\w)([А-ЯЁA-Z]{2,})(?:\s+(\d{1,4}))?', filename_title):
-        tag = match.group(1) + (f' {match.group(2)}' if match.group(2) else '')
-        if tag.casefold() not in existing and not re.search(rf'(?<!\w){re.escape(match.group(1).casefold())}(?!\w)', existing):
-            missing_tags.append(tag)
-    if missing_tags:
-        parsed.working_title = f"{title} {' '.join(missing_tags)}"
     return parsed
 
 

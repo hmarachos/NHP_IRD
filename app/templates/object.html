@@ -27,9 +27,9 @@
             </div>
             {% if checklist %}<div class="checklist panel" data-checklist-list data-project-id="{{ object.id }}">
                 <div class="checklist-table-head"><span><span class="checklist-header-label">№</span></span><span><span class="checklist-header-label">Документ</span></span><span><span class="checklist-header-label">Примечание</span></span><span><span class="checklist-header-label">Срок действия</span></span><span><span class="checklist-header-label">Требуется замена</span></span><span></span></div>
-                {% for item in checklist %}{% set special_expiry = item.validity_years|int > 0 %}{% set is_geodesy = item.title == 'Инженерно-геодезические изыскания' %}{% set multi_documents = item.id in multi_document_item_ids %}{% set multi_kind = 'customer-letter' if item.title == 'Сведения для разработки сметной документации (по типовой форме)' else ('project-assignment' if item.title == 'Задание на проектирование' else '') %}{% set item_documents = checklist_documents.get(item.id, []) %}{% set linked = (documents + archived_documents)|selectattr('id', 'equalto', item.document_id)|first if item.document_id else none %}{% set loaded_document_count = item_documents|length if multi_documents else (1 if linked and not linked.archived_at else 0) %}{% set has_attachment = (linked and not linked.archived_at) or (multi_documents and item_documents) or item.id in archived_item_ids %}{% set expiry = item.expiry if special_expiry else (linked.expiry if linked else none) %}{% set row_status = 'received' if ((item.id in archived_item_ids) or (multi_documents and item_documents) or (special_expiry and item.issue_date) or (linked and not linked.archived_at and item.document_id)) else 'missing' %}<div class="checklist-row" data-checklist-row data-upload-url="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" data-item-title="{{ item.title }}" data-row-previewable="{{ 'true' if (linked and not linked.archived_at and not multi_documents) or (multi_documents and item_documents) else 'false' }}" {% if (linked and not linked.archived_at and not multi_documents) or (multi_documents and item_documents) %}tabindex="0" aria-label="Открыть документ: {{ (item_documents[-1].display_title or item_documents[-1].working_title or item_documents[-1].original_filename) if multi_documents and item_documents else (linked.display_title or linked.working_title or linked.original_filename) }}"{% endif %} data-title="{{ item.title|lower }}" data-status="{{ row_status }}" data-replacement-required="{{ 'true' if item.replacement_required else 'false' }}" data-has-attachment="{{ 'true' if has_attachment else 'false' }}" data-document-id="{{ item.document_id if linked and not linked.archived_at else '' }}" data-validity-years="{{ item.validity_years or 0 }}" data-sort-order="{{ item.sort_order }}" data-sort-id="{{ item.id }}" data-linked="{{ (linked.display_title or linked.working_title or linked.original_filename)|lower if linked and not linked.archived_at else '' }}" data-expiry="{{ expiry.key if expiry else '' }}" data-expiry-band="{{ 'expired' if expiry and expiry.days_left is not none and expiry.days_left < 0 else ('soon' if expiry and expiry.days_left is not none and expiry.days_left <= 30 else '') }}" data-expiry-date="{{ item.valid_until if special_expiry else (linked.valid_until or '' if linked else '') }}" data-special-date="{{ item.issue_date if special_expiry else '' }}">
+                {% for item in checklist %}{% set special_expiry = item.validity_years|int > 0 %}{% set is_geodesy = item.title == 'Инженерно-геодезические изыскания' %}{% set multi_documents = item.id in multi_document_item_ids %}{% set multi_kind = 'customer-letter' if item.title == 'Сведения для разработки сметной документации (по типовой форме)' else ('project-assignment' if item.title == 'Задание на проектирование' else '') %}{% set item_documents = checklist_documents.get(item.id, []) %}{% set linked = (documents + archived_documents)|selectattr('id', 'equalto', item.document_id)|first if item.document_id else none %}{% set loaded_document_count = (item_documents|length if item_documents else (1 if linked and not linked.archived_at else 0)) if multi_documents else (1 if linked and not linked.archived_at else 0) %}{% set has_attachment = (linked and not linked.archived_at) or (multi_documents and item_documents) or item.id in archived_item_ids %}{% set expiry = item.expiry if special_expiry else (linked.expiry if linked else none) %}{% set row_status = 'received' if ((item.id in archived_item_ids) or (multi_documents and item_documents) or (special_expiry and item.issue_date) or (linked and not linked.archived_at and item.document_id)) else 'missing' %}<div class="checklist-row" data-checklist-row data-upload-url="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" data-item-title="{{ item.title }}" data-row-previewable="{{ 'true' if (linked and not linked.archived_at and not multi_documents) or (multi_documents and (item_documents or (linked and not linked.archived_at))) else 'false' }}" {% if (linked and not linked.archived_at and not multi_documents) or (multi_documents and (item_documents or (linked and not linked.archived_at))) %}tabindex="0" aria-label="Открыть документ: {{ (item_documents[-1].display_title or item_documents[-1].working_title or item_documents[-1].original_filename) if multi_documents and item_documents else (linked.display_title or linked.working_title or linked.original_filename) }}"{% endif %} data-title="{{ item.title|lower }}" data-status="{{ row_status }}" data-replacement-required="{{ 'true' if item.replacement_required else 'false' }}" data-has-attachment="{{ 'true' if has_attachment else 'false' }}" data-document-id="{{ item.document_id if linked and not linked.archived_at else '' }}" data-validity-years="{{ item.validity_years or 0 }}" data-sort-order="{{ item.sort_order }}" data-sort-id="{{ item.id }}" data-linked="{{ (linked.display_title or linked.working_title or linked.original_filename)|lower if linked and not linked.archived_at else '' }}" data-expiry="{{ expiry.key if expiry else '' }}" data-expiry-band="{{ 'expired' if expiry and expiry.days_left is not none and expiry.days_left < 0 else ('soon' if expiry and expiry.days_left is not none and expiry.days_left <= 30 else '') }}" data-expiry-date="{{ item.valid_until if special_expiry else (linked.valid_until or '' if linked else '') }}" data-special-date="{{ item.issue_date if special_expiry else '' }}">
                     <span class="checklist-number">{{ loop.index }}</span>
-                    <div class="checklist-name">{% if is_geodesy %}<button type="button" class="checklist-geodesy-trigger" data-open-geodesy-properties data-date-url="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" data-date="{{ item.issue_date or '' }}" data-note="{{ item.note or (linked.note if linked else '') }}" data-validity-years="{{ item.validity_years or 2 }}"><strong>{{ item.title }}</strong>{% if loaded_document_count %}<span class="checklist-document-count-badge" aria-label="Загруженных документов: {{ loaded_document_count }}" title="Загруженных документов: {{ loaded_document_count }}">{{ loaded_document_count }}</span>{% endif %}{% if item.id in archived_item_ids %}<span class="document-archive-badge" aria-label="В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}">В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}</span>{% endif %}<small>Указать дату и примечание · файл можно приложить по желанию</small></button>{% else %}<span class="checklist-name-title"><strong>{{ (linked.display_title or linked.working_title or linked.original_filename) if linked and not linked.archived_at and not multi_documents else item.title }}</strong>{% if loaded_document_count %}<span class="checklist-document-count-badge" aria-label="Загруженных документов: {{ loaded_document_count }}" title="Загруженных документов: {{ loaded_document_count }}">{{ loaded_document_count }}</span>{% endif %}</span>{% if item.id in archived_item_ids %}<span class="document-archive-badge" aria-label="В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}">В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}</span>{% endif %}{% if item.description %}<small>{{ item.description }}</small>{% endif %}{% endif %}{% if item.title == 'Сведения для разработки сметной документации (по типовой форме)' %}<a class="checklist-template-download" href="{{ url_for('static', filename='templates/request_input_data_template.docx') }}" download><i class="bi bi-download" aria-hidden="true"></i> Скачать шаблон запроса</a>{% endif %}{% if multi_documents %}<div class="checklist-multiple-documents" hidden>{% for letter in item_documents %}<button type="button" class="checklist-linked-document-card checklist-multiple-card{% if multi_kind == 'customer-letter' %} checklist-letter-card{% endif %}" data-linked-document data-linked-document-link data-open-ird-document data-document-id="{{ letter.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=letter.id) }}" data-document-delete-url="{{ url_for('web.delete_document', document_id=letter.id) }}" data-document-title="{{ letter.display_title or letter.working_title or letter.original_filename }}" data-working-title="{{ letter.name_title or letter.working_title or '' }}" data-official-title="{{ letter.official_title or '' }}" data-issuer="{{ letter.issuer or '' }}" data-document-number="{{ letter.document_number or '' }}" data-issue-date="{{ letter.issue_date or '' }}" data-valid-until="{{ letter.valid_until or '' }}" data-no-expiration="{{ 1 if letter.no_expiration else 0 }}" data-note="{{ letter.note or '' }}"><span class="checklist-linked-document-icon"><i class="bi bi-{{ 'envelope-paper' if multi_kind == 'customer-letter' else 'file-earmark-pdf' }}" aria-hidden="true"></i></span><span class="checklist-linked-document-meta">{% if letter.document_number %}<strong>№ {{ letter.document_number }}</strong>{% else %}<strong>{{ 'Письмо заказчика' if multi_kind == 'customer-letter' else 'Версия задания' }}</strong>{% endif %}{% if letter.issue_date %}<span>от {{ letter.issue_date|ru_date }}</span>{% endif %}</span></button>{% endfor %}</div>{% else %}<button type="button" class="checklist-linked-document-card" data-linked-document data-linked-document-link data-open-ird-document hidden data-archived="{{ 'true' if linked and linked.archived_at else 'false' }}" data-document-id="{{ linked.id if linked else '' }}" data-document-preview="{{ url_for('web.document_viewer', document_id=linked.id) if linked else '#' }}" data-document-delete-url="{{ url_for('web.delete_document', document_id=linked.id) if linked else '' }}" data-document-title="{{ (linked.display_title or linked.working_title or linked.original_filename) if linked else '' }}" data-working-title="{{ linked.name_title or linked.working_title or '' if linked else '' }}" data-official-title="{{ linked.official_title or '' if linked else '' }}" data-issuer="{{ linked.issuer or '' if linked else '' }}" data-document-number="{{ linked.document_number or '' if linked else '' }}" data-issue-date="{{ linked.issue_date or '' if linked else '' }}" data-valid-until="{{ linked.valid_until or '' if linked else '' }}" data-no-expiration="{{ 1 if linked and linked.no_expiration else 0 }}" data-note="{{ linked.note or '' if linked else '' }}"><span class="checklist-linked-document-icon"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i></span><span class="checklist-linked-document-meta">{% if linked and linked.document_number %}<strong>№ {{ linked.document_number }}</strong>{% endif %}{% if linked and linked.issue_date %}<span>от {{ linked.issue_date|ru_date }}</span>{% endif %}</span></button>{% endif %}{% if multi_documents %}<button type="button" class="checklist-multi-upload" data-multiple-document-upload data-multiple-document-kind="{{ multi_kind }}" data-open-ird-upload data-upload-url="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" data-item-title="{{ item.title }}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {{ 'Добавить письмо' if multi_kind == 'customer-letter' else 'Добавить версию' }}</button>{% endif %}
+                    <div class="checklist-name">{% if is_geodesy %}<button type="button" class="checklist-geodesy-trigger" data-open-geodesy-properties data-date-url="{{ url_for('web.update_checklist_item', object_id=object.id, item_id=item.id) }}" data-date="{{ item.issue_date or '' }}" data-note="{{ item.note or (linked.note if linked else '') }}" data-validity-years="{{ item.validity_years or 2 }}"><strong>{{ item.title }}</strong>{% if loaded_document_count %}<span class="checklist-document-count-badge" aria-label="Загруженных документов: {{ loaded_document_count }}" title="Загруженных документов: {{ loaded_document_count }}">{{ loaded_document_count }}</span>{% endif %}{% if item.id in archived_item_ids %}<span class="document-archive-badge" aria-label="В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}">В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}</span>{% endif %}<small>Указать дату и примечание · файл можно приложить по желанию</small></button>{% else %}<span class="checklist-name-title"><strong>{{ (linked.display_title or linked.working_title or linked.original_filename) if linked and not linked.archived_at and not multi_documents else item.title }}</strong>{% if loaded_document_count %}<span class="checklist-document-count-badge" aria-label="Загруженных документов: {{ loaded_document_count }}" title="Загруженных документов: {{ loaded_document_count }}">{{ loaded_document_count }}</span>{% endif %}</span>{% if item.id in archived_item_ids %}<span class="document-archive-badge" aria-label="В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}">В архиве — {{ archived_item_document_ids.get(item.id, [])|length }}</span>{% endif %}{% if item.description %}<small>{{ item.description }}</small>{% endif %}{% endif %}{% if item.title == 'Сведения для разработки сметной документации (по типовой форме)' %}<a class="checklist-template-download" href="{{ url_for('static', filename='templates/request_input_data_template.docx') }}" download><i class="bi bi-download" aria-hidden="true"></i> Скачать шаблон запроса</a>{% endif %}{% if multi_documents %}<div class="checklist-multiple-documents" hidden>{% for letter in (item_documents if item_documents else ([linked] if linked and not linked.archived_at else [])) %}<button type="button" class="checklist-linked-document-card checklist-multiple-card{% if multi_kind == 'customer-letter' %} checklist-letter-card{% endif %}" data-linked-document data-linked-document-link data-open-ird-document data-document-id="{{ letter.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=letter.id) }}" data-document-delete-url="{{ url_for('web.delete_document', document_id=letter.id) }}" data-document-title="{{ letter.display_title or letter.working_title or letter.original_filename }}" data-version-number="{{ letter.version_order if letter.version_group_id else '' }}" data-working-title="{{ letter.name_title or letter.working_title or '' }}" data-official-title="{{ letter.official_title or '' }}" data-issuer="{{ letter.issuer or '' }}" data-document-number="{{ letter.document_number or '' }}" data-issue-date="{{ letter.issue_date or '' }}" data-valid-until="{{ letter.valid_until or '' }}" data-no-expiration="{{ 1 if letter.no_expiration else 0 }}" data-note="{{ letter.note or '' }}"><span class="checklist-linked-document-icon"><i class="bi bi-{{ 'envelope-paper' if multi_kind == 'customer-letter' else 'file-earmark-pdf' }}" aria-hidden="true"></i></span><span class="checklist-linked-document-meta">{% if letter.document_number %}<strong>№ {{ letter.document_number }}</strong>{% else %}<strong>{{ 'Письмо заказчика' if multi_kind == 'customer-letter' else 'Версия задания' }}</strong>{% endif %}{% if letter.issue_date %}<span>от {{ letter.issue_date|ru_date }}</span>{% endif %}</span></button>{% endfor %}</div>{% else %}<button type="button" class="checklist-linked-document-card" data-linked-document data-linked-document-link data-open-ird-document hidden data-archived="{{ 'true' if linked and linked.archived_at else 'false' }}" data-document-id="{{ linked.id if linked else '' }}" data-document-preview="{{ url_for('web.document_viewer', document_id=linked.id) if linked else '#' }}" data-document-delete-url="{{ url_for('web.delete_document', document_id=linked.id) if linked else '' }}" data-document-title="{{ (linked.display_title or linked.working_title or linked.original_filename) if linked else '' }}" data-working-title="{{ linked.name_title or linked.working_title or '' if linked else '' }}" data-official-title="{{ linked.official_title or '' if linked else '' }}" data-issuer="{{ linked.issuer or '' if linked else '' }}" data-document-number="{{ linked.document_number or '' if linked else '' }}" data-issue-date="{{ linked.issue_date or '' if linked else '' }}" data-valid-until="{{ linked.valid_until or '' if linked else '' }}" data-no-expiration="{{ 1 if linked and linked.no_expiration else 0 }}" data-note="{{ linked.note or '' if linked else '' }}"><span class="checklist-linked-document-icon"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i></span><span class="checklist-linked-document-meta">{% if linked and linked.document_number %}<strong>№ {{ linked.document_number }}</strong>{% endif %}{% if linked and linked.issue_date %}<span>от {{ linked.issue_date|ru_date }}</span>{% endif %}</span></button>{% endif %}{% if multi_documents %}<button type="button" class="checklist-multi-upload" data-multiple-document-upload data-multiple-document-kind="{{ multi_kind }}" data-open-ird-upload data-upload-url="{{ url_for('web.upload_checklist_document', object_id=object.id, item_id=item.id) }}" data-item-title="{{ item.title }}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {{ 'Добавить письмо' if multi_kind == 'customer-letter' else 'Добавить версию' }}</button>{% endif %}
                     </div>
                     {% set displayed_note = item.note or (linked.note if linked else '') %}<span class="checklist-note-display" data-checklist-note-display data-note-empty="{{ 'true' if not displayed_note else 'false' }}">{{ displayed_note }}</span>
                     <span class="checklist-expiry-cell" data-expiry-display>{% if special_expiry and item.issue_date %}<span>Дата изысканий: {{ item.issue_date|ru_date }}</span><strong>{{ expiry.label }} · до {{ item.valid_until|ru_date }}</strong>{% elif linked and item.status == 'received' and not multi_documents %}{% if expiry.key == 'expired' %}<button type="button" class="checklist-expiry expiry-expired" data-open-linked-document="{{ linked.id }}">Просрочен · до {{ linked.valid_until|ru_date }}</button>{% elif expiry.key == 'expiring' %}<button type="button" class="checklist-expiry expiry-expiring" data-open-linked-document="{{ linked.id }}">Истекает · до {{ linked.valid_until|ru_date }}</button>{% elif expiry.key == 'valid' %}<button type="button" class="checklist-expiry expiry-valid" data-open-linked-document="{{ linked.id }}">До {{ linked.valid_until|ru_date }}</button>{% elif expiry.key == 'unlimited' %}До ввода в эксплуатацию{% elif expiry.key == 'not_required' %}Не требуется{% elif expiry.key == 'unknown' %}Срок не указан{% endif %}{% endif %}</span>
@@ -38,17 +38,6 @@
                 </div>{% endfor %}
                 <p class="checklist-filter-empty" data-checklist-filter-empty hidden></p>
             </div>{% else %}<div class="empty-state compact-empty"><p>Список документов пока пуст.</p><p>Разблокируйте шаблон, чтобы добавить пункт.</p></div>{% endif %}
-            {% if archived_documents %}<section class="document-archive-section" data-document-archive-section>
-                <details class="document-archive" {% if archived_documents %}open{% endif %}>
-                    <summary><i class="bi bi-archive" aria-hidden="true"></i> Архив проекта <span>{{ archived_documents|length }}</span></summary>
-                    {% if archived_documents %}<div class="document-archive-list">
-                        {% for document in archived_documents %}<div class="document-archive-row">
-                            <button type="button" data-open-archived-document data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-working-title="{{ document.name_title or document.working_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span><strong>{{ document.display_title or document.working_title or document.original_filename }}</strong><small>В архиве с {{ document.archived_at[:10] if document.archived_at else '—' }}</small></span></button>
-                            <form method="post" action="{{ url_for('web.restore_document', document_id=document.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-button"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Восстановить</button></form>
-                        </div>{% endfor %}
-                    </div>{% else %}<p class="document-archive-empty">Документов в архиве нет.</p>{% endif %}
-                </details>
-            </section>{% endif %}
         </section>
 
 
@@ -62,7 +51,8 @@
 <dialog class="checklist-note-dialog" data-geodesy-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">ИНЖЕНЕРНЫЕ ИЗЫСКАНИЯ</p><h2>Инженерно-геодезические изыскания</h2></div><button type="button" class="checklist-add-close" data-close-geodesy aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-geodesy-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="status" value="missing"><input type="hidden" name="document_id" value=""><label for="geodesy-issue-date">Дата изысканий</label><input id="geodesy-issue-date" class="checklist-dialog-date" type="date" name="issue_date"><label for="geodesy-note">Примечание</label><textarea id="geodesy-note" name="note" rows="3" maxlength="2000" placeholder="Примечание к изысканиям" data-grow-textarea></textarea><div class="checklist-add-actions checklist-geodesy-actions"><button type="button" class="checklist-note-cancel" data-open-ird-upload data-upload-url="" data-item-title="Инженерно-геодезические изыскания" data-geodesy-upload><i class="bi bi-upload" aria-hidden="true"></i> Прикрепить файл (необязательно)</button><span></span><button type="button" class="checklist-note-cancel" data-close-geodesy>Отмена</button><button type="submit">Сохранить</button></div></form></dialog><dialog class="checklist-note-dialog checklist-properties-dialog" data-checklist-properties-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">СВОЙСТВА ДОКУМЕНТА</p><h2 data-checklist-properties-heading>Документ проекта</h2></div><button type="button" class="checklist-add-close" data-close-checklist-properties aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-note-dialog-form" data-checklist-properties-form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label for="checklist-properties-title">Наименование документа</label><input id="checklist-properties-title" class="checklist-dialog-date" name="title" maxlength="300" required><label for="checklist-properties-description">Описание</label><textarea id="checklist-properties-description" name="description" rows="2" maxlength="500" placeholder="Описание документа" data-grow-textarea></textarea><label for="checklist-properties-note">Примечание</label><textarea id="checklist-properties-note" name="note" rows="2" maxlength="2000" placeholder="Примечание к документу" data-grow-textarea></textarea><div class="checklist-properties-date-row"><label for="checklist-properties-issue-date">Дата выдачи / документа<input id="checklist-properties-issue-date" class="checklist-dialog-date" type="date" name="issue_date"></label><label for="checklist-properties-validity">Срок действия (лет)<select id="checklist-properties-validity" class="checklist-dialog-date" name="validity_years"><option value="0">Не задан</option><option value="1">1 год</option><option value="2">2 года</option><option value="3">3 года</option><option value="5">5 лет</option><option value="10">10 лет</option></select></label></div><div class="checklist-add-actions checklist-properties-actions"><button type="submit" class="checklist-properties-delete" data-checklist-properties-delete formnovalidate><i class="bi bi-trash3" aria-hidden="true"></i> Удалить документ</button><span></span><button type="button" class="checklist-note-cancel" data-close-checklist-properties>Отмена</button><button type="submit" data-checklist-properties-save>Сохранить</button></div></form></dialog>
 <dialog class="checklist-add-dialog" data-checklist-add-dialog><div class="checklist-add-dialog-heading"><div><p class="eyebrow">КОМПЛЕКТНОСТЬ ПРОЕКТА</p><h2>Добавить документы</h2></div><button type="button" class="checklist-add-close" data-close-checklist-add aria-label="Закрыть"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div><form class="checklist-add-form" action="{{ url_for('web.add_checklist_item', object_id=object.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label><span>Способ добавления</span><select name="add_mode" data-checklist-add-mode><option value="template" {% if template_choices %}selected{% else %}disabled{% endif %}>Добавить все документы из шаблона</option><option value="custom" {% if not template_choices %}selected{% endif %}>Добавить один документ вручную</option></select></label><label data-checklist-template-field {% if not template_choices %}hidden{% endif %}><span>Шаблон</span><select name="template_id" data-checklist-template-select required {% if not template_choices %}disabled{% endif %}><option value="" disabled selected>Выберите шаблон</option>{% for choice in template_choices %}<option value="{{ choice.template.id }}">{{ choice.template.name }} · {{ choice.item_count }} пунктов</option>{% endfor %}</select></label><div class="checklist-template-preview" data-checklist-template-preview hidden></div><div class="checklist-add-custom-fields" data-checklist-custom-fields {% if template_choices %}hidden{% endif %}><label><span>Название нового документа</span><textarea name="title" rows="1" maxlength="300" placeholder="Например, заключение экспертизы" data-grow-textarea {% if template_choices %}disabled{% else %}required{% endif %}></textarea></label><label><span>Примечание <small class="checklist-add-optional">Необязательно</small></span><textarea name="note" rows="1" maxlength="2000" placeholder="Дополнительная информация" data-grow-textarea {% if template_choices %}disabled{% endif %}></textarea></label></div><div class="checklist-add-actions"><button type="submit" data-checklist-add-submit>Добавить документы</button></div></form><script type="application/json" data-template-choice-data>{{ template_choice_data|tojson }}</script></dialog>
 <datalist id="correspondence-organization-options">{% for organization in correspondence_organizations %}<option value="{{ organization }}">{% endfor %}</datalist>
-<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-save-toast" data-ird-save-toast role="status" aria-live="polite" hidden><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span data-ird-save-toast-text>Изменения сохранены</span></div><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения</span></label><section class="correspondence-attachment-order" data-correspondence-attachment-order hidden><p>Первый файл — письмо. Остальные — приложения. Установите порядок страниц перед загрузкой.</p><ol data-attachment-order-list></ol></section><button type="button" class="secondary-button" data-append-cancel hidden>Назад к письму</button><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><nav class="ird-document-strip" data-ird-document-strip role="tablist" aria-label="Загруженные документы" hidden></nav><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><section class="ird-files-panel" data-ird-files-panel hidden><header><i class="bi bi-folder2-open" aria-hidden="true"></i><strong>Документы</strong><span class="ird-files-count" data-ird-files-count>0</span><button type="button" class="btn btn-sm btn-primary ird-file-add" data-ird-add-file><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button></header><div class="ird-files-list" data-ird-files-list></div></section><label data-batch-checklist-label hidden>Пункт комплектности<select name="checklist_item_id" data-batch-checklist disabled><option value="">Сохранить без привязки</option></select><small data-batch-checklist-hint>Предложение формируется по распознанному названию и тексту документа. Проверьте выбор перед сохранением.</small></label><label>Наименование документа<textarea name="working_title" rows="3" data-grow-textarea></textarea></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><textarea name="issuer" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><div class="ird-number-date-fields"><label>Номер документа<input name="document_number"></label><label>Дата выдачи<input type="date" name="issue_date"></label></div><div class="ird-date-fields"><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions" data-ird-new-document-actions hidden><button type="button" class="btn btn-sm btn-outline-secondary" data-ird-back><i class="bi bi-x-lg" aria-hidden="true"></i> Отмена</button><button type="button" class="btn btn-sm btn-outline-danger" data-ird-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div><div class="ird-archived-document-sources" data-card-document-archive hidden aria-hidden="true">{% for document in archived_documents %}<button type="button" data-open-archived-document data-archive-title="{{ (document.display_title or document.working_title or document.original_filename)|lower|trim }}" data-checklist-item-ids="{{ archived_document_item_ids.get(document.id, [])|join(',') }}" data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-working-title="{{ document.name_title or document.working_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>{{ document.display_title or document.working_title or document.original_filename }}</span></button>{% endfor %}</div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender" list="correspondence-organization-options" autocomplete="off"></label><label>Получатель<input name="recipient" list="correspondence-organization-options" autocomplete="off"></label><label>Тема письма<textarea name="subject" rows="1" data-grow-textarea></textarea></label><label>Краткое содержание<textarea name="summary" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Заменить</button><button type="button" data-correspondence-append hidden><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button><span data-correspondence-append-status role="status" aria-live="polite"></span><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
+<div hidden aria-hidden="true">{% for document in documents %}<button type="button" data-alert-document data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-working-title="{{ document.name_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"></button>{% endfor %}</div>
+<dialog class="ird-review-dialog" data-ird-review><header><div><p class="eyebrow" data-ird-eyebrow>РАСПОЗНАВАНИЕ ДОКУМЕНТА</p><h2 data-ird-heading>Загрузка документа</h2></div><button type="button" class="checklist-add-close" data-ird-close aria-label="Закрыть"><i class="bi bi-x-lg"></i></button></header><div class="ird-save-toast" data-ird-save-toast role="status" aria-live="polite" hidden><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span data-ird-save-toast-text>Изменения сохранены</span></div><div class="ird-upload-stage" data-ird-stage="upload"><p data-ird-upload-description>Загрузите один PDF или Word-файл либо страницы документа отдельными изображениями.</p><label class="ird-correspondence-direction" data-correspondence-upload-option hidden><span>Направление письма</span><select data-correspondence-upload-direction><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label class="ird-dropzone"><input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,.doc,.docx,.heic,.heif" multiple data-ird-files><i class="bi bi-cloud-arrow-up"></i><strong>Выберите файл или перетащите его сюда</strong><span data-ird-file-label>PDF, Word или изображения</span></label><section class="correspondence-attachment-order" data-correspondence-attachment-order hidden><p>Первый файл — письмо. Остальные — приложения. Установите порядок страниц перед загрузкой.</p><ol data-attachment-order-list></ol></section><button type="button" class="secondary-button" data-append-cancel hidden>Назад к письму</button><button type="button" data-ird-start disabled>Распознать документ</button></div><div class="ird-loading" data-ird-stage="loading" hidden><span class="spinner"></span><strong data-ird-loading-title>Извлекаем данные документа…</strong><p>Это может занять некоторое время.</p></div><form class="ird-review" data-ird-stage="review" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="ird-preview"><nav class="ird-document-strip" data-ird-document-strip role="tablist" aria-label="Загруженные документы" hidden></nav><small class="ird-version-dnd-hint" data-version-dnd-hint hidden>Перетащите вкладку на открытую, чтобы добавить файл как версию</small><iframe title="Предпросмотр документа" data-ird-frame></iframe></div><div class="ird-fields" data-ird-document-fields><p class="ird-review-caption">Проверьте извлеченные данные</p><section class="ird-files-panel" data-ird-files-panel hidden><header><i class="bi bi-folder2-open" aria-hidden="true"></i><strong>Документы</strong><span class="ird-files-count" data-ird-files-count>0</span><button type="button" class="btn btn-sm btn-primary ird-file-add" data-ird-add-file><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button></header><div class="ird-files-list" data-ird-files-list></div></section><section class="ird-checklist-picker" data-batch-checklist-label hidden><div class="ird-checklist-picker-heading"><span class="ird-checklist-picker-icon"><i class="bi bi-list-check" aria-hidden="true"></i></span><span><strong>Пункт комплектности</strong><small>Найдите и выберите пункт из списка ниже</small></span></div><label class="ird-checklist-search"><span><i class="bi bi-search" aria-hidden="true"></i> Поиск в списке</span><input type="search" data-batch-checklist-search placeholder="Введите название пункта" autocomplete="off" hidden></label><select name="checklist_item_id" data-batch-checklist size="2" disabled><option value="">Сохранить без привязки</option></select><small data-batch-checklist-hint>Предложение формируется по распознанному названию и тексту документа. Проверьте выбор перед сохранением.</small></section><label>Наименование документа<textarea name="working_title" rows="3" data-grow-textarea></textarea></label><input type="hidden" name="official_title"><label><span data-ird-issuer-label>Орган, выдавший документ</span><textarea name="issuer" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><div class="ird-number-date-fields"><label>Номер документа<input name="document_number"></label><label>Дата выдачи<input type="date" name="issue_date"></label></div><div class="ird-date-fields"><label data-ird-valid-until>Срок действия<input type="date" name="valid_until"></label><label class="ird-no-expiry"><input type="checkbox" name="no_expiration"> Срок действия не ограничен</label></div><label>Примечание<textarea name="note" rows="3" placeholder="Примечание к документу"></textarea></label><div class="ird-actions" data-ird-new-document-actions hidden><button type="button" class="btn btn-sm btn-outline-secondary" data-ird-back><i class="bi bi-x-lg" aria-hidden="true"></i> Отмена</button><button type="button" class="btn btn-sm btn-outline-danger" data-ird-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div><div class="ird-archived-document-sources" data-card-document-archive hidden aria-hidden="true">{% for document in archived_documents %}<button type="button" data-open-archived-document data-archive-title="{{ (document.display_title or document.working_title or document.original_filename)|lower|trim }}" data-checklist-item-ids="{{ archived_document_item_ids.get(document.id, [])|join(',') }}" data-document-id="{{ document.id }}" data-document-preview="{{ url_for('web.document_viewer', document_id=document.id) }}" data-document-title="{{ document.display_title or document.working_title or document.original_filename }}" data-version-number="{{ document.version_order if document.version_group_id else '' }}" data-working-title="{{ document.name_title or document.working_title or '' }}" data-official-title="{{ document.official_title or '' }}" data-issuer="{{ document.issuer or '' }}" data-document-number="{{ document.document_number or '' }}" data-issue-date="{{ document.issue_date or '' }}" data-valid-until="{{ document.valid_until or '' }}" data-no-expiration="{{ 1 if document.no_expiration else 0 }}" data-note="{{ document.note or '' }}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i><span>{{ document.display_title or document.working_title or document.original_filename }}</span></button>{% endfor %}</div></div><div class="ird-fields ird-correspondence-fields" data-correspondence-fields hidden><p class="ird-review-caption">Проверьте реквизиты письма</p><label>Направление<select name="direction"><option value="incoming">Входящее</option><option value="outgoing">Исходящее</option></select></label><label>Номер письма<input name="number" autocomplete="off"></label><label>Дата письма<input type="date" name="letter_date"></label><label>Отправитель<input name="sender" list="correspondence-organization-options" autocomplete="off"></label><label>Получатель<input name="recipient" list="correspondence-organization-options" autocomplete="off"></label><label>Тема письма<textarea name="subject" rows="1" data-grow-textarea></textarea></label><label>Краткое содержание<textarea name="summary" rows="1" data-grow-textarea data-grow-max-lines="5"></textarea></label><label data-correspondence-valid-until>Срок действия согласования<input type="date" name="valid_until"></label><div class="ird-actions"><button type="button" data-ird-back data-correspondence-back><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Заменить</button><button type="button" data-correspondence-append hidden><i class="bi bi-plus-lg" aria-hidden="true"></i> Добавить</button><span data-correspondence-append-status role="status" aria-live="polite"></span><button type="button" class="ird-delete-document" data-ird-delete data-correspondence-delete><i class="bi bi-trash3" aria-hidden="true"></i> Удалить</button><button type="submit"><i class="bi bi-check2" aria-hidden="true"></i> Сохранить</button></div></div></form><form data-ird-delete-form method="post" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form><p class="ird-error" data-ird-error hidden></p></dialog>
 <script>
 (() => {
     const workspace = document.querySelector('[data-project-workspace]');
@@ -750,10 +740,12 @@
         const fileInput = irdDialog.querySelector('[data-ird-files]');
         const startButton = irdDialog.querySelector('[data-ird-start]');
         const documentStrip = irdDialog.querySelector('[data-ird-document-strip]');
+        const versionDndHint = irdDialog.querySelector('[data-version-dnd-hint]');
         const attachmentOrder = irdDialog.querySelector('[data-correspondence-attachment-order]');
         const attachmentOrderList = irdDialog.querySelector('[data-attachment-order-list]');
         let correspondenceFiles = [];
-        let separateDocumentsMode = false, separateDocuments = [], activeSeparateDocument = -1;
+        let separateDocumentsMode = false, separateDocuments = [], activeSeparateDocument = -1, draggingSeparateDocumentIndex = -1;
+        let pointerCardDrag = null, suppressTabClick = false;
         const reviewForm = irdDialog.querySelector('[data-ird-stage="review"]');
         const uploadStage = irdDialog.querySelector('[data-ird-stage="upload"]');
         const loadingStage = irdDialog.querySelector('[data-ird-stage="loading"]');
@@ -762,7 +754,7 @@
         let correspondenceMode = false, correspondenceRecordType = 'correspondence', correspondenceUpdateUrl = '';
         let pendingUploadDeleteUrl = '', pendingUploadSaved = true, closingAfterDelete = false;
         let checklistAppendMode = false, checklistAppendItemId = '';
-        let batchAssignedItemIds = new Set(), batchHadMultipleDocuments = false;
+        let batchAssignedItemIds = new Set(), batchHadMultipleDocuments = false, batchVersionGroups = new Map();
         let documentAutosaveTimer = null, documentAutosaveDirty = false, documentAutosaveRevision = 0, documentAutosavedRevision = 0, documentAutosavePromise = Promise.resolve();
         const documentFields = reviewForm.querySelector('[data-ird-document-fields]');
         const resetNewDocumentFields = () => {
@@ -774,7 +766,128 @@
         };
         const batchChecklistLabel = documentFields.querySelector('[data-batch-checklist-label]');
         const batchChecklistSelect = documentFields.querySelector('[data-batch-checklist]');
+        const batchChecklistSearch = documentFields.querySelector('[data-batch-checklist-search]');
         const batchChecklistHint = documentFields.querySelector('[data-batch-checklist-hint]');
+        const showBatchDropPreview = (sourceTab, targetWrap, landed = false) => {
+            if (!sourceTab || !targetWrap) return;
+            let preview = targetWrap.querySelector('.ird-drop-stack-card');
+            if (!preview) {
+                preview = sourceTab.cloneNode(true);
+                preview.classList.remove('is-dragging');
+                preview.classList.add('ird-drop-stack-card');
+                preview.setAttribute('aria-hidden', 'true');
+                preview.tabIndex = -1;
+                targetWrap.append(preview);
+            }
+            targetWrap.classList.add('is-drop-target');
+            if (landed) {
+                preview.classList.add('is-landing');
+                window.setTimeout(() => {
+                    preview.remove();
+                    targetWrap.classList.remove('is-drop-target');
+                }, 700);
+            }
+        };
+        const clearBatchDropPreviews = () => {
+            documentStrip.querySelectorAll('.ird-document-tab-wrap').forEach((wrap) => {
+                wrap.classList.remove('is-drop-target');
+                wrap.querySelector('.ird-drop-stack-card')?.remove();
+            });
+        };
+        const stackBatchEntries = (source, target) => {
+            if (source.stackGroup && source.stackGroup === target.stackGroup) return separateDocuments.indexOf(target);
+            const group = target.stackGroup || source.stackGroup || `stack-${Date.now()}-${Math.random()}`;
+            const previousGroup = source.stackGroup;
+            const moving = separateDocuments.filter((entry) => entry === source || (previousGroup && entry.stackGroup === previousGroup));
+            moving.forEach((entry) => { entry.stackGroup = group; });
+            target.stackGroup = group;
+            separateDocuments = separateDocuments.filter((entry) => !moving.includes(entry));
+            let insertAt = separateDocuments.lastIndexOf(target) + 1;
+            while (insertAt < separateDocuments.length && separateDocuments[insertAt].stackGroup === group) insertAt++;
+            separateDocuments.splice(insertAt, 0, ...moving);
+            return separateDocuments.indexOf(target);
+        };
+        const finishSeparateDocumentDrop = async (sourceIndex, targetIndex, targetWrap) => {
+            if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= separateDocuments.length
+                || !Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= separateDocuments.length
+                || sourceIndex === targetIndex) return;
+            const source = separateDocuments[sourceIndex];
+            const target = separateDocuments[targetIndex];
+            if (!source?.result || !target?.result) return;
+            showBatchDropPreview(documentStrip.querySelectorAll('.ird-document-tab')[sourceIndex], targetWrap, true);
+            const selectedItemId = target.fields.checklist_item_id || '';
+            const selectedItem = (target.result.checklist_matches || []).find((match) => String(match.id) === String(selectedItemId));
+            if (selectedItem?.allows_multiple) {
+                captureSeparateDocument();
+                source.fields.checklist_item_id = String(selectedItemId);
+                source.skipClickOnce = true;
+                const newTargetIndex = stackBatchEntries(source, target);
+                renderSeparateDocumentStrip();
+                showSeparateDocument(newTargetIndex);
+                batchChecklistHint.textContent = `Файл «${source.file.name}» будет сохранён в комплект «${selectedItem.title}».`;
+                showSaveToast('Файл добавлен в комплект документа');
+                return;
+            }
+            await mergeSeparateDocumentVersion(sourceIndex, targetIndex);
+        };
+        document.addEventListener('pointermove', (event) => {
+            if (!pointerCardDrag || pointerCardDrag.pointerId !== event.pointerId) return;
+            if (!pointerCardDrag.started && Math.hypot(event.clientX - pointerCardDrag.startX, event.clientY - pointerCardDrag.startY) < 7) return;
+            if (!pointerCardDrag.started) {
+                pointerCardDrag.started = true;
+                draggingSeparateDocumentIndex = pointerCardDrag.index;
+                pointerCardDrag.button.classList.add('is-dragging');
+                document.body.classList.add('is-ird-card-dragging');
+                const ghost = pointerCardDrag.button.cloneNode(true);
+                ghost.classList.remove('is-dragging');
+                ghost.classList.add('ird-card-drag-ghost');
+                ghost.style.width = `${pointerCardDrag.button.getBoundingClientRect().width}px`;
+                ghost.removeAttribute('id');
+                ghost.setAttribute('aria-hidden', 'true');
+                irdDialog.append(ghost);
+                pointerCardDrag.ghost = ghost;
+            }
+            event.preventDefault();
+            const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.ird-document-tab-wrap');
+            const targetIndex = target ? Array.from(documentStrip.querySelectorAll('.ird-document-tab-wrap')).indexOf(target) : -1;
+            clearBatchDropPreviews();
+            if (targetIndex >= 0 && targetIndex !== pointerCardDrag.index && separateDocuments[targetIndex]?.result) {
+                target.classList.add('is-drop-target');
+                const bounds = target.getBoundingClientRect();
+                pointerCardDrag.ghost.style.left = `${bounds.left + 8}px`;
+                pointerCardDrag.ghost.style.top = `${bounds.top - 5}px`;
+                pointerCardDrag.targetIndex = targetIndex;
+                pointerCardDrag.targetWrap = target;
+            } else {
+                pointerCardDrag.ghost.style.left = `${event.clientX - pointerCardDrag.ghost.offsetWidth / 2}px`;
+                pointerCardDrag.ghost.style.top = `${event.clientY - 18}px`;
+                pointerCardDrag.targetIndex = -1;
+                pointerCardDrag.targetWrap = null;
+            }
+        }, {capture: true});
+        document.addEventListener('pointerup', (event) => {
+            if (!pointerCardDrag || pointerCardDrag.pointerId !== event.pointerId) return;
+            const drag = pointerCardDrag;
+            pointerCardDrag = null;
+            draggingSeparateDocumentIndex = -1;
+            drag.button.classList.remove('is-dragging');
+            drag.ghost?.remove();
+            document.body.classList.remove('is-ird-card-dragging');
+            if (!drag.started) return;
+            suppressTabClick = true;
+            window.setTimeout(() => { suppressTabClick = false; }, 0);
+            if (drag.targetIndex >= 0) finishSeparateDocumentDrop(drag.index, drag.targetIndex, drag.targetWrap);
+            else clearBatchDropPreviews();
+        }, {capture: true});
+        document.addEventListener('pointercancel', () => {
+            if (!pointerCardDrag) return;
+            pointerCardDrag.button.classList.remove('is-dragging');
+            pointerCardDrag.ghost?.remove();
+            pointerCardDrag = null;
+            draggingSeparateDocumentIndex = -1;
+            document.body.classList.remove('is-ird-card-dragging');
+            clearBatchDropPreviews();
+        }, {capture: true});
         const newDocumentActions = documentFields.querySelector('[data-ird-new-document-actions]');
         const setNewDocumentActionsVisible = (visible) => { newDocumentActions.hidden = !visible; };
         const saveToast = irdDialog.querySelector('[data-ird-save-toast]');
@@ -810,8 +923,8 @@
             const activeFiles = Array.from(checklistRow?.querySelectorAll('[data-open-ird-document]') || []).filter((file) => file.dataset.documentId && file.dataset.archived !== 'true');
             const archivedFiles = Array.from(irdDialog.querySelectorAll('[data-open-archived-document]')).filter((file) => file.dataset.checklistItemIds.split(',').includes(itemId));
             const allFiles = [
-                ...activeFiles.map((file) => ({source: file, id: file.dataset.documentId, title: file.dataset.documentTitle || file.dataset.workingTitle || 'Документ', date: file.dataset.issueDate || '', archived: false})),
-                ...archivedFiles.map((file) => ({source: file, id: file.dataset.documentId, title: file.dataset.documentTitle || 'Документ', date: file.dataset.issueDate || '', archived: true})),
+                ...activeFiles.map((file) => ({source: file, id: file.dataset.documentId, title: file.dataset.documentTitle || file.dataset.workingTitle || 'Документ', date: file.dataset.issueDate || '', version: file.dataset.versionNumber || '', archived: false})),
+                ...archivedFiles.map((file) => ({source: file, id: file.dataset.documentId, title: file.dataset.documentTitle || 'Документ', date: file.dataset.issueDate || '', version: file.dataset.versionNumber || '', archived: true})),
             ];
             filesPanel.hidden = !checklistRow;
             const addButton=filesPanel.querySelector('[data-ird-add-file]');
@@ -836,6 +949,7 @@
                 title.className = 'ird-file-title';
                 title.textContent = file.title;
                 details.append(title);
+                if (file.version) { const version = document.createElement('small'); version.className = 'ird-file-version'; version.textContent = `Версия ${file.version}`; details.append(version); }
                 const date = document.createElement('small');
                 date.className = 'ird-file-date';
                 const parts = file.date.split('-');
@@ -912,7 +1026,31 @@
                             headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': reviewForm.elements.csrf_token.value},
                         });
                         if (!response.ok) throw new Error('Не удалось удалить файл.');
-                        window.location.reload();
+                        const remaining = allFiles.filter((candidate) => candidate.id !== file.id);
+                        checklistRow?.querySelectorAll('[data-open-ird-document]').forEach((source) => {
+                            if (source.dataset.documentId === file.id) source.remove();
+                        });
+                        irdDialog.querySelectorAll('[data-open-archived-document]').forEach((source) => {
+                            if (source.dataset.documentId === file.id) source.remove();
+                        });
+                        reloadOnClose = true;
+                        if (!remaining.length) {
+                            irdDialog.close();
+                            return;
+                        }
+                        const activeCount = remaining.filter((candidate) => !candidate.archived).length;
+                        const badge = checklistRow?.querySelector('.checklist-document-count-badge');
+                        if (badge) {
+                            badge.hidden = !activeCount;
+                            badge.textContent = String(activeCount);
+                            badge.title = `Загруженных документов: ${activeCount}`;
+                            badge.setAttribute('aria-label', badge.title);
+                        }
+                        if (file.id === String(selectedDocumentId || '')) {
+                            remaining[0].source.click();
+                        } else {
+                            renderChecklistFiles(checklistRow, selectedDocumentId);
+                        }
                     } catch (error) {
                         deleteButton.disabled = false;
                         errorBox.textContent = error.message;
@@ -953,22 +1091,136 @@
             const entry = separateDocuments[activeSeparateDocument];
             entry.fields = Object.fromEntries(Array.from(documentFields.querySelectorAll('input[name],select[name],textarea[name]'), (field) => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
         };
+        const renderBatchChecklistOptions = (entry, query = '') => {
+            const matches = entry.result.checklist_matches || [];
+            const normalizedQuery = query.trim().toLocaleLowerCase('ru');
+            const versionGroup = entry.versionGroupId ? batchVersionGroups.get(String(entry.versionGroupId)) : null;
+            const sharedItemId = versionGroup ? versionGroup.checklistItemId : undefined;
+            const selectedId = query.trim() ? (sharedItemId !== undefined ? sharedItemId : (entry.fields.checklist_item_id || '')) : (sharedItemId !== undefined ? sharedItemId : (entry.fields.checklist_item_id || entry.result.suggested_checklist_item_id || ''));
+            batchChecklistSelect.replaceChildren(new Option('Сохранить без привязки', ''));
+            const availableMatches = matches.filter((match) => (
+                (match.allows_multiple || (!match.has_document && !batchAssignedItemIds.has(String(match.id))))
+                || String(match.id) === String(sharedItemId || '')
+            ));
+            batchChecklistLabel.hidden = availableMatches.length === 0;
+            batchChecklistSelect.disabled = availableMatches.length === 0;
+            batchChecklistSearch.hidden = availableMatches.length <= 1;
+            for (const match of availableMatches) {
+                const label = match.title;
+                if (!normalizedQuery || label.toLocaleLowerCase('ru').includes(normalizedQuery)) {
+                    batchChecklistSelect.add(new Option(label, String(match.id)));
+                }
+            }
+            batchChecklistSelect.size = Math.max(2, Math.min(batchChecklistSelect.options.length, 5));
+            const selectedOptionExists = Array.from(batchChecklistSelect.options).some((option) => option.value === String(selectedId));
+            batchChecklistSelect.value = selectedOptionExists ? String(selectedId) : '';
+            entry.fields.checklist_item_id = batchChecklistSelect.value;
+            if (versionGroup) {
+                versionGroup.checklistItemId = batchChecklistSelect.value;
+                separateDocuments.forEach((member) => {
+                    if (String(member.versionGroupId || '') === String(entry.versionGroupId)) {
+                        member.fields.checklist_item_id = batchChecklistSelect.value;
+                    }
+                });
+            }
+        };
+        batchChecklistSelect.addEventListener('change', () => {
+            const entry = separateDocuments[activeSeparateDocument];
+            const versionGroup = entry?.versionGroupId ? batchVersionGroups.get(String(entry.versionGroupId)) : null;
+            if (versionGroup) {
+                versionGroup.checklistItemId = batchChecklistSelect.value;
+                separateDocuments.forEach((member) => {
+                    if (String(member.versionGroupId || '') === String(entry.versionGroupId)) {
+                        member.fields.checklist_item_id = batchChecklistSelect.value;
+                    }
+                });
+            }
+            captureSeparateDocument();
+        });
+        batchChecklistSearch.addEventListener('input', () => {
+            const entry = separateDocuments[activeSeparateDocument];
+            if (!separateDocumentsMode || !entry?.result) return;
+            renderBatchChecklistOptions(entry, batchChecklistSearch.value);
+            captureSeparateDocument();
+        });
         const renderSeparateDocumentStrip = () => {
             documentStrip.replaceChildren();
             separateDocuments.forEach((entry, index) => {
+                const tabWrap = document.createElement('div');
+                tabWrap.className = 'ird-document-tab-wrap';
+                if (entry.stackGroup && separateDocuments[index - 1]?.stackGroup === entry.stackGroup) {
+                    tabWrap.classList.add('is-stacked');
+                }
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = `ird-document-tab${index === activeSeparateDocument ? ' is-active' : ''}${entry.saved ? ' is-saved' : ''}`;
                 button.setAttribute('role', 'tab');
                 button.setAttribute('aria-selected', String(index === activeSeparateDocument));
-                button.title = entry.file.name;
+                button.title = entry.file.name + (index === activeSeparateDocument && separateDocuments.length > 1 ? ' · Перетащите сюда вкладку другого файла, чтобы добавить его как версию' : '');
+                const canDragCard = Boolean(entry.result && !entry.saved);
+                button.dataset.cardDraggable = String(canDragCard);
+                button.draggable = false;
+                button.addEventListener('pointerdown', (event) => {
+                    if (event.button !== 0 || !canDragCard) return;
+                    pointerCardDrag = {index, button, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, started: false, targetIndex: -1, targetWrap: null};
+                });
+                button.addEventListener('dragstart', (event) => {
+                    if (!button.draggable) { event.preventDefault(); return; }
+                    draggingSeparateDocumentIndex = index;
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', String(index));
+                    event.dataTransfer.setDragImage(button, Math.min(40, button.offsetWidth / 2), Math.min(24, button.offsetHeight / 2));
+                    button.classList.add('is-dragging');
+                });
+                button.addEventListener('dragend', () => {
+                    draggingSeparateDocumentIndex = -1;
+                    button.classList.remove('is-dragging');
+                    documentStrip.querySelectorAll('.ird-document-tab-wrap').forEach((wrap) => {
+                        wrap.classList.remove('is-drop-target');
+                        wrap.querySelector('.ird-drop-stack-card')?.remove();
+                    });
+                });
+                tabWrap.addEventListener('dragover', (event) => {
+                    if (!entry.result) return;
+                    const sourceIndex = draggingSeparateDocumentIndex;
+                    if (!Number.isInteger(sourceIndex) || sourceIndex === index) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    showBatchDropPreview(documentStrip.querySelectorAll('.ird-document-tab')[sourceIndex], tabWrap);
+                });
+                tabWrap.addEventListener('dragleave', (event) => {
+                    if (tabWrap.contains(event.relatedTarget)) return;
+                    tabWrap.classList.remove('is-drop-target');
+                    tabWrap.querySelector('.ird-drop-stack-card')?.remove();
+                });
+                tabWrap.addEventListener('drop', async (event) => {
+                    if (!entry.result) return;
+                    const sourceIndex = draggingSeparateDocumentIndex >= 0
+                        ? draggingSeparateDocumentIndex
+                        : Number(event.dataTransfer.getData('text/plain'));
+                    if (!Number.isInteger(sourceIndex) || sourceIndex < 0 || sourceIndex >= separateDocuments.length || sourceIndex === index) return;
+                    event.preventDefault();
+                    await finishSeparateDocumentDrop(sourceIndex, index, tabWrap);
+                });
                 const name = document.createElement('span');
                 name.textContent = entry.file.name;
                 const state = document.createElement('small');
-                state.textContent = entry.error && !entry.result ? 'Ошибка · повторить' : (entry.saved ? 'Сохранён' : 'На проверку');
+                state.textContent = entry.error && !entry.result ? (entry.retryable === false ? 'Ошибка · замените PDF' : 'Ошибка · повторить') : (entry.saved ? 'Сохранён' : 'На проверку');
                 button.append(name, state);
-                button.addEventListener('click', async () => {
+                button.addEventListener('click', async (event) => {
+                    if (suppressTabClick) { event.preventDefault(); event.stopPropagation(); return; }
+                    if (entry.skipClickOnce) { entry.skipClickOnce = false; return; }
+                    // A recognized entry is already cached in separateDocuments. Switching
+                    // tabs must only restore its in-memory fields and preview; only failed
+                    // entries without a result may enter the retry path below.
+                    if (entry.result) {
+                        captureSeparateDocument();
+                        resetDocumentAutosave();
+                        showSeparateDocument(index);
+                        return;
+                    }
                     if (entry.error && !entry.result) {
+                        if (entry.retryable === false) { showSeparateDocument(index); return; }
                         try { await flushDocumentAutosave(); } catch (_) { return; }
                         captureSeparateDocument();
                         button.disabled = true;
@@ -987,21 +1239,163 @@
                     try { await flushDocumentAutosave(); } catch (_) { return; }
                     captureSeparateDocument(); resetDocumentAutosave(); showSeparateDocument(index);
                 });
-                documentStrip.append(button);
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'ird-document-tab-remove';
+                removeButton.title = 'Удалить документ из пакета';
+                removeButton.setAttribute('aria-label', 'Удалить из пакета: ' + entry.file.name);
+                removeButton.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+                removeButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    await removeSeparateDocument(index);
+                });
+                tabWrap.append(button, removeButton);
+                documentStrip.append(tabWrap);
+                if (tabWrap.classList.contains('is-stacked')) {
+                    const previousWidth = tabWrap.previousElementSibling.getBoundingClientRect().width;
+                    if (previousWidth) {
+                        tabWrap.style.width = `${previousWidth}px`;
+                        tabWrap.style.marginLeft = `${10 - previousWidth}px`;
+                    }
+                }
             });
             documentStrip.hidden = !batchHadMultipleDocuments && separateDocuments.length < 2 && !separateDocuments.some((entry) => entry.error && !entry.result);
+            versionDndHint.hidden = !separateDocumentsMode || separateDocuments.length < 2 || !separateDocuments[activeSeparateDocument]?.result;
+        };
+        const mergeSeparateDocumentVersion = async (sourceIndex, targetIndex) => {
+            if (sourceIndex === targetIndex) return;
+            const source = separateDocuments[sourceIndex];
+            const target = separateDocuments[targetIndex];
+            if (!source?.result || !target?.result) {
+                errorBox.textContent = 'Дождитесь распознавания обоих документов.';
+                errorBox.hidden = false;
+                return;
+            }
+            if ((source.versionGroupId && target.versionGroupId) && String(source.versionGroupId) !== String(target.versionGroupId)) {
+                errorBox.textContent = 'Сначала выберите документы из одной группы версий.';
+                errorBox.hidden = false;
+                return;
+            }
+            captureSeparateDocument();
+            const csrf = reviewForm.elements.csrf_token.value;
+            const body = new URLSearchParams({
+                csrf_token: csrf,
+                source_document_id: String(source.result.id),
+                checklist_item_id: target.fields.checklist_item_id || '',
+            });
+            try {
+                const response = await saveCardRequest(`/documents/${target.result.id}/versions`, {
+                    method: 'POST', body,
+                    headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': csrf, 'Content-Type': 'application/x-www-form-urlencoded'},
+                });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || 'Не удалось объединить версии документов.');
+                const groupId = String(payload.group_id);
+                batchVersionGroups.set(groupId, {
+                    checklistItemId: String(payload.checklist_item_id || target.fields.checklist_item_id || ''),
+                    versionIds: (payload.version_ids || []).map(String),
+                });
+                separateDocuments.forEach((member) => {
+                    if ((payload.version_ids || []).map(String).includes(String(member.result?.id))) {
+                        member.versionGroupId = groupId;
+                        member.fields.checklist_item_id = String(payload.checklist_item_id || target.fields.checklist_item_id || '');
+                    }
+                });
+                source.skipClickOnce = true;
+                const newTargetIndex = stackBatchEntries(source, target);
+                renderSeparateDocumentStrip();
+                showSeparateDocument(newTargetIndex);
+                batchChecklistHint.textContent = 'Версии объединены. Пункт комплектности выбирается один раз для всей группы.';
+                showSaveToast('Файл добавлен как версия документа');
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.hidden = false;
+            }
+        };
+        const removeSeparateDocument = async (index, ask = true) => {
+            const entry = separateDocuments[index];
+            if (!entry) return false;
+            if (ask && !window.confirm(`Удалить «${entry.file.name}» из пакета? Загруженный черновик будет удалён.`)) return false;
+            captureSeparateDocument();
+            const removeButton = documentStrip.querySelectorAll('.ird-document-tab-remove')[index];
+            if (removeButton) removeButton.disabled = true;
+            try {
+                if (entry.result?.id && !entry.result.existing_document && !entry.saved && !entry.persisted) {
+                    const response = await fetch(`/documents/${entry.result.id}/delete`, {
+                        method: 'POST',
+                        headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': reviewForm.elements.csrf_token.value},
+                    });
+                    if (!response.ok) throw new Error('Не удалось удалить черновик документа.');
+                }
+                const removedActive = index === activeSeparateDocument;
+                separateDocuments.splice(index, 1);
+                if (removedActive) activeSeparateDocument = -1;
+                else if (index < activeSeparateDocument) activeSeparateDocument -= 1;
+                if (!separateDocuments.length) {
+                    activeSeparateDocument = -1;
+                    extracted = null;
+                    reviewForm.hidden = true;
+                    loadingStage.hidden = true;
+                    uploadStage.hidden = false;
+                    errorBox.hidden = true;
+                    documentStrip.hidden = true;
+                    fileInput.value = '';
+                    startButton.disabled = true;
+                    setNewDocumentActionsVisible(false);
+                    pendingUploadDeleteUrl = '';
+                    pendingUploadSaved = true;
+                } else if (removedActive) {
+                    const nextIndex = separateDocuments.findIndex((candidate) => candidate.result);
+                    if (nextIndex >= 0) showSeparateDocument(nextIndex);
+                    else showSeparateDocument(0);
+                }
+                renderSeparateDocumentStrip();
+                return true;
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.hidden = false;
+                if (removeButton) removeButton.disabled = false;
+                return false;
+            }
         };
         const showSeparateDocument = (index) => {
             const entry = separateDocuments[index];
             if (!entry) return;
             activeSeparateDocument = index;
             if (entry.error && !entry.result) {
-                activeSeparateDocument = index;
-                reviewForm.hidden = true; loadingStage.hidden = true; uploadStage.hidden = true;
-                errorBox.textContent = `${entry.file.name}: ${entry.error}. Нажмите на вкладку файла, чтобы повторить распознавание.`;
+                const message = entry.retryable === false
+                    ? `${entry.file.name}: ${entry.error}. Пересохраните PDF в просмотрщике или распечатайте его в PDF, затем загрузите исправленную копию.`
+                    : `${entry.file.name}: ${entry.error}. Нажмите на вкладку файла, чтобы повторить распознавание.`;
+                const frame = reviewForm.querySelector('[data-ird-frame]');
+                frame.hidden = true;
+                let errorPanel = reviewForm.querySelector('[data-batch-file-error]');
+                if (!errorPanel) {
+                    errorPanel = document.createElement('div');
+                    errorPanel.className = 'ird-batch-file-error';
+                    errorPanel.dataset.batchFileError = '';
+                    errorPanel.setAttribute('role', 'alert');
+                    frame.parentElement.append(errorPanel);
+                }
+                errorPanel.textContent = message;
+                errorPanel.hidden = false;
+                reviewForm.hidden = false;
+                reviewForm.querySelector('.ird-fields').hidden = true;
+                splitter.hidden = true;
+                documentStrip.hidden = false;
+                versionDndHint.hidden = true;
+                loadingStage.hidden = true;
+                uploadStage.hidden = true;
+                errorBox.textContent = message;
                 errorBox.hidden = false;
                 return;
             }
+            const errorPanel = reviewForm.querySelector('[data-batch-file-error]');
+            if (errorPanel) errorPanel.hidden = true;
+            reviewForm.querySelector('.ird-fields').hidden = false;
+            splitter.hidden = false;
+            reviewForm.querySelector('[data-ird-frame]').hidden = false;
+            uploadStage.hidden = true;
+            errorBox.hidden = true;
             extracted = entry.result;
             resetDocumentAutosave();
             documentStrip.hidden = !batchHadMultipleDocuments && separateDocuments.length < 2;
@@ -1016,17 +1410,21 @@
             batchChecklistSelect.disabled = !separateDocumentsMode;
             if (separateDocumentsMode) {
                 const matches = entry.result.checklist_matches || [];
-                const selectedId = entry.fields.checklist_item_id || entry.result.suggested_checklist_item_id || '';
-                batchChecklistSelect.replaceChildren(new Option('Сохранить без привязки', ''));
-                for (const match of matches) {
-                    const suffix = match.has_document ? ` · уже есть: ${match.current_document_title || 'документ'}` : (batchAssignedItemIds.has(String(match.id)) ? ' · уже выбрано в этом пакете' : '');
-                    batchChecklistSelect.add(new Option(`${match.title}${suffix}`, String(match.id)));
-                }
-                batchChecklistSelect.value = matches.some((match) => String(match.id) === String(selectedId)) ? String(selectedId) : '';
-                const suggested = matches.find((match) => String(match.id) === String(entry.result.suggested_checklist_item_id));
+                const versionGroup = entry.versionGroupId ? batchVersionGroups.get(String(entry.versionGroupId)) : null;
+                const availableMatches = matches.filter((match) => (
+                    (match.allows_multiple || (!match.has_document && !batchAssignedItemIds.has(String(match.id))))
+                    || String(match.id) === String(versionGroup?.checklistItemId || '')
+                ));
+                batchChecklistSearch.value = '';
+                batchChecklistSearch.hidden = availableMatches.length <= 1;
+                renderBatchChecklistOptions(entry);
+                const suggested = availableMatches.find((match) => String(match.id) === String(entry.result.suggested_checklist_item_id));
                 batchChecklistHint.textContent = suggested ? `Предложение: ${suggested.title}. Проверьте выбор перед сохранением.` : 'Подходящего уверенного совпадения нет. Выберите пункт вручную или сохраните без привязки.';
             } else {
+                batchChecklistSearch.value = '';
+                batchChecklistSearch.hidden = true;
                 batchChecklistSelect.value = '';
+                batchChecklistSelect.size = 2;
             }
             for (const field of documentFields.querySelectorAll('input[name],select[name],textarea[name]')) {
                 if (field.type === 'checkbox') field.checked = false;
@@ -1045,22 +1443,61 @@
             pendingUploadDeleteUrl = entry.result.existing_document || entry.saved ? '' : deleteForm.action;
             pendingUploadSaved = separateDocumentsMode ? entry.saved : (entry.saved || Boolean(entry.result.existing_document));
             setNewDocumentActionsVisible(!pendingUploadSaved);
-            newDocumentActions.querySelector('[data-ird-delete]').hidden = pendingUploadSaved || Boolean(entry.result.existing_document);
+            const cancelOrDeleteButton = newDocumentActions.querySelector('[data-ird-delete]');
+            cancelOrDeleteButton.innerHTML = separateDocumentsMode
+                ? '<i class="bi bi-x-lg" aria-hidden="true"></i> Отменить'
+                : '<i class="bi bi-trash3" aria-hidden="true"></i> Удалить';
+            cancelOrDeleteButton.dataset.cancelUpload = separateDocumentsMode ? 'true' : 'false';
+            cancelOrDeleteButton.hidden = pendingUploadSaved || Boolean(entry.result.existing_document);
             irdDialog.querySelectorAll('[data-ird-back]').forEach((button) => { button.hidden = true; });
             renderSeparateDocumentStrip();
             syncExpiryField();
             resizeDocumentTextareas();
         };
-        const discardSeparateDocuments = async () => {
-            const pending = separateDocuments.filter((entry) => entry.result && !entry.saved && !entry.result.existing_document);
-            const results = await Promise.all(pending.map(async (entry) => {
-                const response = await fetch(`/documents/${entry.result.id}/delete`, {method: 'POST', headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': reviewForm.elements.csrf_token.value}});
-                return {id: entry.result.id, removed: response.ok || response.status === 404};
-            }));
-            const removedIds = new Set(results.filter((result) => result.removed).map((result) => result.id));
-            separateDocuments = separateDocuments.filter((entry) => !entry.result || !removedIds.has(entry.result.id));
-            return results.every((result) => result.removed);
+        const pendingDraftDeletionKey = 'nhp-ird-pending-draft-deletions';
+        let draftDeletionRunning = false;
+        let draftDeletionRetryTimer = null;
+        const getPendingDraftDeletions = () => {
+            try {
+                const value = JSON.parse(localStorage.getItem(pendingDraftDeletionKey) || '[]');
+                return Array.isArray(value) ? value.filter((url) => typeof url === 'string' && url.startsWith('/')) : [];
+            } catch (_) { return []; }
         };
+        const processPendingDraftDeletions = async () => {
+            if (draftDeletionRunning) return;
+            draftDeletionRunning = true;
+            let pending = getPendingDraftDeletions();
+            try {
+                for (const url of pending) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            keepalive: true,
+                            headers: {'X-Requested-With': 'fetch', 'X-CSRF-Token': reviewForm.elements.csrf_token.value},
+                        });
+                        if (!response.ok && response.status !== 404) continue;
+                        pending = pending.filter((candidate) => candidate !== url);
+                        localStorage.setItem(pendingDraftDeletionKey, JSON.stringify(pending));
+                    } catch (_) { /* Keep it queued for retry while online or on the next page visit. */ }
+                }
+            } finally {
+                draftDeletionRunning = false;
+                if (pending.length && !draftDeletionRetryTimer) {
+                    draftDeletionRetryTimer = window.setTimeout(() => {
+                        draftDeletionRetryTimer = null;
+                        processPendingDraftDeletions();
+                    }, 10000);
+                }
+            }
+        };
+        const enqueueDraftDeletions = (urls) => {
+            const pending = new Set(getPendingDraftDeletions());
+            urls.filter((url) => typeof url === 'string' && url.startsWith('/')).forEach((url) => pending.add(url));
+            try { localStorage.setItem(pendingDraftDeletionKey, JSON.stringify([...pending])); } catch (_) { }
+            processPendingDraftDeletions();
+        };
+        window.addEventListener('online', processPendingDraftDeletions);
+        processPendingDraftDeletions();
         const returnToLetter = () => {
             appendMode = false;
             uploadStage.hidden = true;
@@ -1216,7 +1653,7 @@
             batchAssignedItemIds = new Set();
             batchHadMultipleDocuments = false;
             irdDialog.querySelectorAll('[data-ird-back]').forEach((backButton) => { backButton.hidden = false; });
-            uploadUrl=button.dataset.uploadUrl; itemTitle=button.dataset.itemTitle; resetNewDocumentFields(); setNewDocumentActionsVisible(false); separateDocumentsMode=button.hasAttribute('data-separate-documents'); separateDocuments=[]; activeSeparateDocument=-1; documentStrip.replaceChildren(); documentStrip.hidden=true; correspondenceFiles=[]; renderCorrespondenceFiles(); const multiKind=button.dataset.multipleDocumentKind||''; const isCustomerLetter=multiKind==='customer-letter'; const isProjectAssignment=multiKind==='project-assignment'; irdDialog.querySelector('[data-ird-eyebrow]').textContent='РАСПОЗНАВАНИЕ ДОКУМЕНТА'; irdDialog.querySelector('[data-ird-issuer-label]').textContent=isProjectAssignment?'Наименование заказчика':'Орган, выдавший документ';irdDialog.querySelector('[data-ird-heading]').textContent=isCustomerLetter?'Письмо заказчика':itemTitle;irdDialog.querySelector('.ird-upload-stage>p').textContent=separateDocumentsMode?'Выберите несколько отдельных документов. Каждый файл будет распознан и сохранён отдельно.':(isCustomerLetter?'Загрузите одно письмо заказчика в PDF или Word либо страницы письма. После обработки можно добавить следующее письмо в ту же строку шаблона.':(isProjectAssignment?'Загрузите одну версию задания на проектирование в PDF или Word. После обработки можно добавить новую редакцию в эту же строку шаблона.':'Загрузите один документ в PDF или Word либо отдельные изображения его страниц.'));irdDialog.querySelector('[data-ird-delete]').hidden=true;irdDialog.querySelector('[data-ird-delete-form]').action='';
+            uploadUrl=button.dataset.uploadUrl; itemTitle=button.dataset.itemTitle; resetNewDocumentFields(); setNewDocumentActionsVisible(false); separateDocumentsMode=button.hasAttribute('data-separate-documents'); separateDocuments=[]; activeSeparateDocument=-1; batchVersionGroups=new Map(); documentStrip.replaceChildren(); documentStrip.hidden=true; correspondenceFiles=[]; renderCorrespondenceFiles(); const multiKind=button.dataset.multipleDocumentKind||''; const isCustomerLetter=multiKind==='customer-letter'; const isProjectAssignment=multiKind==='project-assignment'; irdDialog.querySelector('[data-ird-eyebrow]').textContent='РАСПОЗНАВАНИЕ ДОКУМЕНТА'; irdDialog.querySelector('[data-ird-issuer-label]').textContent=isProjectAssignment?'Наименование заказчика':'Орган, выдавший документ';irdDialog.querySelector('[data-ird-heading]').textContent=isCustomerLetter?'Письмо заказчика':itemTitle;irdDialog.querySelector('.ird-upload-stage>p').textContent=separateDocumentsMode?'Выберите несколько отдельных документов. Каждый файл будет распознан и сохранён отдельно.':(isCustomerLetter?'Загрузите одно письмо заказчика в PDF или Word либо страницы письма. После обработки можно добавить следующее письмо в ту же строку шаблона.':(isProjectAssignment?'Загрузите одну версию задания на проектирование в PDF или Word. После обработки можно добавить новую редакцию в эту же строку шаблона.':'Загрузите один документ в PDF или Word либо отдельные изображения его страниц.'));irdDialog.querySelector('[data-ird-delete]').hidden=true;irdDialog.querySelector('[data-ird-delete-form]').action='';
             uploadStage.hidden=false; loadingStage.hidden=true; reviewForm.hidden=true; reviewForm.classList.remove('is-preview-only'); reviewForm.querySelector('.ird-fields').hidden=false; splitter.hidden=false; errorBox.hidden=true; fileInput.value=''; startButton.disabled=true; startButton.textContent='Распознать документ'; extracted=null; reloadOnClose=false;
             irdDialog.showModal();
         }));
@@ -1275,17 +1712,18 @@
             row.addEventListener('click', (event) => { if (!event.target.closest('button,a,input,select')) open(); });
             row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
         });
-        document.querySelectorAll('[data-checklist-row][data-row-previewable="true"]').forEach((row) => {
+        document.querySelectorAll('[data-checklist-row]').forEach((row) => {
             const openPreview = () => {
-                const versions = row.querySelectorAll('.checklist-multiple-documents [data-open-ird-document]');
-                (versions.length ? versions[versions.length - 1] : row.querySelector('[data-open-ird-document]'))?.click();
+                if (row.dataset.rowPreviewable !== 'true') return;
+                const versions = Array.from(row.querySelectorAll('[data-open-ird-document]')).filter((source) => source.dataset.documentId && source.dataset.archived !== 'true');
+                versions[versions.length - 1]?.click();
             };
             row.addEventListener('click', (event) => {
                 if (event.target.closest('button,a,input,select,textarea,form,[role="button"]')) return;
                 openPreview();
             });
             row.addEventListener('keydown', (event) => {
-                if (event.target !== row || !['Enter', ' '].includes(event.key)) return;
+                if (row.dataset.rowPreviewable !== 'true' || event.target !== row || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault();
                 openPreview();
             });
@@ -1345,6 +1783,56 @@
             renderChecklistFiles(row,result.id);
             return source;
         };
+        const updateChecklistAfterBatchSave = (itemId, result, fields) => {
+            if (!itemId) return;
+            const row = Array.from(document.querySelectorAll('[data-checklist-row]')).find((candidate) => candidate.dataset.sortId === String(itemId));
+            if (!row) return;
+            const savedResult = {...result, fields: {
+                working_title: fields.get('working_title') || '',
+                official_title: fields.get('official_title') || '',
+                issuer: fields.get('issuer') || '',
+                document_number: fields.get('document_number') || '',
+                issue_date: fields.get('issue_date') || '',
+                valid_until: fields.get('valid_until') || '',
+                no_expiration: fields.get('no_expiration') === 'on',
+                note: fields.get('note') || '',
+            }};
+            const isMultiDocumentItem = Boolean(row.querySelector('[data-multiple-document-upload]'));
+            const source = addChecklistDocumentSource(row, savedResult);
+            if (source) {
+                source.dataset.note = savedResult.fields.note;
+                source.dataset.archived = 'false';
+            }
+            const titleContainer = row.querySelector('.checklist-name-title');
+            if (titleContainer) {
+                const count = new Set(Array.from(row.querySelectorAll('[data-open-ird-document]'))
+                    .filter((file) => file.dataset.documentId && file.dataset.archived !== 'true')
+                    .map((file) => file.dataset.documentId)).size;
+                let badge = titleContainer.querySelector('.checklist-document-count-badge');
+                if (count && !badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'checklist-document-count-badge';
+                    titleContainer.append(badge);
+                }
+                if (badge) {
+                    badge.textContent = String(count);
+                    badge.title = `Загруженных документов: ${count}`;
+                    badge.setAttribute('aria-label', badge.title);
+                    badge.hidden = !count;
+                }
+            }
+            row.dataset.status = 'received';
+            row.dataset.hasAttachment = 'true';
+            row.dataset.rowPreviewable = 'true';
+            row.dataset.linked = normalizeDocumentName(savedResult.fields.working_title || savedResult.fields.official_title);
+            if (!row.dataset.documentId) row.dataset.documentId = String(result.id);
+            if (!isMultiDocumentItem) {
+                const title = row.querySelector('.checklist-name-title > strong');
+                if (title) title.textContent = savedResult.fields.working_title || savedResult.fields.official_title || row.dataset.itemTitle;
+            }
+            refreshChecklist();
+            sortChecklistRows();
+        };
         const openDocumentCard = async (button) => {
             try { await flushDocumentAutosave(); } catch (_) { return; }
             const dialogWasOpen=irdDialog.open;
@@ -1360,7 +1848,7 @@
             if(checklistRow) irdDialog.dataset.currentChecklistItemId=checklistRow.dataset.sortId||'';
             renderChecklistFiles(checklistRow, source.dataset.documentId||button.dataset.documentId);
             uploadStage.hidden=true;loadingStage.hidden=true;errorBox.hidden=true;reviewForm.hidden=false;reviewForm.classList.remove('is-preview-only');
-            documentFields.hidden=false;Array.from(documentFields.children).forEach((child)=>{child.hidden=false;});setNewDocumentActionsVisible(false);correspondenceFields.hidden=true;splitter.hidden=false;
+            documentFields.hidden=false;Array.from(documentFields.children).forEach((child)=>{child.hidden=false;});batchChecklistLabel.hidden=true;batchChecklistSelect.disabled=true;setNewDocumentActionsVisible(false);correspondenceFields.hidden=true;splitter.hidden=false;
             reviewForm.querySelector('[data-ird-frame]').src=source.dataset.documentPreview||button.dataset.documentPreview;
             populateDocumentFields(source);
             const assignmentFieldsChanged=applyProjectAssignmentRules(isProjectAssignment);
@@ -1382,7 +1870,7 @@
             itemTitle=button.dataset.documentTitle||'Архивный документ';
             irdDialog.querySelector('[data-ird-heading]').textContent=itemTitle;
             uploadStage.hidden=true;loadingStage.hidden=true;errorBox.hidden=true;reviewForm.hidden=false;reviewForm.classList.remove('is-preview-only');
-            documentFields.hidden=false;Array.from(documentFields.children).forEach((child)=>{child.hidden=false;});setNewDocumentActionsVisible(false);correspondenceFields.hidden=true;splitter.hidden=false;
+            documentFields.hidden=false;Array.from(documentFields.children).forEach((child)=>{child.hidden=false;});batchChecklistLabel.hidden=true;batchChecklistSelect.disabled=true;setNewDocumentActionsVisible(false);correspondenceFields.hidden=true;splitter.hidden=false;
             renderChecklistFiles(checklistRow,button.dataset.documentId);
             reviewForm.querySelector('[data-ird-frame]').src=button.dataset.documentPreview;
             const isProjectAssignment=checklistRow?.dataset.title==='задание на проектирование';
@@ -1400,7 +1888,9 @@
         }));
         const requestedDocumentId = new URLSearchParams(window.location.search).get('open_document');
         if (requestedDocumentId) {
-            document.querySelector(`[data-open-ird-document][data-document-id="${requestedDocumentId}"]`)?.click();
+            const source = Array.from(document.querySelectorAll('[data-open-ird-document]')).find((button) => button.dataset.documentId === requestedDocumentId)
+                || Array.from(document.querySelectorAll('[data-alert-document]')).find((button) => button.dataset.documentId === requestedDocumentId);
+            if (source) requestAnimationFrame(() => openDocumentCard(source));
         }
         const renderCorrespondenceFiles = () => {
             attachmentOrderList.replaceChildren();
@@ -1427,6 +1917,7 @@
         const beginSeparateDocuments = async (files) => {
             separateDocuments = [];
             activeSeparateDocument = -1;
+            batchVersionGroups = new Map();
             uploadStage.hidden = true;
             loadingStage.hidden = false;
             errorBox.hidden = true;
@@ -1448,7 +1939,7 @@
                     if (!response.ok || result.error) throw new Error(result.error || `Не удалось обработать файл «${job.file.name}».`);
                     separateDocuments.push({file: job.file, files: job.files, result, fields: {...(result.fields || {}), note: '', checklist_item_id: result.suggested_checklist_item_id || ''}, saved: false});
                 } catch (error) {
-                    separateDocuments.push({file: job.file, files: job.files, result: null, fields: {}, saved: false, error: error.message});
+                    separateDocuments.push({file: job.file, files: job.files, result: null, fields: {}, saved: false, error: error.message, retryable: !/Автоматически восстановить структуру не удалось|PDF не открывается в просмотрщике/i.test(error.message)});
                 }
             }
             reviewForm.classList.remove('is-preview-only');
@@ -1460,9 +1951,7 @@
             irdDialog.querySelector('[data-ird-delete]').hidden = true;
             const firstReady = separateDocuments.findIndex((entry) => entry.result);
             if (firstReady < 0) {
-                uploadStage.hidden = false;
-                errorBox.textContent = 'Не удалось распознать выбранные файлы. Нажмите на вкладку с ошибкой, чтобы повторить попытку.';
-                errorBox.hidden = false;
+                showSeparateDocument(0);
                 renderSeparateDocumentStrip();
                 return;
             }
@@ -1599,29 +2088,34 @@
         }));
         const closeReviewDialog=async()=>{
             if(appendMode){if(!appendBusy)returnToLetter();return;}
-            if(!correspondenceMode&&!reviewForm.hidden&&pendingUploadSaved){try{await flushDocumentAutosave();}catch(_){return;}}
             if(separateDocumentsMode&&separateDocuments.length>0){
-                const closeButton=irdDialog.querySelector('[data-ird-close]');closeButton.disabled=true;errorBox.hidden=true;
-                try{
-                    if(!await discardSeparateDocuments())throw new Error('Не удалось отменить все несохранённые документы. Они остались в проекте.');
-                    reloadOnClose=reloadOnClose||separateDocuments.some((entry)=>entry.saved);
-                    separateDocuments=[];activeSeparateDocument=-1;separateDocumentsMode=false;pendingUploadDeleteUrl='';pendingUploadSaved=true;irdDialog.close();
-                }catch(error){errorBox.textContent=error.message;errorBox.hidden=false;}
-                finally{closeButton.disabled=false;}
+                const urls = separateDocuments
+                    .filter((entry) => entry.result && !entry.saved && !entry.persisted && !entry.result.existing_document)
+                    .map((entry) => `/documents/${entry.result.id}/delete`);
+                enqueueDraftDeletions(urls);
+                reloadOnClose=false;
+                separateDocuments=[];activeSeparateDocument=-1;separateDocumentsMode=false;pendingUploadDeleteUrl='';pendingUploadSaved=true;
+                irdDialog.close();
                 return;
             }
-            if(!pendingUploadDeleteUrl||pendingUploadSaved){irdDialog.close();return;}
-            const closeButton=irdDialog.querySelector('[data-ird-close]');closeButton.disabled=true;errorBox.hidden=true;
-            try{
-                const response=await fetch(pendingUploadDeleteUrl,{method:'POST',headers:{'X-Requested-With':'fetch','X-CSRF-Token':reviewForm.elements.csrf_token.value}});
-                if(!response.ok)throw new Error('Не удалось отменить загрузку. Документ пока сохранён в проекте.');
-                pendingUploadDeleteUrl='';pendingUploadSaved=true;reloadOnClose=false;irdDialog.close();
-            }catch(error){errorBox.textContent=error.message;errorBox.hidden=false;}
-            finally{closeButton.disabled=false;}
+            if(!pendingUploadDeleteUrl||pendingUploadSaved){
+                if(!correspondenceMode&&!reviewForm.hidden&&pendingUploadSaved)flushDocumentAutosave().catch(()=>{});
+                irdDialog.close();
+                return;
+            }
+            enqueueDraftDeletions([pendingUploadDeleteUrl]);
+            pendingUploadDeleteUrl='';pendingUploadSaved=true;reloadOnClose=false;
+            irdDialog.close();
         };
         irdDialog.querySelector('[data-ird-close]').addEventListener('click',closeReviewDialog);
         irdDialog.addEventListener('cancel',event=>{if(appendMode){event.preventDefault();if(!appendBusy)returnToLetter();return;}if((separateDocumentsMode&&separateDocuments.length>0)||(pendingUploadDeleteUrl&&!pendingUploadSaved)){event.preventDefault();closeReviewDialog();}});
         irdDialog.querySelectorAll('[data-ird-delete]').forEach((button)=>button.addEventListener('click',async()=>{
+            if (separateDocumentsMode && activeSeparateDocument >= 0) {
+                button.disabled = true;
+                const removed = await removeSeparateDocument(activeSeparateDocument);
+                if (!removed) button.disabled = false;
+                return;
+            }
             const deleteForm=irdDialog.querySelector('[data-ird-delete-form]');
             const isUploadCancellation=button.dataset.cancelUpload==='true';
             const confirmation=isUploadCancellation?'Отменить загрузку письма и удалить его из проекта?':(correspondenceMode?'Удалить письмо и загруженный файл?':'Удалить вложенный документ и его файл?');
@@ -1750,12 +2244,29 @@
                     if ((candidate?.has_document || itemAlreadyAssigned) && !candidate?.allows_multiple && !window.confirm(`В пункте «${candidate.title}» уже ${itemAlreadyAssigned ? 'выбран документ из этого пакета' : `есть документ «${candidate.current_document_title || 'без названия'}»`}. Заменить его?`)) {
                         save.disabled = false; save.textContent = saveLabel; return;
                     }
-                    const savedFields = await saveCardRequest(`/documents/${current.result.id}/fields`, {method:'POST', body:fields, headers:{'X-Requested-With':'fetch','X-Preserve-Checklist-Link':'1'}});
-                    if (!savedFields.ok) { const detail = await savedFields.json().catch(() => ({})); throw new Error(detail.error || 'Не удалось сохранить реквизиты документа.'); }
-                    const note = new URLSearchParams({csrf_token:fields.get('csrf_token'),note:reviewForm.elements.note.value});
-                    const savedNote = await saveCardRequest(`/documents/${current.result.id}/note`, {method:'POST',body:note,headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'}});
-                    if (!savedNote.ok) throw new Error('Не удалось сохранить примечание к документу.');
-                    separateDocuments.splice(activeSeparateDocument, 1);
+                    const group = current.stackGroup
+                        ? separateDocuments.filter((entry) => entry.stackGroup === current.stackGroup)
+                        : [current];
+                    for (const entry of group) {
+                        if (entry.saved) continue;
+                        const entryFields = new FormData();
+                        entryFields.set('csrf_token', fields.get('csrf_token'));
+                        for (const [name, value] of Object.entries(entry.fields)) {
+                            if (name === 'csrf_token' || name === 'checklist_item_id' || value === false || value == null) continue;
+                            entryFields.set(name, value === true ? 'on' : value);
+                        }
+                        if (selectedId) entryFields.set('checklist_item_id', selectedId);
+                        const savedFields = await saveCardRequest(`/documents/${entry.result.id}/fields`, {method:'POST', body:entryFields, headers:{'X-Requested-With':'fetch','X-Preserve-Checklist-Link':'1'}});
+                        if (!savedFields.ok) { const detail = await savedFields.json().catch(() => ({})); throw new Error(`«${entry.file.name}»: ${detail.error || 'не удалось сохранить реквизиты.'}`); }
+                        // The fields request may already link the document; never delete it on a later failure.
+                        entry.persisted = true;
+                        const note = new URLSearchParams({csrf_token:fields.get('csrf_token'),note:entry.fields.note || ''});
+                        const savedNote = await saveCardRequest(`/documents/${entry.result.id}/note`, {method:'POST',body:note,headers:{'X-Requested-With':'fetch','Content-Type':'application/x-www-form-urlencoded'}});
+                        if (!savedNote.ok) throw new Error(`«${entry.file.name}»: не удалось сохранить примечание. Повторите сохранение.`);
+                        entry.saved = true;
+                        updateChecklistAfterBatchSave(selectedId, entry.result, entryFields);
+                    }
+                    separateDocuments = separateDocuments.filter((entry) => !group.includes(entry));
                     activeSeparateDocument = -1;
                     if (selectedId) batchAssignedItemIds.add(String(selectedId));
                     pendingUploadSaved = true;
@@ -1777,7 +2288,7 @@
                     }
                     separateDocumentsMode = false;
                     separateDocuments = [];
-                    reloadOnClose = true;
+                    reloadOnClose = false;
                     irdDialog.close();
                     return;
                 }

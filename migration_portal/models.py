@@ -83,6 +83,11 @@ class Document(NormalizedUserTextMixin, models.Model):
     processing_lease_until = models.DateTimeField(null=True, blank=True)
     document_number = models.TextField(default="", db_default="")
     archived_at = models.CharField(max_length=40, null=True, blank=True)
+    version_group = models.ForeignKey(
+        "DocumentVersionGroup", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="versions",
+    )
+    version_order = models.PositiveIntegerField(default=0, db_default=0)
 
     def save(self, *args, **kwargs):
         # Persist the preparation job and cache invalidation with the card.
@@ -94,7 +99,21 @@ class Document(NormalizedUserTextMixin, models.Model):
         indexes = [
             models.Index(fields=["project", "created_at"], name="document_project_date_idx"),
             models.Index(fields=["valid_until"], name="document_expiry_idx"),
+            models.Index(fields=["version_group", "version_order"], name="document_version_order_idx"),
         ]
+
+
+class DocumentVersionGroup(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="document_version_groups")
+    checklist_item = models.ForeignKey(
+        "ProjectChecklistItem", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="document_version_groups",
+    )
+    created_at = models.CharField(max_length=40, default="", db_default=TIMESTAMP_TEXT_DEFAULT)
+
+    class Meta:
+        db_table = "document_version_groups"
 
 
 class Correspondence(NormalizedUserTextMixin, models.Model):

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Предпросмотр документа</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261120-citation-highlight-v1') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261123-continuous-pdf-v1') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="pdf-viewer-body">
@@ -31,10 +31,14 @@
             {% endfor %}
         </aside>
         <div class="pdf-viewer-splitter" data-pdf-splitter role="separator" aria-label="Изменить ширину миниатюр" aria-orientation="vertical" aria-valuemin="8" aria-valuemax="40" aria-valuenow="13" tabindex="0" title="Перетащите, чтобы изменить ширину области миниатюр"></div>
-        <section class="pdf-page-viewport" data-page-viewport aria-label="Выбранная страница документа">
-            <div class="pdf-page-stage" data-page-stage>
-                <img class="pdf-page-image" data-page-image src="{{ page_image_url }}" alt="Страница {{ initial_page }} из {{ page_count }}">
+        <section class="pdf-page-viewport" data-page-viewport aria-label="Страницы документа">
+            <div class="pdf-page-stream" data-page-stream>
+                {% for page in range(page_count) %}
+                <div class="pdf-page-stage" data-page-stage data-page-index="{{ page }}">
+                <img class="pdf-page-image" data-page-image src="{{ page_image_urls[page] }}" alt="Страница {{ page + 1 }} из {{ page_count }}" loading="{{ 'eager' if page == initial_page - 1 else 'lazy' }}">
                 <div class="pdf-highlight-layer" data-highlight-layer aria-hidden="true"></div>
+                </div>
+                {% endfor %}
             </div>
         </section>
     </div>
@@ -45,12 +49,9 @@
     const layout = viewer?.querySelector('[data-pdf-layout]');
     if (!viewer || !layout) return;
     const pageCount = Number(viewer.dataset.pageCount) || 1;
-    const pageUrl = viewer.dataset.pageUrlTemplate.replace(/0(?=$|\?)/, '{page}');
     const pageInput = viewer.querySelector('[data-current-page]');
-    const pageImage = viewer.querySelector('[data-page-image]');
     const viewport = viewer.querySelector('[data-page-viewport]');
-    const pageStage = viewer.querySelector('[data-page-stage]');
-    const highlightLayer = viewer.querySelector('[data-highlight-layer]');
+    const pageStages = Array.from(viewer.querySelectorAll('[data-page-stage]'));
     let highlightText = '';
     const thumbnails = Array.from(viewer.querySelectorAll('[data-page-index]'));
     const splitter = viewer.querySelector('[data-pdf-splitter]');
@@ -59,10 +60,7 @@
     let page = Math.max(0, Math.min(pageCount - 1, (Number(viewer.dataset.initialPage) || 1) - 1));
     let zoom = 100;
     let drag = null;
-    let pendingCenterRects = null;
-    let pageAdvanceLocked = false;
-    let pageAdvanceTimer = null;
-    let wheelDownAtEnd = false;
+    let scrollFrame = 0;
     const setRatio = (ratio, persist = true) => {
         const value = Math.max(.08, Math.min(.4, Number(ratio) || .125));
         layout.style.setProperty('--pdf-thumbnails-width', `${value * 100}%`);
@@ -79,24 +77,19 @@
     } catch (_) { setRatio(.125, false); }
     const setZoom = (value) => {
         zoom = Math.max(50, Math.min(200, value));
-        pageStage.style.width = `${zoom}%`;
+        pageStages.forEach((stage) => { stage.style.width = `${zoom}%`; });
         viewer.querySelector('[data-zoom-value]').textContent = `${zoom}%`;
     };
-    const centerHighlights = (rects) => {
-        if (!pageImage.complete || !pageImage.naturalHeight) {
-            pendingCenterRects = rects;
-            return;
-        }
-        pendingCenterRects = null;
+    const centerHighlights = (stage, rects) => {
         const centerY = rects.reduce((sum, rect) => sum + rect.y + rect.height / 2, 0) / rects.length;
-        const pageTop = viewport.scrollTop + pageStage.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-        const targetTop = pageTop + centerY * pageStage.offsetHeight - viewport.clientHeight / 2;
+        const pageTop = viewport.scrollTop + stage.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        const targetTop = pageTop + centerY * stage.offsetHeight - viewport.clientHeight / 2;
         viewport.scrollTo({top: Math.max(0, targetTop), behavior: 'smooth'});
     };
-    pageImage.addEventListener('load', () => {
-        if (pendingCenterRects?.length) centerHighlights(pendingCenterRects);
-    });
     const showHighlights = async (pageIndex) => {
+        const stage = pageStages[pageIndex];
+        const highlightLayer = stage?.querySelector('[data-highlight-layer]');
+        if (!highlightLayer) return;
         highlightLayer.replaceChildren();
         if (!highlightText) return;
         const url = new URL(viewer.dataset.highlightUrlTemplate.replace(/0(?=$|\?)/, String(pageIndex)), window.location.href);
@@ -119,7 +112,7 @@
                 marker.style.height = `${rect.height * 100}%`;
                 highlightLayer.append(marker);
             });
-            if (pageIndex === page && payload.rects?.length) centerHighlights(payload.rects);
+            if (pageIndex === page && payload.rects?.length) centerHighlights(stage, payload.rects);
         } catch (_) {
             // The PDF remains fully usable if optional highlight OCR fails.
         }
@@ -129,14 +122,9 @@
         highlightText = String(event.data.text || '').slice(0, 1200);
         showHighlights(page);
     });
-    const setPage = (index) => {
+    const syncPageControls = (index) => {
         page = Math.max(0, Math.min(pageCount - 1, Number(index) || 0));
-        pendingCenterRects = null;
         pageInput.value = String(page + 1);
-        pageImage.src = pageUrl.replace('{page}', String(page));
-        pageImage.alt = `Страница ${page + 1} из ${pageCount}`;
-        showHighlights(page);
-        viewport.scrollTop = 0;
         thumbnails.forEach((button, i) => {
             const active = i === page;
             button.classList.toggle('is-active', active);
@@ -144,26 +132,31 @@
             if (active) button.scrollIntoView({block: 'nearest'});
         });
     };
-    const advanceOnScroll = (deltaY) => {
-        if (!deltaY || pageAdvanceLocked) return;
-        if (deltaY > 0) {
-            const remaining = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-            if (page >= pageCount - 1 || remaining > 70) return;
-        } else if (page <= 0 || viewport.scrollTop > 70) {
-            return;
-        }
-        pageAdvanceLocked = true;
-        setPage(page + (deltaY > 0 ? 1 : -1));
-        window.clearTimeout(pageAdvanceTimer);
-        pageAdvanceTimer = window.setTimeout(() => { pageAdvanceLocked = false; }, 450);
+    const setPage = (index, behavior = 'smooth') => {
+        page = Math.max(0, Math.min(pageCount - 1, Number(index) || 0));
+        pageInput.value = String(page + 1);
+        showHighlights(page);
+        pageStages[page]?.scrollIntoView({block: 'start', behavior});
+        syncPageControls(page);
     };
-    viewport.addEventListener('wheel', (event) => advanceOnScroll(event.deltaY), {passive: true});
-    let touchStartY = null;
-    viewport.addEventListener('touchstart', (event) => { touchStartY = event.touches[0]?.clientY ?? null; }, {passive: true});
-    viewport.addEventListener('touchend', (event) => {
-        const endY = event.changedTouches[0]?.clientY;
-        if (touchStartY !== null && endY !== undefined) advanceOnScroll(touchStartY - endY);
-        touchStartY = null;
+    const syncPageFromScroll = () => {
+        scrollFrame = 0;
+        const viewportTop = viewport.getBoundingClientRect().top + 24;
+        let closestIndex = page;
+        let closestDistance = Infinity;
+        pageStages.forEach((stage, index) => {
+            const rect = stage.getBoundingClientRect();
+            const distance = viewportTop < rect.top ? rect.top - viewportTop : (viewportTop > rect.bottom ? viewportTop - rect.bottom : 0);
+            if (distance < closestDistance) { closestDistance = distance; closestIndex = index; }
+        });
+        if (closestIndex !== page) {
+            page = closestIndex;
+            syncPageControls(page);
+            if (highlightText) showHighlights(page);
+        }
+    };
+    viewport.addEventListener('scroll', () => {
+        if (!scrollFrame) scrollFrame = window.requestAnimationFrame(syncPageFromScroll);
     }, {passive: true});
     thumbnails.forEach((button) => button.addEventListener('click', () => setPage(Number(button.dataset.pageIndex))));
     pageInput.addEventListener('change', () => setPage((Number(pageInput.value) || 1) - 1));
@@ -194,9 +187,9 @@
         const current = Number(splitter.getAttribute('aria-valuenow')) / 100;
         setRatio(current + (event.key === 'ArrowRight' ? .02 : -.02));
     });
-    pageStage.style.width = '100%';
     setZoom(100);
-    setPage(page);
+    syncPageControls(page);
+    requestAnimationFrame(() => pageStages[page]?.scrollIntoView({block: 'start', behavior: 'auto'}));
 })();
 </script>
 </body>

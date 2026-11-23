@@ -46,6 +46,19 @@ def environment(**options):
 
 
 def context_processor(request):
+    def project_expiry_alerts(project_id):
+        import os
+        from app.services.expiry import expiry_state
+        from app.services.document_titles import format_document_title
+        from migration_portal.models import Document
+        warning_days = int(os.getenv("EXPIRY_WARNING_DAYS", "30"))
+        alerts = []
+        for document in Document.objects.filter(project_id=project_id, archived_at__isnull=True).order_by('-created_at', '-id'):
+            state = expiry_state({'no_expiration': document.no_expiration, 'valid_until': document.valid_until}, warning_days)
+            if state['key'] in {'expired', 'expiring'}:
+                alerts.append({'id': document.id, 'title': format_document_title(document.working_title or document.official_title or document.original_filename, document.issuer), 'expiry': state})
+        return alerts
+
     def url_for(endpoint, **values):
         if endpoint == "static":
             filename = values.pop("filename", "")
@@ -85,6 +98,7 @@ def context_processor(request):
         except AttributeError:
             can_edit = False
     return {
+        "project_expiry_alerts": project_expiry_alerts,
         "request": RequestProxy(request),
         "url_for": url_for,
         "csrf_token": shared_csrf_token,

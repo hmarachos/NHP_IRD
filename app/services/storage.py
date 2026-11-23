@@ -45,8 +45,14 @@ class StorageService:
                     written += len(chunk)
             if not written:
                 raise ValueError("Файл пустой.")
+            if suffix == ".pdf":
+                self._normalize_pdf_header(path)
             with path.open("rb") as source:
                 mime_type = self._validate_stream(source, suffix)
+            if mime_type == "application/pdf":
+                from app.services.pdf_recovery import ensure_pdfium_compatible
+
+                ensure_pdfium_compatible(path)
             return original_name, stored_name, path, mime_type
         except Exception:
             path.unlink(missing_ok=True)
@@ -64,7 +70,7 @@ class StorageService:
         content = source.read(1024)
         source.seek(0)
         if suffix == ".pdf":
-            if not content.lstrip().startswith(b"%PDF-"):
+            if not content.startswith(b"%PDF-"):
                 raise ValueError("Содержимое файла не похоже на PDF.")
             return "application/pdf"
 
@@ -125,3 +131,21 @@ class StorageService:
             raise
         except Exception as exc:
             raise ValueError("Не удалось прочитать изображение. Проверьте формат файла.") from exc
+
+    @staticmethod
+    def _normalize_pdf_header(path: Path) -> None:
+        """Accept PDF headers anywhere in the first 1024 bytes and remove any prefix."""
+        with path.open("r+b") as source:
+            header = source.read(1024)
+            offset = header.find(b"%PDF-")
+            if offset < 0:
+                return
+            if offset:
+                source.seek(offset)
+                destination = 0
+                while chunk := source.read(1024 * 1024):
+                    source.seek(destination)
+                    source.write(chunk)
+                    destination += len(chunk)
+                    source.seek(offset + destination)
+                source.truncate(destination)

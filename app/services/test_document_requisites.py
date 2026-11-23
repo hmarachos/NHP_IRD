@@ -16,6 +16,20 @@ class DocumentRequisitesTests(unittest.TestCase):
         text = '№08-02/4045 от 12.11.2026\nНа №42 от 24.03.2026\nО предоставлении информации'
         self.assertEqual(RegexFieldExtractor._extract_header_document_number(text), '08-02/4045')
 
+    def test_bad_ocr_digits_do_not_replace_visual_header_number(self):
+        text = 'Письмо о согласовании ПСД\n№03-02/336$ от 29.10.2026 15:10:38\nСогласование проекта'
+        pipeline = DocumentProcessingPipeline(document_types=['Письмо'], tesseract_lang='rus+eng', ocr_dpi=300)
+        pipeline.text_extractor.extract = Mock(return_value=text)
+        pipeline.ai_extractor = Mock()
+        pipeline.ai_extractor.extract.return_value = ParsedDocument(
+            working_title='Письмо о согласовании ПСД', document_number='08-02/3868', issue_date='2026-10-29',
+        )
+        pipeline.ai_extractor.extract_document_header.return_value = {
+            'document_number': '08-02/3868', 'issue_date': '2026-10-29',
+        }
+        result = pipeline.process(Path('unused.pdf'))
+        self.assertEqual(result.document_number, '08-02/3868')
+
     def test_incoming_reference_is_not_outgoing_number(self):
         self.assertEqual(RegexFieldExtractor._extract_header_document_number('На №12-10/763 от 31.03.2026'), '')
 

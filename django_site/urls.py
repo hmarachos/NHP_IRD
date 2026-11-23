@@ -52,6 +52,7 @@ urlpatterns = [
     path("objects/<int:object_id>/checklist/<int:item_id>/upload", views.upload_checklist_document, name="web_upload_checklist_document"),
     path("documents/<int:document_id>", views.document_detail, name="web_document_detail"),
     path("documents/<int:document_id>/fields", views.update_document_fields, name="web_update_document_fields"),
+    path("documents/<int:document_id>/versions", views.add_document_version, name="web_add_document_version"),
     path("documents/<int:document_id>/note", views.update_document_note, name="web_update_document_note"),
     path("documents/<int:document_id>/preview", views.document_preview, name="web_document_preview"),
     path("documents/<int:document_id>/viewer", views.document_viewer, name="web_document_viewer"),

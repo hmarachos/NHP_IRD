@@ -9,13 +9,13 @@ import re
 from typing import Any
 
 from docx import Document
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from pymorphy3 import MorphAnalyzer
 
+from app.services.document_titles import format_document_title
 
 HANDOVER_TEMPLATE = Path(__file__).resolve().parents[1] / "document_templates" / "handover_act_template.docx"
 
@@ -184,7 +184,7 @@ def generate_project_document(
     _set_run_font(title_run, "Times New Roman")
     _add_project_details(document, project)
 
-    _add_inventory(document, documents, checklist)
+    _add_inventory(document, documents)
 
     output = BytesIO()
     document.save(output)
@@ -257,35 +257,18 @@ def _add_project_details(document: Document, project: Any) -> None:
     run.font.size = Pt(11)
 
 
-def _add_inventory(document: Document, documents: list[Any], checklist: list[Any]) -> None:
-    document.add_paragraph(
-        "Опись содержит документы, находящиеся в активном составе архива проекта на дату формирования."
-    )
+def _add_inventory(document: Document, documents: list[Any]) -> None:
     if not documents:
-        document.add_paragraph("В архив проекта пока не добавлены документы.")
+        document.add_paragraph("Документы не добавлены.")
         return
 
-    linked_titles = {
-        item["document_id"]: item["title"]
-        for item in checklist
-        if item["document_id"] is not None
-    }
-    rows = []
     for number, item in enumerate(documents, start=1):
-        title = _document_title(item)
-        linked = linked_titles.get(item["id"], "")
-        if linked and linked.casefold() != title.casefold():
-            title = f"{linked}: {title}"
-        rows.append([
-            str(number),
-            title,
-            item["issuer"] or "",
-            _date_display(item["issue_date"]),
-            _date_display(item["valid_until"]),
-            item["original_filename"] or "",
-        ])
-    _add_table(document, ["№", "Документ", "Кем выдан", "Дата выдачи", "Действителен до", "Имя файла"], rows)
-    document.add_paragraph(f"Всего документов: {len(documents)}.")
+        title = format_document_title(
+            item["working_title"] or item["official_title"] or item["original_filename"],
+            item["issuer"], item["issue_date"], item["document_number"],
+        )
+        paragraph = document.add_paragraph()
+        paragraph.add_run(f"{number}. {title}")
 
 
 def _populate_handover_template(
@@ -354,50 +337,6 @@ def _replace_paragraph_text(paragraph: Any, value: str) -> None:
             run.text = ""
         return
     paragraph.add_run(value)
-
-
-def _add_table(document: Document, headings: list[str], rows: list[list[str]]) -> None:
-    table = document.add_table(rows=1, cols=len(headings))
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.style = "Table Grid"
-    table.autofit = True
-    header = table.rows[0]
-    _repeat_table_header(header)
-    for cell, heading in zip(header.cells, headings):
-        cell.text = heading
-        _shade_cell(cell, "E7F1EF")
-        _format_cell(cell, bold=True)
-    for values in rows:
-        cells = table.add_row().cells
-        for cell, value in zip(cells, values):
-            cell.text = str(value or "")
-            _format_cell(cell)
-    document.add_paragraph()
-
-
-def _format_cell(cell: Any, bold: bool = False) -> None:
-    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-    for paragraph in cell.paragraphs:
-        paragraph.paragraph_format.space_after = Pt(2)
-        paragraph.paragraph_format.space_before = Pt(2)
-        for run in paragraph.runs:
-            run.font.name = "Times New Roman"
-            run.font.size = Pt(9)
-            run.font.bold = bold
-            run.font.color.rgb = RGBColor(0, 0, 0)
-
-
-def _shade_cell(cell: Any, fill: str) -> None:
-    shading = OxmlElement("w:shd")
-    shading.set(qn("w:fill"), fill)
-    cell._tc.get_or_add_tcPr().append(shading)
-
-
-def _repeat_table_header(row: Any) -> None:
-    properties = row._tr.get_or_add_trPr()
-    repeat = OxmlElement("w:tblHeader")
-    repeat.set(qn("w:val"), "true")
-    properties.append(repeat)
 
 
 def _document_title(item: Any) -> str:

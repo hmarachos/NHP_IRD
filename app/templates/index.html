@@ -24,7 +24,7 @@
 </section>
 {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
 {% if alerts %}
-<section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.object_workspace', object_id=alert.document.object_id, tab='checklist', open_document=alert.document.id) }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.working_title or alert.document.original_filename }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
+<section class="alert-panel alert-ribbon"><div class="alert-ribbon-heading"><strong>Требуют внимания</strong><span>{{ alerts|length }} документов с истёкшим или истекающим сроком</span></div><ul class="alert-ribbon-track" aria-label="Документы, требующие внимания">{% for alert in alerts %}<li class="alert-card"><a href="{{ url_for('web.object_workspace', object_id=alert.document.object_id, tab='checklist', open_document=alert.document.id) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-custom-class="alert-title-tooltip" title="{{ alert.document.alert_title }}"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>{{ alert.document.alert_title }}</span></a><span class="expiry-{{ alert.expiry.key }}">{{ alert.expiry.label }}</span></li>{% endfor %}</ul></section>
 {% endif %}
 <section class="project-area project-cards-area">
     <div class="project-list-heading"><div class="section-title"><div><h2>{% if gip_filter_active %}Мои проекты как главный инженер{% elif is_chief_engineer %}Все доступные проекты{% else %}Активные проекты{% endif %}</h2><p><span data-project-count>{{ objects|length }}</span> в работе</p></div></div><div class="project-list-tools">{% if is_chief_engineer %}{% if gip_filter_active %}<a class="project-scope-toggle" href="/?scope=all">Все доступные</a>{% else %}<a class="project-scope-toggle" href="/">Мои проекты как ГИП</a>{% endif %}{% endif %}{% if objects %}<label class="project-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Договор, объект, заказчик или стадия" aria-label="Поиск проектов" autocomplete="off" data-project-search></label>{% endif %}</div></div>
@@ -122,6 +122,12 @@ const resizeObjectName = (field) => {
 document.querySelectorAll("textarea.object-name-input").forEach((field) => {
     field.addEventListener("input", () => resizeObjectName(field));
     resizeObjectName(field);
+});
+</script>
+<script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+<script>
+document.querySelectorAll('.alert-card [data-bs-toggle="tooltip"]').forEach((element) => {
+    if (window.bootstrap?.Tooltip) new bootstrap.Tooltip(element, {container: 'body', trigger: 'hover focus'});
 });
 </script>
 {% endblock %}

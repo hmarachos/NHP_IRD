@@ -175,8 +175,12 @@ class DocumentProcessingPipeline:
         if not is_curated_header:
             # Preserve separators read by OCR from the outgoing header. Vision
             # models sometimes merge groups such as 08-02/4045 into 08-024045.
+            # Only borrow OCR separators when both readers agree on the digits;
+            # OCR can confuse handwritten/low-resolution digits themselves.
             header_number = self.regex_extractor._extract_header_document_number(text)
-            if header_number:
+            header_digits = re.sub(r"\D", "", header_number)
+            recognized_digits = re.sub(r"\D", "", parsed.document_number or "")
+            if header_number and (not recognized_digits or header_digits == recognized_digits):
                 parsed.document_number = header_number
         if (self.regex_extractor._is_ministry_technical_requirements(text) or self.regex_extractor._is_gai_technical_requirements(text) or is_minskenergo) and parsed.issue_date:
             parsed.valid_until = self.regex_extractor._calculate_valid_until_from_duration(text, parsed.issue_date)

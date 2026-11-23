@@ -12,10 +12,12 @@ from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Customer, Document, ExpiryNotification, HandoverAct, Organization, Project, ProjectChecklistItem, ProjectNotebookEntry, UserProfile
+from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Customer, Document, DocumentVersionGroup, ExpiryNotification, HandoverAct, Organization, Project, ProjectChecklistItem, ProjectNotebookEntry, UserProfile
 from pypdf import PdfWriter
 from app.models import ParsedDocument
 from migration_portal.document_matching import find_duplicate
+from migration_portal.checklist_matching import suggest_checklist_items
+from types import SimpleNamespace
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -459,6 +461,115 @@ class DjangoPostgresProjectFlowTests(TransactionTestCase):
         item.refresh_from_db()
         self.assertEqual(item.document_id, second.id)
         self.assertEqual(ChecklistDocument.objects.filter(checklist_item=item).count(), 1)
+
+    def test_batch_documents_can_be_grouped_as_versions_and_archived_individually(self):
+        project = Project.objects.create(contract_number="VERSION-GROUP-001", name="Version group project")
+        self.addCleanup(project.delete)
+        other_project = Project.objects.create(contract_number="VERSION-GROUP-002", name="Other project")
+        self.addCleanup(other_project.delete)
+        item = ProjectChecklistItem.objects.create(project=project, title="Технические требования")
+        target = Document.objects.create(
+            project=project, contract_number=project.contract_number, object_name=project.name,
+            original_filename="Технические требования старые.pdf", stored_filename="old-version.pdf",
+            working_title="Технические требования", document_number="08-02/3868",
+        )
+        source = Document.objects.create(
+            project=project, contract_number=project.contract_number, object_name=project.name,
+            original_filename="Технические требования новые.pdf", stored_filename="new-version.pdf",
+            working_title="Технические требования", document_number="08-02/4410",
+        )
+        foreign = Document.objects.create(
+            project=other_project, contract_number=other_project.contract_number, object_name=other_project.name,
+            original_filename="foreign.pdf", stored_filename="foreign.pdf",
+        )
+        token = self.csrf_token()
+        response = self.client.post(reverse("web_add_document_version", args=[target.id]), {
+            "csrf_token": token, "source_document_id": source.id, "checklist_item_id": item.id,
+        }, HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        source.refresh_from_db()
+        self.assertEqual(target.version_group_id, source.version_group_id)
+        self.assertEqual((target.version_order, source.version_order), (1, 2))
+        group = DocumentVersionGroup.objects.get(pk=target.version_group_id)
+        self.assertEqual(group.checklist_item_id, item.id)
+        foreign_merge = self.client.post(reverse("web_add_document_version", args=[target.id]), {
+            "csrf_token": token, "source_document_id": foreign.id,
+        }, HTTP_X_REQUESTED_WITH="fetch")
+        self.assertEqual(foreign_merge.status_code, 404)
+
+        for document in (target, source):
+            response = self.client.post(reverse("web_update_document_fields", args=[document.id]), {
+                "csrf_token": token, "checklist_item_id": item.id,
+                "working_title": "Технические требования", "document_number": document.document_number,
+            }, HTTP_X_REQUESTED_WITH="fetch", HTTP_X_PRESERVE_CHECKLIST_LINK="1")
+            self.assertEqual(response.status_code, 204)
+        self.assertEqual(ChecklistDocument.objects.filter(checklist_item=item).count(), 2)
+        item.refresh_from_db()
+        self.assertEqual(item.document_id, target.id)
+
+        response = self.client.post(
+            reverse("web_archive_document", args=[target.id]), {"csrf_token": token},
+            HTTP_X_PRESERVE_CHECKLIST_LINK="1",
+        )
+        self.assertEqual(response.status_code, 302)
+        target.refresh_from_db()
+        source.refresh_from_db()
+        item.refresh_from_db()
+        self.assertTrue(target.archived_at)
+        self.assertFalse(source.archived_at)
+        self.assertEqual(item.document_id, source.id)
+        self.assertTrue(DocumentVersionGroup.objects.filter(pk=group.pk).exists())
+
+    def test_checklist_picker_suggests_only_items_without_active_documents(self):
+        project = Project.objects.create(contract_number="PICKER-AVAILABLE-001", name="Picker project")
+        self.addCleanup(project.delete)
+        loaded_item = ProjectChecklistItem.objects.create(project=project, title="Письмо о согласовании")
+        available_item = ProjectChecklistItem.objects.create(project=project, title="Технические условия")
+        active_document = Document.objects.create(
+            project=project, contract_number=project.contract_number, object_name=project.name,
+            original_filename="loaded.pdf", stored_filename="loaded.pdf", working_title="Письмо о согласовании",
+        )
+        loaded_item.document = active_document
+        loaded_item.status = "received"
+        loaded_item.save()
+        ChecklistDocument.objects.create(checklist_item=loaded_item, document=active_document)
+        parsed = SimpleNamespace(
+            working_title="Технические условия", official_title="", raw_text="Технические условия",
+        )
+
+        matches, suggested_id = suggest_checklist_items(project.id, parsed)
+
+        loaded_match = next(match for match in matches if match["id"] == loaded_item.id)
+        available_match = next(match for match in matches if match["id"] == available_item.id)
+        self.assertTrue(loaded_match["has_document"])
+        self.assertFalse(available_match["has_document"])
+        self.assertEqual(suggested_id, available_item.id)
+
+    def test_saving_cannot_link_to_another_active_checklist_document(self):
+        project = Project.objects.create(contract_number="PICKER-GUARD-001", name="Picker guard project")
+        self.addCleanup(project.delete)
+        item = ProjectChecklistItem.objects.create(project=project, title="Технические требования")
+        existing = Document.objects.create(
+            project=project, contract_number=project.contract_number, object_name=project.name,
+            original_filename="existing.pdf", stored_filename="existing.pdf",
+        )
+        item.document = existing
+        item.status = "received"
+        item.save()
+        ChecklistDocument.objects.create(checklist_item=item, document=existing)
+        incoming = Document.objects.create(
+            project=project, contract_number=project.contract_number, object_name=project.name,
+            original_filename="incoming.pdf", stored_filename="incoming.pdf",
+        )
+
+        response = self.client.post(reverse("web_update_document_fields", args=[incoming.id]), {
+            "csrf_token": self.csrf_token(), "checklist_item_id": item.id,
+            "working_title": "Технические требования", "document_number": "",
+        }, HTTP_X_REQUESTED_WITH="fetch")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("только пункты без загруженных документов", response.json()["error"])
 
     def test_project_document_request_has_linked_document_details(self):
         project = Project.objects.create(contract_number="REQUEST-DETAIL-001", name="Request details")

@@ -6,7 +6,11 @@ from app.services.document_titles import clean_document_name
 
 CUSTOMER_LETTER_ITEM_TITLE = "Сведения для разработки сметной документации (по типовой форме)"
 PROJECT_ASSIGNMENT_ITEM_TITLE = "Задание на проектирование"
-MULTI_DOCUMENT_ITEM_TITLES = {CUSTOMER_LETTER_ITEM_TITLE, PROJECT_ASSIGNMENT_ITEM_TITLE}
+MULTI_DOCUMENT_ITEM_TITLES = {
+    CUSTOMER_LETTER_ITEM_TITLE,
+    PROJECT_ASSIGNMENT_ITEM_TITLE,
+    "Технический паспорт объекта",
+}
 
 
 def normalize(value):

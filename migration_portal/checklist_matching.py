@@ -53,7 +53,20 @@ def suggest_checklist_items(project_id, parsed):
         })
 
     ranked.sort(key=lambda row: (-row["score"], row["title"].casefold(), row["id"]))
-    best = ranked[0] if ranked else None
-    margin = best["score"] - (ranked[1]["score"] if len(ranked) > 1 else 0)
+    # Projects can contain legacy duplicate rows with identical titles. Keep
+    # one suggestion per title so duplicates do not clutter the picker or
+    # make an otherwise clear match appear ambiguous.
+    unique_ranked = []
+    seen_titles = set()
+    for row in ranked:
+        title_key = _normalize(row["title"])
+        if title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        unique_ranked.append(row)
+    ranked = unique_ranked
+    available = [row for row in ranked if not row["has_document"]]
+    best = available[0] if available else None
+    margin = best["score"] - (available[1]["score"] if len(available) > 1 else 0)
     suggested_id = best["id"] if best and best["score"] >= 0.70 and margin >= 0.08 else None
     return ranked, suggested_id

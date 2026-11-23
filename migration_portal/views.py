@@ -36,6 +36,7 @@ from migration_portal.models import (
     ChecklistDocument,
     Correspondence,
     Document,
+    DocumentVersionGroup,
     Project,
     ProjectChecklistItem,
     ProjectNotebookEntry,
@@ -130,6 +131,34 @@ def _upload_storage():
     return StorageService(Path(settings.MEDIA_ROOT))
 
 
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.digest()
+
+
+def _find_exact_project_file(project_id, path):
+    candidate = Path(path)
+    candidate_size = candidate.stat().st_size
+    candidate_digest = _file_sha256(candidate)
+    for document in Document.objects.filter(project_id=project_id).order_by("id"):
+        try:
+            stored_path = _stored_document_path(document)
+        except Http404:
+            continue
+        if stored_path.stat().st_size == candidate_size and _file_sha256(stored_path) == candidate_digest:
+            return document
+    return None
+
+
+def _exact_duplicate_message(filename, existing):
+    title = existing.working_title or existing.official_title or existing.original_filename or "документ"
+    location = "в архиве проекта" if existing.archived_at else "в проекте"
+    return f"Файл «{filename}» уже есть {location} как «{title}». Повторная загрузка не выполнена."
+
+
 def _upload_size_exceeded(request):
     return bool(getattr(request, "upload_file_too_large", False))
 
@@ -179,9 +208,6 @@ def project_notebook(request, object_id):
     if project is None:
         raise Http404
     entries = ProjectNotebookEntry.objects.filter(project=project)
-    preparation_error_count = PreparedDocument.objects.filter(status="error").filter(
-        Q(document__in=active_docs) | Q(correspondence__in=active_letters)
-    ).count()
     checklist = list(ProjectChecklistItem.objects.filter(project=project).values("status"))
     received_count = sum(item["status"] == "received" for item in checklist)
     correspondence_count = Correspondence.objects.filter(
@@ -259,14 +285,22 @@ def upload_documents(request, object_id):
             _combine_images(images, combined)
             saved.append((f"Фотографии документа — {len(images)} страниц.pdf", combined.name, combined, "application/pdf"))
         created = []
-        for original_name, stored_name, _path, mime_type in saved:
-            document = Document.objects.create(
-                project=project, contract_number=project.contract_number, object_name=project.name,
-                original_filename=original_name, stored_filename=stored_name, mime_type=mime_type,
-                status="queued", note=request.POST.get("note", "").strip(),
-            )
-            document.status = "queued"
-            document.save(update_fields=["status"])
+        for original_name, stored_name, path, mime_type in saved:
+            with transaction.atomic():
+                Project.objects.select_for_update().get(pk=project.id)
+                duplicate = _find_exact_project_file(project.id, path)
+                if duplicate:
+                    document = None
+                else:
+                    document = Document.objects.create(
+                        project=project, contract_number=project.contract_number, object_name=project.name,
+                        original_filename=original_name, stored_filename=stored_name, mime_type=mime_type,
+                        status="queued", note=request.POST.get("note", "").strip(),
+                    )
+            if duplicate:
+                Path(path).unlink(missing_ok=True)
+                upload_errors.append(_exact_duplicate_message(original_name, duplicate))
+                continue
             created.append(document.id)
         for _name, _stored, image_path, _mime in images:
             Path(image_path).unlink(missing_ok=True)
@@ -331,17 +365,11 @@ def upload_checklist_document(request, object_id, item_id):
             for _name, _stored, source_path, _mime in saved:
                 Path(source_path).unlink(missing_ok=True)
             saved = []
-        uploaded_digest = hashlib.sha256(final_path.read_bytes()).digest()
-        for existing in Document.objects.filter(project=project, archived_at__isnull=True).order_by("id"):
-            if (existing.original_filename or "").casefold() != final_name.casefold():
-                continue
-            try:
-                existing_path = _stored_document_path(existing)
-            except Http404:
-                continue
-            if hashlib.sha256(existing_path.read_bytes()).digest() != uploaded_digest:
-                continue
+        existing = _find_exact_project_file(project.id, final_path)
+        if existing:
             final_path.unlink(missing_ok=True)
+            if existing.archived_at:
+                raise ValueError(_exact_duplicate_message(final_name, existing))
             from app.services.checklist_document_fields import project_assignment_fields
             manual_assignment = project_assignment_fields(item_title, project.customer or "")
             if manual_assignment is not None:
@@ -367,7 +395,7 @@ def upload_checklist_document(request, object_id, item_id):
                     "working_title": clean_document_name(existing.working_title or item_title, existing.issuer, project.customer), "official_title": existing.official_title or "",
                     "issuer": existing.issuer or "", "document_number": existing.document_number or "",
                     "issue_date": existing.issue_date or "", "valid_until": existing.valid_until or "",
-                    "no_expiration": existing.no_expiration,
+                    "no_expiration": existing.no_expiration, "note": existing.note or "",
                 }})
             messages.success(request, "Такой файл уже был загружен. Существующий документ привязан к строке комплектности.")
             return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab=checklist")
@@ -391,32 +419,42 @@ def upload_checklist_document(request, object_id, item_id):
                 apply_checklist_document_title(parsed, item_title)
             if item is None:
                 apply_filename_title_fallback(parsed, final_name)
-            document = Document.objects.create(
-                project=project, contract_number=project.contract_number, object_name=project.name,
-                original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
-                working_title=parsed.working_title, official_title=parsed.official_title,
-                issuer=parsed.issuer, document_number=parsed.document_number,
-                issue_date=parsed.issue_date, valid_until=parsed.valid_until,
-                validity_text=parsed.validity_text, no_expiration=parsed.no_expiration,
-                raw_text=parsed.raw_text, status="processed",
-            )
-            if item:
-                if request.headers.get("X-Add-Checklist-File") == "1":
-                    _append_checklist_document(project.id, item, document)
-                else:
-                    _link_checklist_document(project.id, item, document)
+            with transaction.atomic():
+                Project.objects.select_for_update().get(pk=project.id)
+                duplicate = _find_exact_project_file(project.id, final_path)
+                if duplicate:
+                    raise ValueError(_exact_duplicate_message(final_name, duplicate))
+                document = Document.objects.create(
+                    project=project, contract_number=project.contract_number, object_name=project.name,
+                    original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
+                    working_title=parsed.working_title, official_title=parsed.official_title,
+                    issuer=parsed.issuer, document_number=parsed.document_number,
+                    issue_date=parsed.issue_date, valid_until=parsed.valid_until,
+                    validity_text=parsed.validity_text, no_expiration=parsed.no_expiration,
+                    raw_text=parsed.raw_text, status="processed",
+                )
+                if item:
+                    if request.headers.get("X-Add-Checklist-File") == "1":
+                        _append_checklist_document(project.id, item, document)
+                    else:
+                        _link_checklist_document(project.id, item, document)
             fields = _checklist_analysis_fields(parsed, item_title)
             matches, suggested_item_id = suggest_checklist_items(project.id, parsed) if item is None else ([], None)
             return JsonResponse({"id": document.id, "general_upload": item is None, "preview": reverse("web_document_preview", args=[document.id]), "checklist_matches": matches, "suggested_checklist_item_id": suggested_item_id, "fields": {
                 **fields,
             }})
-        document = Document.objects.create(
-            project=project, contract_number=project.contract_number, object_name=project.name,
-            original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
-            status="queued",
-        )
-        if item:
-            _link_checklist_document(project.id, item, document)
+        with transaction.atomic():
+            Project.objects.select_for_update().get(pk=project.id)
+            duplicate = _find_exact_project_file(project.id, final_path)
+            if duplicate:
+                raise ValueError(_exact_duplicate_message(final_name, duplicate))
+            document = Document.objects.create(
+                project=project, contract_number=project.contract_number, object_name=project.name,
+                original_filename=final_name, stored_filename=final_stored, mime_type=final_mime,
+                status="queued",
+            )
+            if item:
+                _link_checklist_document(project.id, item, document)
         messages.success(request, f"Файл «{item_title}» принят. Распознавание выполняется в фоне.")
         return redirect(f"{reverse('web_object_workspace', args=[object_id])}?tab=checklist")
     except Exception as exc:
@@ -435,6 +473,22 @@ def _link_checklist_document(project_id, item, document):
         raise Http404
     if item.validity_years > 0 and item.title != "Инженерно-геодезические изыскания":
         return False
+    if document.version_group_id:
+        group = DocumentVersionGroup.objects.get(pk=document.version_group_id)
+        if group.project_id != project_id or (group.checklist_item_id and group.checklist_item_id != item.pk):
+            return False
+        group.checklist_item = item
+        group.save(update_fields=["checklist_item"])
+        ChecklistDocument.objects.get_or_create(
+            checklist_item=item,
+            document=document,
+            defaults={"sort_order": document.version_order},
+        )
+        if not item.document_id or item.document.archived_at:
+            item.document = document
+        item.status = "received"
+        item.save(update_fields=["document", "status", "updated_at"])
+        return True
     if allows_multiple_documents(item.title):
         next_order = (ChecklistDocument.objects.filter(checklist_item=item).aggregate(value=Max("sort_order"))["value"] or -1) + 1
         ChecklistDocument.objects.get_or_create(checklist_item=item, document=document, defaults={"sort_order": next_order})
@@ -461,6 +515,8 @@ def _append_checklist_document(project_id, item, document):
         raise Http404
     if item.validity_years > 0 and item.title != "Инженерно-геодезические изыскания":
         return False
+    if document.version_group_id:
+        return _link_checklist_document(project_id, item, document)
     if allows_multiple_documents(item.title):
         return _link_checklist_document(project_id, item, document)
     next_order = (ChecklistDocument.objects.filter(checklist_item=item).aggregate(value=Max("sort_order"))["value"] or -1) + 1
@@ -472,6 +528,76 @@ def _append_checklist_document(project_id, item, document):
     item.status = "received"
     item.save(update_fields=["document", "status", "updated_at"])
     return True
+
+
+@require_POST
+def add_document_version(request, document_id):
+    """Join a second uncommitted batch upload to the open document's version group."""
+    target = _document_or_404(document_id, active_only=True)
+    if target.project.archived_at:
+        raise Http404
+    try:
+        source_id = int(request.POST.get("source_document_id", ""))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Выберите файл для переноса."}, status=400)
+    if source_id == target.pk:
+        return JsonResponse({"error": "Нельзя добавить документ как собственную версию."}, status=400)
+
+    with transaction.atomic():
+        Project.objects.select_for_update().get(pk=target.project_id)
+        target = Document.objects.select_for_update().get(pk=target.pk)
+        source = Document.objects.select_for_update().filter(
+            pk=source_id, project_id=target.project_id, archived_at__isnull=True,
+        ).first()
+        if source is None or source.status in {"queued", "processing"}:
+            return JsonResponse({"error": "Файл не найден в этом проекте или ещё распознаётся."}, status=404)
+        if target.status in {"queued", "processing"}:
+            return JsonResponse({"error": "Дождитесь завершения распознавания открытого файла."}, status=409)
+        if ChecklistDocument.objects.filter(document_id__in=[target.pk, source.pk]).exists() or ProjectChecklistItem.objects.filter(
+            document_id__in=[target.pk, source.pk],
+        ).exists():
+            return JsonResponse({"error": "Объединять можно только документы, ещё не сохранённые из этого пакета."}, status=409)
+        if target.version_group_id and source.version_group_id and target.version_group_id != source.version_group_id:
+            return JsonResponse({"error": "Эти файлы уже принадлежат разным группам версий."}, status=409)
+
+        group = target.version_group or source.version_group
+        if group is None:
+            group = DocumentVersionGroup.objects.create(project_id=target.project_id)
+        if group.project_id != target.project_id:
+            return JsonResponse({"error": "Группа версий относится к другому проекту."}, status=400)
+        selected_item_id = request.POST.get("checklist_item_id", "").strip()
+        selected_item = None
+        if selected_item_id:
+            selected_item = ProjectChecklistItem.objects.filter(
+                pk=selected_item_id, project_id=target.project_id,
+            ).first()
+            if selected_item is None:
+                return JsonResponse({"error": "Выбранный пункт комплектности не относится к проекту."}, status=400)
+            if selected_item.validity_years > 0 and selected_item.title != "Инженерно-геодезические изыскания":
+                return JsonResponse({"error": "К этому пункту нельзя привязать файл."}, status=400)
+        if group.checklist_item_id and selected_item and group.checklist_item_id != selected_item.pk:
+            return JsonResponse({"error": "У версий должен быть один общий пункт комплектности."}, status=409)
+        if selected_item and not group.checklist_item_id:
+            group.checklist_item = selected_item
+            group.save(update_fields=["checklist_item"])
+
+        members = list(group.versions.order_by("version_order", "id"))
+        next_order = max((version.version_order for version in members), default=0) + 1
+        if not target.version_group_id:
+            target.version_group = group
+            target.version_order = next_order
+            target.save(update_fields=["version_group", "version_order"])
+            next_order += 1
+        if not source.version_group_id:
+            source.version_group = group
+            source.version_order = next_order
+            source.save(update_fields=["version_group", "version_order"])
+
+    return JsonResponse({
+        "group_id": group.pk,
+        "checklist_item_id": group.checklist_item_id or "",
+        "version_ids": list(group.versions.order_by("version_order", "id").values_list("id", flat=True)),
+    })
 
 
 def _checklist_analysis_fields(parsed, fallback_title):
@@ -503,6 +629,7 @@ def _checklist_analysis_fields(parsed, fallback_title):
         "issue_date": iso_date(parsed.issue_date),
         "valid_until": "" if project_assignment else iso_date(parsed.valid_until),
         "no_expiration": True if project_assignment else parsed.no_expiration,
+        "note": "",
     }
 
 
@@ -538,6 +665,13 @@ def document_detail(request, document_id):
 def update_document_fields(request, document_id):
     document = _document_or_404(document_id)
     requested_item_id = request.POST.get("checklist_item_id") if "checklist_item_id" in request.POST else None
+    version_group = None
+    if document.version_group_id:
+        version_group = DocumentVersionGroup.objects.select_related("checklist_item").get(pk=document.version_group_id)
+        if version_group.project_id != document.project_id:
+            return JsonResponse({"error": "Группа версий относится к другому проекту."}, status=400)
+        if not requested_item_id and version_group.checklist_item_id:
+            requested_item_id = str(version_group.checklist_item_id)
     selected_item = None
     if requested_item_id:
         try:
@@ -550,6 +684,20 @@ def update_document_fields(request, document_id):
             return JsonResponse({"error": "Выбранный пункт не относится к этому проекту."}, status=400)
         if selected_item.validity_years > 0 and selected_item.title != "Инженерно-геодезические изыскания":
             return JsonResponse({"error": "К этому пункту нельзя привязать файл."}, status=400)
+        if version_group and version_group.checklist_item_id and version_group.checklist_item_id != selected_item.pk:
+            return JsonResponse({"error": "У всех версий документа должен быть один общий пункт комплектности."}, status=409)
+        active_linked_ids = set(ChecklistDocument.objects.filter(
+            checklist_item=selected_item,
+            document__archived_at__isnull=True,
+        ).values_list("document_id", flat=True))
+        if selected_item.document_id and not selected_item.document.archived_at:
+            active_linked_ids.add(selected_item.document_id)
+        active_linked_ids.discard(document.id)
+        same_version_group_item = bool(
+            version_group and version_group.checklist_item_id == selected_item.pk
+        )
+        if active_linked_ids and not same_version_group_item and not allows_multiple_documents(selected_item.title):
+            return JsonResponse({"error": "В списке доступны только пункты без загруженных документов."}, status=409)
     no_expiration = request.POST.get("no_expiration") == "on"
     document.working_title = request.POST.get("working_title", "").strip()
     document.official_title = request.POST.get("official_title", "").strip()
@@ -890,7 +1038,7 @@ def archive_document(request, document_id):
             }:
                 item.status = "missing"
                 item.save(update_fields=["status", "updated_at"])
-        if request.headers.get("X-Preserve-Checklist-Link") != "1":
+        if request.headers.get("X-Preserve-Checklist-Link") != "1" and not document.version_group_id:
             ChecklistDocument.objects.filter(document=document).delete()
         document.save(update_fields=["archived_at"])
     messages.success(request, "Документ перемещён в архив проекта. Файл сохранён.")
@@ -920,6 +1068,7 @@ def restore_document(request, document_id):
 def delete_document(request, document_id):
     document = _document_or_404(document_id)
     project_id, stored_name = document.project_id, document.stored_filename
+    version_group_id = document.version_group_id
     path = None
     try:
         path = _stored_document_path(document)
@@ -949,6 +1098,15 @@ def delete_document(request, document_id):
                 item.save(update_fields=["status", "updated_at"])
         ChecklistDocument.objects.filter(document=document).delete()
         document.delete()
+        if version_group_id:
+            group = DocumentVersionGroup.objects.filter(pk=version_group_id).first()
+            remaining = list(group.versions.order_by("version_order", "id")) if group else []
+            if group and len(remaining) <= 1:
+                if remaining:
+                    remaining[0].version_group = None
+                    remaining[0].version_order = 0
+                    remaining[0].save(update_fields=["version_group", "version_order"])
+                group.delete()
     if path and not Document.objects.filter(stored_filename=stored_name).exists() and not Correspondence.objects.filter(stored_filename=stored_name).exists():
         path.unlink(missing_ok=True)
         from app.services.word_documents import remove_word_preview
@@ -1066,6 +1224,11 @@ def object_workspace(request, object_id):
             and checklist_documents[row["id"]][0]["id"] != row["document_id"]
         )
     )
+    for group in DocumentVersionGroup.objects.filter(project=project, checklist_item__isnull=False).annotate(
+        version_count=Count("versions"),
+    ):
+        if group.version_count > 1:
+            multi_ids.add(group.checklist_item_id)
     received_count = sum(bool(
         row["id"] in archived_item_ids
         or (row["id"] in multi_ids and checklist_documents.get(row["id"]))
@@ -1089,6 +1252,11 @@ def object_workspace(request, object_id):
         "archived_document_item_ids": archived_document_item_ids, "checklist": checklist,
         "template_choices": template_choices, "template_choice_data": template_choice_data,
         "checklist_documents": checklist_documents,
+        "version_group_item_ids": {
+            group.checklist_item_id for group in DocumentVersionGroup.objects.filter(
+                project=project, checklist_item__isnull=False,
+            ).annotate(version_count=Count("versions")) if group.version_count > 1
+        },
         "multi_document_item_ids": multi_ids, "missing_count": len(checklist) - received_count,
         "received_count": received_count, "warning_days": warning_days, "correspondence": correspondence,
         "approvals": approvals, "correspondence_organizations": sorted(organizations, key=str.casefold),
@@ -1762,6 +1930,29 @@ def download_project_document(request, object_id, kind):
             item = items.get(link.checklist_item_id)
             if item and uses_customer_letter_subject(item["title"]):
                 checklist_document_titles[link.document_id] = item["title"]
+    elif kind == "inventory":
+        documents_by_id = {row["id"]: row for row in documents}
+        linked_ids_by_item = {}
+        for item_id, document_id in ChecklistDocument.objects.filter(
+            checklist_item__project=project,
+            document__project=project,
+            document__archived_at__isnull=True,
+        ).order_by("checklist_item_id", "sort_order", "created_at", "document_id").values_list(
+            "checklist_item_id", "document_id",
+        ):
+            linked_ids_by_item.setdefault(item_id, []).append(document_id)
+        ordered_ids = []
+        for item in sorted(checklist, key=lambda row: (
+            0 if row["status"] == "received" else 1, row["sort_order"], row["id"],
+        )):
+            item_document_ids = linked_ids_by_item.get(item["id"], [])
+            if item["document_id"] in documents_by_id and item["document_id"] not in item_document_ids:
+                item_document_ids = [item["document_id"], *item_document_ids]
+            ordered_ids.extend(item_document_ids)
+        ordered_ids = list(dict.fromkeys(document_id for document_id in ordered_ids if document_id in documents_by_id))
+        seen_ids = set(ordered_ids)
+        ordered_ids.extend(row["id"] for row in documents if row["id"] not in seen_ids)
+        documents = [documents_by_id[document_id] for document_id in ordered_ids]
     content = generate_project_document(kind, obj, documents, checklist, checklist_document_titles=checklist_document_titles)
     from app.services.filenames import secure_stem
     slug = secure_stem(project.name, fallback=f"project-{object_id}")
@@ -1920,9 +2111,14 @@ def home(request):
             "valid_until": document.valid_until,
             "working_title": document.working_title,
             "original_filename": document.original_filename,
+            "issuer": document.issuer,
         }
         state = expiry_state(row, warning_days)
         if state["key"] in {"expired", "expiring"}:
+            row["alert_title"] = format_document_title(
+                document.working_title or document.official_title or document.original_filename,
+                document.issuer,
+            )
             alerts.append({"document": row, "expiry": state})
     context = {
         "objects": objects,

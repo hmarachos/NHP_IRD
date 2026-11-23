@@ -94,6 +94,7 @@
                 submit.innerHTML = '<span class="spinner" aria-hidden="true"></span> Формируем…';
                 const controller = new AbortController();
                 const requestTimeout = window.setTimeout(() => controller.abort(), 120000);
+                let downloadSucceeded = false;
                 try {
                     const result = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal});
                     const disposition = result.headers.get('Content-Disposition') || '';
@@ -105,16 +106,18 @@
                     link.href = blobUrl;
                     link.download = encodedName ? decodeURIComponent(encodedName) : (plainName || 'Документ.docx');
                     document.body.append(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-                    const feedback = document.createElement('p'); feedback.className = 'notice notice-success generation-feedback'; feedback.textContent = 'Документ сформирован и скачан.';
-                    section.append(feedback);
+                    downloadSucceeded = true;
                     if (section.dataset.generationKind === 'handover') window.setTimeout(() => window.location.reload(), 500);
                 } catch (error) {
                     let feedback = section.querySelector('.generation-feedback');
                     if (!feedback) { feedback = document.createElement('p'); feedback.className = 'notice notice-error generation-feedback'; section.append(feedback); }
                     feedback.textContent = error.name === 'AbortError' ? 'Формирование заняло больше двух минут. Попробуйте ещё раз или сообщите администратору.' : (error.message || 'Не удалось сформировать документ.');
+                } finally {
+                    window.clearTimeout(requestTimeout);
                     submit.disabled = false;
                     submit.innerHTML = `<i class="bi bi-file-earmark-word" aria-hidden="true"></i> ${submit.dataset.idleLabel || 'Скачать Word'}`;
-                } finally { window.clearTimeout(requestTimeout); }
+                    if (downloadSucceeded) window.setTimeout(close, 250);
+                }
             });
         } catch (error) {
             content.innerHTML = '<p class="notice notice-error">Не удалось загрузить форму. Обновите страницу и попробуйте снова.</p>';
