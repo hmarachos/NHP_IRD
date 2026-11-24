@@ -12,7 +12,7 @@ from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Customer, Document, DocumentVersionGroup, ExpiryNotification, HandoverAct, Organization, Project, ProjectChecklistItem, ProjectNotebookEntry, UserProfile
+from migration_portal.models import ChecklistDocument, ChecklistExpiryNotification, ChecklistTemplate, ChecklistTemplateItem, Correspondence, Customer, Document, DocumentVersionGroup, ExpiryNotification, HandoverAct, Organization, Project, ProjectChecklistItem, ProjectNotebookEntry, ProjectShare, UserProfile
 from pypdf import PdfWriter
 from app.models import ParsedDocument
 from migration_portal.document_matching import find_duplicate
@@ -38,6 +38,22 @@ class DjangoPostgresProjectFlowTests(TransactionTestCase):
         self.assertIn("/admin/login/", response["Location"])
         self.assertEqual(anonymous.get(reverse("health")).status_code, 200)
         self.assertEqual(self.client.get(reverse("web_index")).status_code, 200)
+
+    def test_project_share_form_uses_native_csrf_field(self):
+        project = Project.objects.create(contract_number="SHARE-CSRF-001", name="CSRF share test")
+        response = self.client.get(reverse("web_manage_project_share", args=[project.pk]), secure=True)
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', html).group(1)
+        response = self.client.post(
+            reverse("web_manage_project_share", args=[project.pk]),
+            {"csrfmiddlewaretoken": token, "action": "create", "password": "short", "expires_on": "2099-12-31"},
+            secure=True,
+            HTTP_ORIGIN="https://testserver",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "не менее 8 символов")
+        self.assertFalse(ProjectShare.objects.filter(project=project).exists())
 
     def csrf_token(self):
         response = self.client.get(reverse("web_index"))
