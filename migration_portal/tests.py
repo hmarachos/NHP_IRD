@@ -49,11 +49,18 @@ class DjangoPostgresProjectFlowTests(TransactionTestCase):
             reverse("web_manage_project_share", args=[project.pk]),
             {"csrfmiddlewaretoken": token, "action": "create", "password": "short", "expires_on": "2099-12-31"},
             secure=True,
-            HTTP_ORIGIN="https://testserver",
+            HTTP_ORIGIN="null",
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "не менее 8 символов")
         self.assertFalse(ProjectShare.objects.filter(project=project).exists())
+        rejected = self.client.post(
+            reverse("web_manage_project_share", args=[project.pk]),
+            {"csrfmiddlewaretoken": "invalid", "action": "create", "password": "short", "expires_on": "2099-12-31"},
+            secure=True,
+            HTTP_ORIGIN="null",
+        )
+        self.assertEqual(rejected.status_code, 403)
 
     def test_share_page_keeps_workspace_sidebar_counts_and_places_share_last(self):
         project = Project.objects.create(contract_number="SHARE-NAV-001", name="Share nav test")

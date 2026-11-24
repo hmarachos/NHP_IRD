@@ -34,7 +34,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django_site.csrf_alias.CsrfAliasMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    "django_site.csrf_alias.ProjectCsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "migration_portal.middleware.ProjectAccessMiddleware",
