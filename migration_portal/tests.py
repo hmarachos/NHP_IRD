@@ -832,7 +832,7 @@ class DjangoRemainingFlowTests(TransactionTestCase):
                 self.assertFalse(stored.exists())
                 self.assertFalse(HandoverAct.objects.filter(pk=act.id).exists())
 
-    def test_native_project_export_contains_json_files_and_verified_manifest(self):
+    def test_project_export_contains_documents_only(self):
         project = Project.objects.create(contract_number="EXPORT-001", name="Project export")
         self.addCleanup(project.delete)
         document = Document.objects.create(
@@ -849,18 +849,10 @@ class DjangoRemainingFlowTests(TransactionTestCase):
                 self.assertEqual(response.status_code, 200)
                 with zipfile.ZipFile(io.BytesIO(b"".join(response.streaming_content))) as archive:
                     names = set(archive.namelist())
-                    self.assertTrue({
-                        "Проект.json", "Перечень_ИРД.json", "Переписка.json",
-                        "Согласования.json", "Комплектность.json", "Акты_приёма-передачи.json",
-                        "manifest.json",
-                    }.issubset(names))
-                    self.assertTrue(any(name.startswith("01_ИРД/") for name in names))
-                    manifest = json.loads(archive.read("manifest.json"))
-                    document_entry = next(entry for entry in manifest["files"] if entry.get("document_id") == document.id)
-                    content = archive.read(document_entry["path"])
-                    self.assertEqual(document_entry["sha256"], hashlib.sha256(content).hexdigest())
-                    exported_checklist = json.loads(archive.read("Комплектность.json"))
-                    self.assertEqual(exported_checklist[0]["document_ids"], [document.id])
+                    self.assertEqual(len(names), 1)
+                    self.assertTrue(all(name.startswith("01_ИРД/") for name in names))
+                    self.assertFalse(any(name.casefold().endswith(".json") for name in names))
+                    self.assertEqual(archive.read(next(iter(names))), b"%PDF-1.4 test")
 
     def test_django_worker_processes_queue_without_flask_context(self):
         project = Project.objects.create(contract_number="WORKER-001", name="Worker test")

@@ -2229,37 +2229,21 @@ def _archive_name(value, fallback):
 
 @require_GET
 def export_object(request, object_id):
-    project, obj, documents, checklist = _project_rows(object_id)
+    project, _obj, documents, _checklist = _project_rows(object_id)
     letters = list(Correspondence.objects.filter(project=project, record_type="correspondence").order_by("-letter_date", "-id").values())
     approvals = list(Correspondence.objects.filter(project=project, record_type="approval").order_by("-letter_date", "-id").values())
     from migration_portal.models import HandoverAct
     acts = list(HandoverAct.objects.filter(project=project).order_by("-created_at", "-id").values())
-    linked_ids = {}
-    for item_id, document_id in ChecklistDocument.objects.filter(checklist_item__project=project).values_list("checklist_item_id", "document_id"):
-        linked_ids.setdefault(item_id, []).append(document_id)
-    for item in checklist:
-        if item["document_id"] and item["document_id"] not in linked_ids.setdefault(item["id"], []):
-            linked_ids[item["id"]].insert(0, item["document_id"])
-    checklist_export = [{**item, "document_ids": linked_ids.get(item["id"], [])} for item in checklist]
     archive = BytesIO()
-    manifest = {"created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "files": []}
     upload_root = Path(settings.MEDIA_ROOT).resolve()
     acts_root = Path(settings.ACTS_DIR).resolve()
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-        for name, rows in (
-            ("Проект.json", obj), ("Перечень_ИРД.json", documents),
-            ("Переписка.json", letters), ("Согласования.json", approvals),
-            ("Комплектность.json", checklist_export), ("Акты_приёма-передачи.json", acts),
-        ):
-            bundle.writestr(name, json.dumps(rows, ensure_ascii=False, indent=2))
-
-        def add_file(record, id_field, directory, folder, label, title, date_value="", approval=False):
+        def add_file(record, directory, folder, label, title, date_value=""):
             stored = record.get("stored_filename") or ""
             candidate = Path(stored)
             root = directory.resolve()
             path = (root / candidate).resolve() if stored else None
             if path is None or candidate.is_absolute() or candidate.name != stored or path.parent != root or not path.is_file():
-                manifest["files"].append({id_field: record["id"], "missing": True})
                 return
             safe_title = _archive_name(title, label)
             if folder == "01_ИРД":
@@ -2273,24 +2257,19 @@ def export_object(request, object_id):
                 member = f"{folder}/{record['id']:03d}_{date_part}_{safe_title}{path.suffix}"
             content = path.read_bytes()
             bundle.writestr(member, content)
-            manifest["files"].append({
-                id_field: record["id"], "path": member,
-                "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content),
-            })
 
         for row in documents:
-            add_file(row, "document_id", upload_root, "01_ИРД", "Документ",
+            add_file(row, upload_root, "01_ИРД", "Документ",
                      row.get("working_title") or row.get("official_title") or row.get("original_filename") or "Документ")
         for row in letters:
-            add_file(row, "correspondence_id", upload_root, "02_Переписка", "Письмо",
+            add_file(row, upload_root, "02_Переписка", "Письмо",
                      row.get("subject") or row.get("sender") or "Письмо", row.get("letter_date"))
         for row in approvals:
-            add_file(row, "approval_id", upload_root, "03_Согласования", "Согласование",
+            add_file(row, upload_root, "03_Согласования", "Согласование",
                      row.get("subject") or row.get("sender") or "Согласование", row.get("letter_date"))
         for row in acts:
-            add_file(row, "act_id", acts_root / str(object_id), "04_Акты_приёма-передачи", "Акт",
+            add_file(row, acts_root / str(object_id), "04_Акты_приёма-передачи", "Акт",
                      "Акт", row.get("period_end") or (row.get("created_at") or "")[:10])
-        bundle.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     filename = _archive_name(project.name, f"Проект_{object_id}")
     response = FileResponse(BytesIO(archive.getvalue()), content_type="application/zip")
     response["Content-Disposition"] = content_disposition_header(True, f"Архив_проекта_{filename}.zip")
