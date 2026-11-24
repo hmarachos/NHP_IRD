@@ -944,6 +944,7 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
 .app-sidebar .project-nav-caption{color:#d1d9e4;letter-spacing:.14em}
 .app-sidebar .project-nav-item{color:#c9d2df}
 .app-sidebar .project-nav-item:hover{background:#273343;color:#fff}
+.app-sidebar .project-nav-share{margin-top:5px;padding-top:12px;border-top:1px solid #3a4554;border-radius:0}
 .app-sidebar .project-nav-group{gap:7px;padding:10px}
 .app-sidebar .project-nav-item{min-height:48px;gap:12px;padding:10px 11px;font-size:13px}
 .app-sidebar .project-nav-icon{width:22px;font-size:18px}

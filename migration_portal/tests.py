@@ -55,6 +55,21 @@ class DjangoPostgresProjectFlowTests(TransactionTestCase):
         self.assertContains(response, "не менее 8 символов")
         self.assertFalse(ProjectShare.objects.filter(project=project).exists())
 
+    def test_share_page_keeps_workspace_sidebar_counts_and_places_share_last(self):
+        project = Project.objects.create(contract_number="SHARE-NAV-001", name="Share nav test")
+        ProjectChecklistItem.objects.create(project=project, title="Получен", status="received")
+        ProjectChecklistItem.objects.create(project=project, title="Ожидается", status="missing")
+        Correspondence.objects.create(project=project, direction="incoming", record_type="correspondence")
+        Correspondence.objects.create(project=project, direction="outgoing", record_type="approval")
+
+        response = self.client.get(reverse("web_manage_project_share", args=[project.pk]))
+        self.assertContains(response, "1/2")
+        self.assertContains(response, ">1</small>")
+        html = response.content.decode()
+        nav = html[html.index('<nav class="project-side-nav'):html.index("</nav>")]
+        self.assertIn('class="project-nav-item project-nav-share', nav)
+        self.assertLess(nav.index("Записная книжка"), nav.index("Общий доступ"))
+
     def csrf_token(self):
         response = self.client.get(reverse("web_index"))
         self.assertEqual(response.status_code, 200)

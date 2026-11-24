@@ -1160,6 +1160,19 @@ def manage_project_share(request, object_id):
         raise PermissionDenied
 
     share = ProjectShare.objects.filter(project=project).first()
+    checklist = list(ProjectChecklistItem.objects.filter(project=project).values(
+        "status", "validity_years", "issue_date",
+    ))
+    received_count = sum(
+        row["status"] == "received" or (row["validity_years"] and row["issue_date"])
+        for row in checklist
+    )
+    correspondence_count = Correspondence.objects.filter(
+        project=project, record_type="correspondence",
+    ).count()
+    approvals = Correspondence.objects.filter(
+        project=project, record_type="approval",
+    )
     generated_url = None
     error = ""
     if request.method == "POST":
@@ -1200,6 +1213,11 @@ def manage_project_share(request, object_id):
             messages.success(request, "Ссылка создана. Скопируйте её сейчас: секретный адрес больше не будет показан.")
     response = render(request, "project_share_manage.html", {
         "object": project,
+        "active_project": project,
+        "checklist": checklist,
+        "received_count": received_count,
+        "correspondence_count": correspondence_count,
+        "approvals": approvals,
         "share": share,
         "generated_url": generated_url,
         "error": error,
