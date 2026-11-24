@@ -76,7 +76,7 @@
     body.sidebar-collapsed .svod-brand .svod-logo-image { width: 30px; height: 30px; object-fit: cover; object-position: left center; }
 }
 @media (max-width: 760px) {
-    .svod-brand .svod-logo-image { width: min(190px, 48vw); }
+    .svod-brand .svod-logo-image { width: min(228px, 48vw); }
 }
 .app-sidebar .svod-brand {
     flex: 1 1 auto;
@@ -110,7 +110,7 @@
     }
 }
 @media (max-width: 760px) {
-    .svod-brand .svod-logo-image { width: min(190px, 48vw); }
+    .svod-brand .svod-logo-image { width: min(228px, 48vw); }
 }
 /* Transparent sidebar lockup: light wordmark, original blue mark, soft cool glow. */
 .app-sidebar .svod-brand {
@@ -149,7 +149,7 @@
     }
 }
 @media (max-width: 760px) {
-    .svod-brand .svod-logo-image { width: min(190px, 48vw); }
+    .svod-brand .svod-logo-image { width: min(228px, 48vw); }
 }
 /* Match the supplied dark-navy brand reference. */
 .app-sidebar .svod-brand {
@@ -168,9 +168,9 @@
 .svod-brand .svod-logo-image {
     display: block;
     width: 100%;
-    max-width: 190px;
+    max-width: 228px;
     height: auto;
-    max-height: 70px;
+    max-height: 84px;
     object-fit: contain;
     object-position: left center;
     filter: none;

@@ -981,14 +981,14 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
     }
     .app-sidebar .app-sidebar-brand{border-bottom:0}
     .app-sidebar .svod-brand{
-        min-height:54px;
+        min-height:65px;
         max-width:calc(100% - 38px);
         margin:0;
     }
     .svod-brand .svod-logo-image{
         width:100%;
         max-width:100%;
-        max-height:54px;
+        max-height:65px;
     }
     .app-sidebar .project-side-nav{
         display:flex;
@@ -1055,7 +1055,7 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
 .account-sidebar .app-sidebar-brand.svod-brand{
     flex:0 0 auto;
     width:100%;
-    min-height:54px;
+    min-height:65px;
     margin:0 0 16px;
     padding:0 7px 18px;
     border:0;
@@ -1066,8 +1066,8 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
 .account-sidebar .svod-brand .svod-logo-image{
     display:block;
     width:100%;
-    max-width:190px;
-    max-height:70px;
+    max-width:228px;
+    max-height:84px;
     object-fit:contain;
     object-position:left center;
 }
