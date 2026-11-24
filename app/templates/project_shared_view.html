@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer">
     <title>{{ project.name }} · Общий доступ</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css', v='5.3.3') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v8') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v9') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="shared-view-body">
@@ -38,7 +38,7 @@
     <div class="tab-content shared-section-tab-content">
         <section class="panel shared-section tab-pane fade show active" id="shared-ird" role="tabpanel" aria-labelledby="shared-ird-tab" tabindex="0">
             <div class="shared-section-heading">
-                <div><p class="eyebrow">КОМПЛЕКТНОСТЬ</p><h2>ИРД</h2></div>
+                <div><h2>ИРД</h2></div>
                 <span>{{ documents|length }}</span>
             </div>
             {% if documents %}
