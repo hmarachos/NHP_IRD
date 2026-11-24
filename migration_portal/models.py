@@ -55,6 +55,22 @@ class Project(NormalizedUserTextMixin, models.Model):
         indexes = [models.Index(fields=["created_at", "id"], name="project_created_idx")]
 
 
+class ProjectShare(models.Model):
+    """Password-protected, read-only guest link for a project's public sections."""
+
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="share")
+    token_digest = models.CharField(max_length=64, unique=True)
+    password_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "project_shares"
+        indexes = [models.Index(fields=["expires_at", "revoked_at"], name="project_share_active_idx")]
+
+
 class Document(NormalizedUserTextMixin, models.Model):
     normalized_text_fields = (
         "contract_number", "object_name", "working_title", "official_title", "issuer", "document_number", "note",

@@ -14,8 +14,8 @@
         <button class="template-card-toggle" type="button" aria-expanded="false" aria-controls="template-content-{{ entry.template.id }}" data-template-accordion-toggle>
         <div class="template-card-identity">
             <h2 data-template-name>{{ entry.template.name }}</h2>
-            <p data-template-description>{{ entry.template.description or 'Без описания' }}</p>
-            <small class="template-card-count">{{ entry['items']|length }} документов</small>
+            <p data-template-description tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-custom-class="template-description-tooltip" title="{{ entry.template.description or 'Без описания' }}">{{ entry.template.description or 'Без описания' }}</p>
+            <small class="template-card-count" data-template-count>{{ entry['items']|length|ru_documents_count }}</small>
             <form action="{{ url_for('web.update_template', template_id=entry.template.id) }}" method="post" class="template-header template-edit-form" hidden>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <label><span>Название шаблона</span><input name="name" value="{{ entry.template.name }}" required data-template-meta-autosave></label>
@@ -42,7 +42,7 @@
     </header>
     <div class="template-card-content" id="template-content-{{ entry.template.id }}" data-template-accordion-content hidden>
     <div class="section-title template-card-title">
-        <div><h3>Состав шаблона</h3><p>{{ entry['items']|length }} документов · изменения повлияют на новые проекты</p></div>
+        <div><h3>Состав шаблона</h3><p><span data-template-count>{{ entry['items']|length|ru_documents_count }}</span> · изменения повлияют на новые проекты</p></div>
     </div>
     <div class="template-table-wrap">
         <div class="template-items-table-head" aria-hidden="true"><span>№</span><span>Документ</span><span>Примечание</span></div>
@@ -77,8 +77,24 @@
 <div class="empty-state"><h3>Шаблонов пока нет</h3><p>Создайте первый перечень выше.</p></div>
 {% endfor %}
 </div>
+<script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 <script>
 (() => {
+    const formatDocumentCount = (value) => {
+        const lastTwo = value % 100;
+        const last = value % 10;
+        const noun = lastTwo >= 11 && lastTwo <= 14 ? 'документов' : (last === 1 ? 'документ' : (last >= 2 && last <= 4 ? 'документа' : 'документов'));
+        return `${value} ${noun}`;
+    };
+    const updateTemplateCount = (card) => {
+        const count = card.querySelectorAll('[data-template-items-readonly] li').length;
+        card.querySelectorAll('[data-template-count]').forEach((element) => { element.textContent = formatDocumentCount(count); });
+    };
+    if (window.bootstrap?.Tooltip) {
+        document.querySelectorAll('[data-template-description][data-bs-toggle="tooltip"]').forEach((element) => {
+            new bootstrap.Tooltip(element, {container: 'body', trigger: 'hover focus'});
+        });
+    }
     const createDialog = document.querySelector('[data-template-dialog]');
     document.querySelector('[data-open-template-dialog]')?.addEventListener('click', () => {
         createDialog?.showModal();
@@ -133,7 +149,10 @@
                 const response = await fetch(form.action, {method: 'POST', body: new FormData(form), signal: controller.signal, keepalive: true, headers: {'X-Requested-With': 'fetch'}});
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 displayedName.textContent = name;
-                displayedDescription.textContent = descriptionInput.value.trim() || 'Без описания';
+                const description = descriptionInput.value.trim() || 'Без описания';
+                displayedDescription.textContent = description;
+                displayedDescription.title = description;
+                displayedDescription.setAttribute('data-bs-original-title', description);
                 copyForm.elements.name.value = `${name} — копия`;
                 if (savedRevision === revision) {
                     status.textContent = 'Сохранено';
@@ -259,6 +278,7 @@
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 row.remove();
                 readonlyItem?.remove();
+                updateTemplateCount(card);
                 card.querySelectorAll('.template-item-number').forEach((number, index) => {
                     number.textContent = String(index + 1);
                 });

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Общий доступ · {{ object.name }}{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><a href="{{ url_for('web.object_workspace', object_id=object.id) }}">{{ object.name }}</a><span>/</span><span>Общий доступ</span></div>
+<section class="page-heading"><div><p class="eyebrow">ДОСТУП ПО ССЫЛКЕ</p><h1>Поделиться проектом</h1><p class="subheading">Получатель увидит только разделы «ИРД», «Письма» и «Согласования». Для входа потребуется пароль.</p></div></section>
+<section class="panel share-manage-card">
+    {% if share_active %}
+    <div class="share-status"><i class="bi bi-shield-lock" aria-hidden="true"></i><div><strong>Ссылка активна</strong><span>Доступ открыт до {{ share.expires_at|ru_date }}. Повторное создание заменит ссылку и пароль.</span></div></div>
+    {% elif share %}
+    <div class="share-status is-inactive"><i class="bi bi-link-45deg" aria-hidden="true"></i><div><strong>Ссылка отключена</strong><span>{% if share.revoked_at %}Владелец отозвал доступ.{% else %}Срок действия ссылки истёк.{% endif %}</span></div></div>
+    {% endif %}
+    {% if error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+    {% if generated_url %}
+    <div class="share-generated" role="status"><strong>Новая ссылка создана</strong><p>Скопируйте ссылку и передайте получателю. Пароль сообщите отдельно.</p><label for="generated-share-url">Секретная ссылка</label><div><input id="generated-share-url" type="text" readonly value="{{ generated_url }}"><button class="secondary-button" type="button" data-copy-share>Скопировать</button></div></div>
+    {% endif %}
+    <form method="post" class="share-create-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="create">
+        <h2>{% if share_active %}Создать новую ссылку{% else %}Создать ссылку{% endif %}</h2>
+        <p>Срок по умолчанию — 30 дней. Пароль должен содержать не менее 8 символов.</p>
+        <div class="share-form-fields"><label>Пароль для получателя<input type="password" name="password" minlength="8" autocomplete="new-password" required></label><label>Действует до<input type="date" name="expires_on" min="{{ expiry_min }}" value="{{ default_expiry }}" required></label></div>
+        <button type="submit"><i class="bi bi-shield-lock" aria-hidden="true"></i> Создать защищённую ссылку</button>
+    </form>
+    {% if share_active %}<form method="post" class="share-revoke-form" onsubmit="return confirm('Отключить ссылку? Получатели потеряют доступ.');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="revoke"><button class="text-danger" type="submit"><i class="bi bi-link-45deg" aria-hidden="true"></i> Отозвать текущую ссылку</button></form>{% endif %}
+</section>
+{% if generated_url %}<script>
+document.querySelector('[data-copy-share]')?.addEventListener('click', async (event) => {
+    const input = document.querySelector('#generated-share-url');
+    try {
+        await navigator.clipboard.writeText(input.value);
+        event.currentTarget.textContent = 'Скопировано';
+    } catch (_) {
+        input.focus(); input.select(); document.execCommand('copy');
+        event.currentTarget.textContent = 'Скопировано';
+    }
+});
+</script>{% endif %}
+{% endblock %}

@@ -38,10 +38,22 @@ def _ru_date(value):
     return raw
 
 
+def _ru_documents_count(value):
+    try:
+        number = abs(int(value))
+    except (TypeError, ValueError):
+        number = 0
+    last_two = number % 100
+    last = number % 10
+    noun = "документов" if 11 <= last_two <= 14 else ("документ" if last == 1 else ("документа" if 2 <= last <= 4 else "документов"))
+    return f"{value} {noun}"
+
+
 def environment(**options):
     options.setdefault("autoescape", select_autoescape(["html", "htm", "xml"]))
     env = Environment(**options)
     env.filters["ru_date"] = _ru_date
+    env.filters["ru_documents_count"] = _ru_documents_count
     return env
 
 

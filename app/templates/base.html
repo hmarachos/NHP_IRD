@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#252a30">
     <title>{% block title %}СВОД · Архив ИРД{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-mobile-document-v25') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-share-template-v26') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='svod-brand.css', v='4') }}">
-    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='svod-favicon-64.png', v='20261122-transparent-icons-v2') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='svod-favicon-32.png', v='20261122-transparent-icons-v2') }}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='svod-favicon-16.png', v='20261122-transparent-icons-v2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='svod-brand.css', v='20261124-transparent-brand-v1') }}">
+    <link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='svod-favicon-64.png', v='20261124-transparent-brand-v1') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='svod-favicon-32.png', v='20261124-transparent-brand-v1') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='svod-favicon-16.png', v='20261124-transparent-brand-v1') }}">
 </head>
 <body data-access-level="{% if request.user.is_superuser %}edit{% else %}{{ request.user.profile.access_level }}{% endif %}">
     <script>
@@ -24,7 +24,7 @@
     <div class="app-layout">
         <aside class="project-sidebar app-sidebar" id="app-sidebar" aria-label="Главное меню">
             <div class="app-sidebar-brand-row">
-                <a class="brand app-sidebar-brand svod-brand" href="{{ url_for('web.index') }}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{{ url_for('static', filename='svod-mark-reference.png', v='20261122-transparent-icons-v2') }}" alt="" width="34" height="34"><img class="svod-logo-image" src="{{ url_for('static', filename='svod-brand-reference.png', v='1') }}" alt="СВОД — Документы под контролем" width="180" height="44"></a>
+                <a class="brand app-sidebar-brand svod-brand" href="{{ url_for('web.index') }}" aria-label="СВОД — Проекты" title="СВОД — Документы под контролем"><img class="svod-symbol" src="{{ url_for('static', filename='svod-mark-transparent.png', v='20261124-transparent-brand-v1') }}" alt="" width="34" height="34"><img class="svod-logo-image" src="{{ url_for('static', filename='svod-brand-transparent.png', v='20261124-transparent-brand-v1') }}" alt="СВОД — Документы под контролем" width="180" height="44"></a>
                 <button class="sidebar-collapse-toggle" type="button" data-sidebar-collapse aria-controls="app-sidebar" aria-expanded="true" aria-label="Свернуть меню" title="Свернуть меню"><i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i></button>
             </div>
             {% if active_project %}<a class="project-sidebar-download" href="{{ url_for('web.export_object', object_id=active_project.id) }}"><i class="bi bi-download" aria-hidden="true"></i><span>Скачать архив проекта</span></a>{% endif %}
@@ -48,6 +48,7 @@
                     <a class="project-nav-item{% if is_active %} is-active{% endif %}" href="{{ url_for('web.project_acts', object_id=active_project.id) if is_acts else url_for('web.object_workspace', object_id=active_project.id, tab=tab) }}"{% if is_active %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if badge is not none %}<small{% if tab == 'checklist' %} data-checklist-sidebar-badge{% endif %}>{{ badge }}</small>{% endif %}</a>
                     {% endif %}
                     {% endfor %}
+                    {% if can_edit %}<a class="project-nav-item{% if request.endpoint == 'web.manage_project_share' %} is-active{% endif %}" href="{{ url_for('web.manage_project_share', object_id=active_project.id) }}"><i class="project-nav-icon bi bi-link-45deg" aria-hidden="true"></i><span>Общий доступ</span></a>{% endif %}
                     {% if request.user.is_superuser or request.user.profile.show_ai_analytics %}<a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_analytics' %} is-active{% endif %}" href="{{ url_for('web.project_analytics', object_id=active_project.id) }}"{% if request.resolver_match.url_name == 'web_project_analytics' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-stars" aria-hidden="true"></i><span>Аналитика проекта</span></a>{% endif %}
                     <a class="project-nav-item{% if request.resolver_match.url_name == 'web_project_notebook' %} is-active{% endif %}" href="/objects/{{ active_project.id }}/notebook"{% if request.resolver_match.url_name == 'web_project_notebook' %} aria-current="page"{% endif %}><i class="project-nav-icon bi bi-journal-text" aria-hidden="true"></i><span>Записная книжка</span></a>
                 </div>

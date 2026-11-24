@@ -170,7 +170,7 @@
     width: 100%;
     max-width: 190px;
     height: auto;
-    max-height: 48px;
+    max-height: 70px;
     object-fit: contain;
     object-position: left center;
     filter: none;
@@ -188,6 +188,6 @@
         flex: 0 0 36px;
         width: 36px;
         height: 36px;
-        object-fit: cover;
+        object-fit: contain;
     }
 }

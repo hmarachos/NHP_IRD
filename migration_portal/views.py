@@ -3,6 +3,7 @@ import logging
 import hashlib
 import json
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -10,11 +11,13 @@ from concurrent.futures import ThreadPoolExecutor
 import zipfile
 from html.parser import HTMLParser
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
 
 from django.conf import settings
-from django.contrib.auth.decorators import login_not_required
+from django.contrib.auth.decorators import login_not_required, login_required
+from django.contrib.auth.hashers import check_password, make_password
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.contrib.auth.models import User
 from django.contrib import messages
@@ -27,6 +30,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.utils.http import content_disposition_header
+from django.utils import timezone as django_timezone
 
 from app.services.document_titles import apply_filename_title_fallback, attach_document_title, clean_document_name, format_document_title
 from app.services.expiry import add_years, attach_expiry, expiry_state, iso_date
@@ -38,6 +42,7 @@ from migration_portal.models import (
     Document,
     DocumentVersionGroup,
     Project,
+    ProjectShare,
     ProjectChecklistItem,
     ProjectNotebookEntry,
 )
@@ -1112,6 +1117,209 @@ def delete_document(request, document_id):
         from app.services.word_documents import remove_word_preview
         remove_word_preview(path)
     return redirect("web_object_workspace", object_id=project_id)
+
+def _share_token_digest(token):
+    if not token or len(token) > 100:
+        raise Http404
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _active_project_share(token):
+    share = ProjectShare.objects.select_related("project").filter(
+        token_digest=_share_token_digest(token), revoked_at__isnull=True,
+        expires_at__gt=django_timezone.now(), project__archived_at__isnull=True,
+    ).first()
+    if share is None:
+        raise Http404
+    return share
+
+
+def _share_is_unlocked(request, share):
+    return request.session.get(f"project_share_{share.pk}") == share.password_hash
+
+
+def _share_response_headers(response):
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    response["X-Content-Type-Options"] = "nosniff"
+    response["X-Frame-Options"] = "SAMEORIGIN"
+    return response
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def manage_project_share(request, object_id):
+    project = visible_projects(request.user).filter(pk=object_id, archived_at__isnull=True).first()
+    if project is None:
+        raise Http404
+    can_manage = request.user.is_superuser or getattr(
+        getattr(request.user, "profile", None), "access_level", None,
+    ) == "edit"
+    if not can_manage:
+        raise PermissionDenied
+
+    share = ProjectShare.objects.filter(project=project).first()
+    generated_url = None
+    error = ""
+    if request.method == "POST":
+        if request.POST.get("action") == "revoke":
+            if share and share.revoked_at is None:
+                share.revoked_at = django_timezone.now()
+                share.save(update_fields=["revoked_at"])
+            messages.success(request, "Ссылка отключена.")
+            return redirect("web_manage_project_share", object_id=project.pk)
+        password = request.POST.get("password", "")
+        expires_raw = request.POST.get("expires_on", "")
+        try:
+            expires_date = datetime.strptime(expires_raw, "%Y-%m-%d").date()
+            expires_at = datetime.combine(
+                expires_date, datetime_time.max, tzinfo=django_timezone.get_current_timezone(),
+            )
+        except (TypeError, ValueError):
+            expires_at = None
+        if len(password) < 8:
+            error = "Пароль должен содержать не менее 8 символов."
+        elif expires_at is None or expires_at <= django_timezone.now():
+            error = "Укажите дату окончания действия в будущем."
+        else:
+            raw_token = secrets.token_urlsafe(32)
+            share, _ = ProjectShare.objects.update_or_create(
+                project=project,
+                defaults={
+                    "token_digest": _share_token_digest(raw_token),
+                    "password_hash": make_password(password),
+                    "expires_at": expires_at,
+                    "revoked_at": None,
+                    "created_by": request.user,
+                },
+            )
+            generated_url = request.build_absolute_uri(
+                reverse("web_project_shared_view", kwargs={"share_token": raw_token}),
+            )
+            messages.success(request, "Ссылка создана. Скопируйте её сейчас: секретный адрес больше не будет показан.")
+    response = render(request, "project_share_manage.html", {
+        "object": project,
+        "share": share,
+        "generated_url": generated_url,
+        "error": error,
+        "expiry_min": django_timezone.localdate().isoformat(),
+        "default_expiry": (django_timezone.localdate() + timedelta(days=30)).isoformat(),
+        "share_active": bool(share and share.revoked_at is None and share.expires_at > django_timezone.now()),
+    }, using="jinja2")
+    return _share_response_headers(response)
+
+
+@login_not_required
+@require_http_methods(["GET", "POST"])
+def project_shared_view(request, share_token):
+    share = _active_project_share(share_token)
+    session_key = f"project_share_{share.pk}"
+    if not _share_is_unlocked(request, share):
+        error = ""
+        if request.method == "POST":
+            ip = request.META.get("REMOTE_ADDR", "")
+            throttle_id = hashlib.sha256(ip.encode("utf-8")).hexdigest()[:24]
+            throttle_key = f"project-share-attempts:{share.pk}:{throttle_id}"
+            attempts = cache.get(throttle_key, 0)
+            if attempts >= 8:
+                error = "Слишком много попыток. Попробуйте снова через 15 минут."
+            elif check_password(request.POST.get("password", ""), share.password_hash):
+                cache.delete(throttle_key)
+                request.session.cycle_key()
+                request.session[session_key] = share.password_hash
+                return redirect("web_project_shared_view", share_token=share_token)
+            else:
+                cache.set(throttle_key, attempts + 1, timeout=15 * 60)
+                error = "Неверный пароль. Проверьте его и попробуйте ещё раз."
+        response = render(request, "project_share_password.html", {
+            "project": share.project, "share_token": share_token, "error": error,
+        }, using="jinja2")
+        return _share_response_headers(response)
+
+    project = share.project
+    documents = []
+    for document in Document.objects.filter(project=project, archived_at__isnull=True).order_by("-created_at", "-id"):
+        documents.append({
+            "title": format_document_title(
+                document.working_title or document.official_title or document.original_filename,
+                document.issuer,
+            ),
+            "number": document.document_number,
+            "issue_date": document.issue_date,
+            "valid_until": document.valid_until,
+            "file_url": reverse("web_project_shared_file", kwargs={
+                "share_token": share_token, "kind": "document", "record_id": document.pk,
+            }),
+        })
+    letters = []
+    for kind, label in (("correspondence", "Письма"), ("approval", "Согласования")):
+        rows = []
+        for letter in Correspondence.objects.filter(project=project, record_type=kind).order_by("-letter_date", "-id"):
+            rows.append({
+                "number": letter.number,
+                "date": letter.letter_date,
+                "sender": letter.sender,
+                "recipient": letter.recipient,
+                "subject": letter.subject,
+                "summary": letter.summary,
+                "file_url": reverse("web_project_shared_file", kwargs={
+                    "share_token": share_token, "kind": kind, "record_id": letter.pk,
+                }) if letter.stored_filename else None,
+            })
+        letters.append({"kind": kind, "label": label, "rows": rows})
+    response = render(request, "project_shared_view.html", {
+        "project": project,
+        "documents": documents,
+        "letters": letters,
+        "share_token": share_token,
+        "expires_at": share.expires_at,
+    }, using="jinja2")
+    return _share_response_headers(response)
+
+
+@login_not_required
+@require_GET
+def project_shared_file(request, share_token, kind, record_id):
+    share = _active_project_share(share_token)
+    if not _share_is_unlocked(request, share):
+        raise Http404
+    is_download = request.GET.get("download") == "1"
+    preview = request.GET.get("preview") == "1"
+    if kind == "document":
+        record = Document.objects.filter(pk=record_id, project=share.project, archived_at__isnull=True).first()
+        if record is None:
+            raise Http404
+        path = _stored_document_path(record)
+        filename = Path(record.original_filename or path.name).name
+        content_type = record.mime_type or "application/octet-stream"
+    elif kind in {"correspondence", "approval"}:
+        record = Correspondence.objects.filter(pk=record_id, project=share.project, record_type=kind).first()
+        if record is None:
+            raise Http404
+        stored = record.stored_filename or ""
+        candidate = Path(stored)
+        root = Path(settings.MEDIA_ROOT).resolve()
+        path = (root / candidate).resolve()
+        if not stored or candidate.is_absolute() or candidate.name != stored or path.parent != root or not path.is_file():
+            raise Http404
+        filename = Path(record.original_filename or path.name).name
+        content_type = record.mime_type or "application/octet-stream"
+    else:
+        raise Http404
+    if preview:
+        from app.services.word_documents import is_word_document, word_preview_path
+        if is_word_document(path):
+            try:
+                path = word_preview_path(path)
+            except (OSError, RuntimeError, ValueError):
+                raise Http404
+            content_type = "application/pdf"
+            filename = f"{Path(filename).stem}.pdf"
+    response = FileResponse(path.open("rb"), content_type=content_type)
+    response["Content-Disposition"] = content_disposition_header(is_download, filename)
+    return _share_response_headers(response)
+
 
 @require_GET
 @login_not_required
