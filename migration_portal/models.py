@@ -58,7 +58,7 @@ class Project(NormalizedUserTextMixin, models.Model):
 class ProjectShare(models.Model):
     """Password-protected, read-only guest link for a project's public sections."""
 
-    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="share")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="shares")
     token_digest = models.CharField(max_length=64, unique=True)
     password_hash = models.CharField(max_length=128)
     expires_at = models.DateTimeField()

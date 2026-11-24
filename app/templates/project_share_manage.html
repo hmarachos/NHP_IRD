@@ -4,7 +4,7 @@
 <section class="page-heading"><div><p class="eyebrow">ДОСТУП ПО ССЫЛКЕ</p><h1>Поделиться проектом</h1><p class="subheading">Получатель увидит только разделы «ИРД», «Письма» и «Согласования». Для входа потребуется пароль.</p></div></section>
 <section class="panel share-manage-card">
     {% if share_active %}
-    <div class="share-status"><i class="bi bi-shield-lock" aria-hidden="true"></i><div><strong>Ссылка активна</strong><span>Доступ открыт до {{ share.expires_at|ru_date }}. Повторное создание заменит ссылку и пароль.</span></div></div>
+    <div class="share-status"><i class="bi bi-shield-lock" aria-hidden="true"></i><div><strong>Ваша ссылка активна</strong><span>Доступ открыт до {{ share.expires_at|ru_date }}. Другие редакторы видят только свои ссылки и могут создать собственную.</span></div></div>
     {% elif share %}
     <div class="share-status is-inactive"><i class="bi bi-link-45deg" aria-hidden="true"></i><div><strong>Ссылка отключена</strong><span>{% if share.revoked_at %}Владелец отозвал доступ.{% else %}Срок действия ссылки истёк.{% endif %}</span></div></div>
     {% endif %}
@@ -12,7 +12,7 @@
     {% if generated_url %}
     <div class="share-generated" role="status"><strong>Новая ссылка создана</strong><p>Скопируйте ссылку и передайте получателю. Пароль сообщите отдельно.</p><label for="generated-share-url">Секретная ссылка</label><div><input id="generated-share-url" type="text" readonly value="{{ generated_url }}"><button class="secondary-button" type="button" data-copy-share>Скопировать</button></div></div>
     {% endif %}
-    {% if not share_active %}<form method="post" class="share-create-form">
+    {% if not share_active or not generated_url %}<form method="post" class="share-create-form">
         <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="create">
         <h2>{% if share_active %}Создать новую ссылку{% else %}Создать ссылку{% endif %}</h2>

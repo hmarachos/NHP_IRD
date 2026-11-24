@@ -1159,7 +1159,9 @@ def manage_project_share(request, object_id):
     if not can_manage:
         raise PermissionDenied
 
-    share = ProjectShare.objects.filter(project=project).first()
+    share = ProjectShare.objects.filter(
+        project=project, created_by=request.user,
+    ).order_by("-created_at", "-pk").first()
     checklist = list(ProjectChecklistItem.objects.filter(project=project).values(
         "status", "validity_years", "issue_date",
     ))
@@ -1173,13 +1175,22 @@ def manage_project_share(request, object_id):
     approvals = Correspondence.objects.filter(
         project=project, record_type="approval",
     )
-    generated_url = None
+    share_session_key = (
+        f"project_share_url_user_{request.user.pk}_{share.pk}" if share else None
+    )
+    share_active = bool(share and share.revoked_at is None and share.expires_at > django_timezone.now())
+    generated_url = (
+        request.session.get(share_session_key)
+        if share_active and share_session_key else None
+    )
     error = ""
     if request.method == "POST":
         if request.POST.get("action") == "revoke":
             if share and share.revoked_at is None:
                 share.revoked_at = django_timezone.now()
                 share.save(update_fields=["revoked_at"])
+                if share_session_key:
+                    request.session.pop(share_session_key, None)
             messages.success(request, "Ссылка отключена.")
             return redirect("web_manage_project_share", object_id=project.pk)
         password = request.POST.get("password", "")
@@ -1197,20 +1208,29 @@ def manage_project_share(request, object_id):
             error = "Укажите дату окончания действия в будущем."
         else:
             raw_token = secrets.token_urlsafe(32)
-            share, _ = ProjectShare.objects.update_or_create(
+            now = django_timezone.now()
+            if share_session_key:
+                request.session.pop(share_session_key, None)
+            ProjectShare.objects.filter(
                 project=project,
-                defaults={
-                    "token_digest": _share_token_digest(raw_token),
-                    "password_hash": make_password(password),
-                    "expires_at": expires_at,
-                    "revoked_at": None,
-                    "created_by": request.user,
-                },
+                created_by=request.user,
+                revoked_at__isnull=True,
+                expires_at__gt=now,
+            ).update(revoked_at=now)
+            share = ProjectShare.objects.create(
+                project=project,
+                token_digest=_share_token_digest(raw_token),
+                password_hash=make_password(password),
+                expires_at=expires_at,
+                created_by=request.user,
             )
+            share_session_key = f"project_share_url_user_{request.user.pk}_{share.pk}"
             generated_url = request.build_absolute_uri(
                 reverse("web_project_shared_view", kwargs={"share_token": raw_token}),
             )
-            messages.success(request, "Ссылка создана. Скопируйте её сейчас: секретный адрес больше не будет показан.")
+            request.session[share_session_key] = generated_url
+            share_active = True
+            messages.success(request, "Ссылка создана. Её адрес доступен только в вашей учётной записи.")
     response = render(request, "project_share_manage.html", {
         "object": project,
         "active_project": project,
@@ -1223,7 +1243,7 @@ def manage_project_share(request, object_id):
         "error": error,
         "expiry_min": django_timezone.localdate().isoformat(),
         "default_expiry": (django_timezone.localdate() + timedelta(days=30)).isoformat(),
-        "share_active": bool(share and share.revoked_at is None and share.expires_at > django_timezone.now()),
+        "share_active": share_active,
     }, using="jinja2")
     return _share_response_headers(response)
 
