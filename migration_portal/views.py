@@ -2099,6 +2099,7 @@ def _project_rows(project_id):
         "id", "contract_number", "contract_date", "stage", "name", "customer", "template_id", "chief_engineer_id", "archived_at", "created_at",
     )}
     obj["chief_engineer_name"] = project.chief_engineer.get_full_name() if project.chief_engineer_id else ""
+    obj["chief_engineer_last_name"] = project.chief_engineer.last_name if project.chief_engineer_id else ""
     documents = list(
         Document.objects.filter(project=project, archived_at__isnull=True)
         .order_by("-created_at", "-id").values()
