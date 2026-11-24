@@ -1,7 +1,106 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><title>{{ project.name }} · Общий доступ</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v1') }}"><link rel="stylesheet" href="{{ url_for('static', filename='svod-brand.css', v='20261124-transparent-brand-v1') }}"><link rel="icon" type="image/png" sizes="64x64" href="{{ url_for('static', filename='svod-favicon-64.png', v='20261124-transparent-brand-v1') }}"><link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='svod-favicon-32.png', v='20261124-transparent-brand-v1') }}"><link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='svod-favicon-16.png', v='20261124-transparent-brand-v1') }}"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"></head>
-<body class="shared-view-body"><main class="shared-view-shell shared-view-wide"><header class="shared-view-header"><span class="shared-view-badge"><i class="bi bi-eye" aria-hidden="true"></i> Только просмотр</span></header><section class="shared-project-heading"><p class="eyebrow">ОБЩИЙ ДОСТУП К ПРОЕКТУ</p><h1>{{ project.name }}</h1><p>Договор {{ project.contract_number }}{% if project.stage %} · {{ project.stage }}{% endif %}</p></section>
-<nav class="shared-section-nav" aria-label="Разделы проекта"><a href="#shared-ird">ИРД</a><a href="#shared-correspondence">Письма</a><a href="#shared-approval">Согласования</a></nav>
-<section class="panel shared-section" id="shared-ird"><div class="shared-section-heading"><div><p class="eyebrow">КОМПЛЕКТНОСТЬ</p><h2>ИРД</h2></div><span>{{ documents|length }}</span></div>{% if documents %}<div class="shared-document-list">{% for document in documents %}<article class="shared-document"><div class="shared-record-icon"><i class="bi bi-file-earmark-text" aria-hidden="true"></i></div><div class="shared-record-main"><strong>{{ document.title }}</strong>{% if document.number or document.issue_date or document.valid_until %}<small>{% if document.number %}№ {{ document.number }}{% endif %}{% if document.issue_date %} · {{ document.issue_date|ru_date }}{% endif %}{% if document.valid_until %} · действует до {{ document.valid_until|ru_date }}{% endif %}</small>{% endif %}</div><div class="shared-file-actions"><a href="{{ document.file_url }}?preview=1" target="_blank" rel="noopener noreferrer"><i class="bi bi-eye" aria-hidden="true"></i> Открыть</a><a href="{{ document.file_url }}?download=1"><i class="bi bi-download" aria-hidden="true"></i> Скачать</a></div></article>{% endfor %}</div>{% else %}<p class="shared-empty">В этом разделе пока нет документов.</p>{% endif %}</section>
-{% for section in letters %}<section class="panel shared-section" id="shared-{{ section.kind }}"><div class="shared-section-heading"><div><p class="eyebrow">ПЕРЕПИСКА ПРОЕКТА</p><h2>{{ section.label }}</h2></div><span>{{ section.rows|length }}</span></div>{% if section.rows %}<div class="shared-letter-list">{% for row in section.rows %}<article class="shared-letter"><div class="shared-record-main"><strong>{{ row.subject or ('Письмо № ' ~ row.number if row.number else section.label) }}</strong><small>{% if row.number %}№ {{ row.number }}{% endif %}{% if row.date %} · {{ row.date|ru_date }}{% endif %}</small>{% if row.sender or row.recipient %}<small>{% if row.sender %}От: {{ row.sender }}{% endif %}{% if row.recipient %} · Кому: {{ row.recipient }}{% endif %}</small>{% endif %}{% if row.summary %}<p>{{ row.summary }}</p>{% endif %}</div>{% if row.file_url %}<div class="shared-file-actions"><a href="{{ row.file_url }}?preview=1" target="_blank" rel="noopener noreferrer"><i class="bi bi-eye" aria-hidden="true"></i> Открыть</a><a href="{{ row.file_url }}?download=1"><i class="bi bi-download" aria-hidden="true"></i> Скачать</a></div>{% endif %}</article>{% endfor %}</div>{% else %}<p class="shared-empty">В этом разделе пока нет документов.</p>{% endif %}</section>{% endfor %}
-<footer class="shared-view-footer">Ссылка действует до {{ expires_at|ru_date }}. Доступ защищён паролем.</footer></main></body></html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>{{ project.name }} · Общий доступ</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css', v='5.3.3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v2') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body class="shared-view-body">
+<main class="shared-view-shell shared-view-wide">
+    <header class="shared-view-header">
+        <span class="shared-view-badge"><i class="bi bi-eye" aria-hidden="true"></i> Только просмотр</span>
+    </header>
+    <section class="shared-project-heading">
+        <p class="eyebrow">ОБЩИЙ ДОСТУП К ПРОЕКТУ</p>
+        <h1>{{ project.name }}</h1>
+        <p>Договор {{ project.contract_number }}{% if project.stage %} · {{ project.stage }}{% endif %}</p>
+    </section>
+
+    <ul class="nav nav-tabs shared-section-nav" id="shared-section-tabs" role="tablist" aria-label="Разделы проекта">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="shared-ird-tab" data-bs-toggle="tab" data-bs-target="#shared-ird" type="button" role="tab" aria-controls="shared-ird" aria-selected="true">ИРД</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="shared-correspondence-tab" data-bs-toggle="tab" data-bs-target="#shared-correspondence" type="button" role="tab" aria-controls="shared-correspondence" aria-selected="false">Письма</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="shared-approval-tab" data-bs-toggle="tab" data-bs-target="#shared-approval" type="button" role="tab" aria-controls="shared-approval" aria-selected="false">Согласования</button>
+        </li>
+    </ul>
+
+    <div class="tab-content shared-section-tab-content">
+        <section class="panel shared-section tab-pane fade show active" id="shared-ird" role="tabpanel" aria-labelledby="shared-ird-tab" tabindex="0">
+            <div class="shared-section-heading">
+                <div><p class="eyebrow">КОМПЛЕКТНОСТЬ</p><h2>ИРД</h2></div>
+                <span>{{ documents|length }}</span>
+            </div>
+            {% if documents %}
+            <div class="shared-document-list">
+                {% for document in documents %}
+                <article class="shared-document">
+                    <div class="shared-record-icon"><i class="bi bi-file-earmark-text" aria-hidden="true"></i></div>
+                    <div class="shared-record-main">
+                        <strong>{{ document.title }}</strong>
+                        {% if document.number or document.issue_date or document.valid_until %}<small>{% if document.number %}№ {{ document.number }}{% endif %}{% if document.issue_date %} · {{ document.issue_date|ru_date }}{% endif %}{% if document.valid_until %} · действует до {{ document.valid_until|ru_date }}{% endif %}</small>{% endif %}
+                    </div>
+                    <div class="shared-file-actions">
+                        <a href="{{ document.file_url }}?preview=1" target="_blank" rel="noopener noreferrer"><i class="bi bi-eye" aria-hidden="true"></i> Открыть</a>
+                        <a href="{{ document.file_url }}?download=1"><i class="bi bi-download" aria-hidden="true"></i> Скачать</a>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}<p class="shared-empty">В этом разделе пока нет документов.</p>{% endif %}
+        </section>
+
+        {% for section in letters %}
+        <section class="panel shared-section tab-pane fade" id="shared-{{ section.kind }}" role="tabpanel" aria-labelledby="shared-{{ section.kind }}-tab" tabindex="0">
+            <div class="shared-section-heading">
+                <div><p class="eyebrow">ПЕРЕПИСКА ПРОЕКТА</p><h2>{{ section.label }}</h2></div>
+                <span>{{ section.rows|length }}</span>
+            </div>
+            {% if section.rows %}
+            <div class="shared-letter-list">
+                {% for row in section.rows %}
+                <article class="shared-letter">
+                    <div class="shared-record-main">
+                        <strong>{{ row.subject or ('Письмо № ' ~ row.number if row.number else section.label) }}</strong>
+                        <small>{% if row.number %}№ {{ row.number }}{% endif %}{% if row.date %} · {{ row.date|ru_date }}{% endif %}</small>
+                        {% if row.sender or row.recipient %}<small>{% if row.sender %}От: {{ row.sender }}{% endif %}{% if row.recipient %} · Кому: {{ row.recipient }}{% endif %}</small>{% endif %}
+                        {% if row.summary %}<p>{{ row.summary }}</p>{% endif %}
+                    </div>
+                    {% if row.file_url %}
+                    <div class="shared-file-actions">
+                        <a href="{{ row.file_url }}?preview=1" target="_blank" rel="noopener noreferrer"><i class="bi bi-eye" aria-hidden="true"></i> Открыть</a>
+                        <a href="{{ row.file_url }}?download=1"><i class="bi bi-download" aria-hidden="true"></i> Скачать</a>
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}<p class="shared-empty">В этом разделе пока нет документов.</p>{% endif %}
+        </section>
+        {% endfor %}
+    </div>
+
+    <footer class="shared-view-footer">Ссылка действует до {{ expires_at|ru_date }}. Доступ защищён паролем.</footer>
+</main>
+<script src="{{ url_for('static', filename='bootstrap.bundle.min.js', v='5.3.3') }}"></script>
+<script>
+(() => {
+    const tabs = document.querySelector('#shared-section-tabs');
+    const initialPanel = location.hash ? document.querySelector(location.hash) : null;
+    const initialButton = initialPanel && tabs?.querySelector(`[data-bs-target="#${CSS.escape(initialPanel.id)}"]`);
+    if (initialButton && window.bootstrap?.Tab) bootstrap.Tab.getOrCreateInstance(initialButton).show();
+    tabs?.addEventListener('shown.bs.tab', event => {
+        const target = event.target.getAttribute('data-bs-target');
+        if (target) history.replaceState(null, '', target);
+    });
+})();
+</script>
+</body>
+</html>
