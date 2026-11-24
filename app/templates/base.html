@@ -163,6 +163,17 @@
             });
             window.matchMedia('(min-width: 761px)').addEventListener('change', () => setOpen(false));
         })();
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-password-toggle]');
+            if (!button) return;
+            const input = button.parentElement.querySelector('input');
+            if (!input) return;
+            const show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            button.setAttribute('aria-pressed', String(show));
+            button.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+            button.innerHTML = `<i class="bi ${show ? 'bi-eye-slash' : 'bi-eye'}" aria-hidden="true"></i>`;
+        });
     </script>
 </body>
 </html>
