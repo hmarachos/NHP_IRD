@@ -1081,6 +1081,12 @@ body[data-access-level="view"] .checklist-replacement-field,body[data-access-lev
     .account-sidebar .sidebar-author-credit{margin-top:28px}
 }
 
+@media(max-width:760px){
+    .app-sidebar .project-side-nav{flex:0 0 auto}
+    .app-sidebar .project-nav-account{margin-top:0}
+    .app-sidebar .sidebar-author-credit{flex:0 0 auto}
+}
+
 .ird-checklist-picker{display:grid;gap:9px;margin:0 0 16px;padding:12px;border:1px solid #cbded9;border-left:3px solid var(--accent);border-radius:11px;background:#f5faf8}
 .ird-checklist-picker-heading{display:flex;align-items:center;gap:9px;color:var(--text)}
 .ird-checklist-picker-icon{display:grid;width:30px;height:30px;flex:0 0 30px;place-items:center;border-radius:8px;background:#e2f0ec;color:var(--accent-dark);font-size:15px}
