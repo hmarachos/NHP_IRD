@@ -1,6 +1,7 @@
 <header class="project-topbar" aria-label="Текущий проект">
     <div class="project-topbar-context">
         <strong>{{ active_project.name }}</strong>
-        <small>Договор {{ active_project.contract_number }}{% if active_project.stage %} · {{ active_project.stage }}{% endif %}{% if active_project.customer %} · Заказчик: {{ active_project.customer }}{% endif %}{% if active_project.chief_engineer_id and active_project.chief_engineer.last_name %} · ГИП: {{ active_project.chief_engineer.last_name }}{% endif %}</small>
+        {% set gip_surname = active_project.chief_engineer_last_name if active_project.chief_engineer_last_name is defined else (active_project.chief_engineer.last_name if active_project.chief_engineer_id else '') %}
+        <small>Договор {{ active_project.contract_number }}{% if active_project.stage %} · {{ active_project.stage }}{% endif %}{% if active_project.customer %} · Заказчик: {{ active_project.customer }}{% endif %}{% if gip_surname %} · ГИП: {{ gip_surname }}{% endif %}</small>
     </div>
 </header>
