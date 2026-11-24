@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Общий доступ · {{ object.name }}{% endblock %}
 {% block content %}
-<div class="breadcrumbs"><a href="{{ url_for('web.index') }}">Проекты</a><span>/</span><a href="{{ url_for('web.object_workspace', object_id=object.id) }}">{{ object.name }}</a><span>/</span><span>Общий доступ</span></div>
 <section class="page-heading"><div><p class="eyebrow">ДОСТУП ПО ССЫЛКЕ</p><h1>Поделиться проектом</h1><p class="subheading">Получатель увидит только разделы «ИРД», «Письма» и «Согласования». Для входа потребуется пароль.</p></div></section>
 <section class="panel share-manage-card">
     {% if share_active %}
