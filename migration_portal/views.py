@@ -1230,7 +1230,6 @@ def manage_project_share(request, object_id):
             )
             request.session[share_session_key] = generated_url
             share_active = True
-            messages.success(request, "Ссылка создана. Её адрес доступен только в вашей учётной записи.")
     response = render(request, "project_share_manage.html", {
         "object": project,
         "active_project": project,
