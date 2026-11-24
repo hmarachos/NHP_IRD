@@ -12,14 +12,14 @@
     {% if generated_url %}
     <div class="share-generated" role="status"><strong>Новая ссылка создана</strong><p>Скопируйте ссылку и передайте получателю. Пароль сообщите отдельно.</p><label for="generated-share-url">Секретная ссылка</label><div><input id="generated-share-url" type="text" readonly value="{{ generated_url }}"><button class="secondary-button" type="button" data-copy-share>Скопировать</button></div></div>
     {% endif %}
-    <form method="post" class="share-create-form">
+    {% if not share_active %}<form method="post" class="share-create-form">
         <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="create">
         <h2>{% if share_active %}Создать новую ссылку{% else %}Создать ссылку{% endif %}</h2>
         <p>Срок по умолчанию — 30 дней. Пароль должен содержать не менее 8 символов.</p>
         <div class="share-form-fields"><label>Пароль для получателя<span class="account-password-field"><input type="password" name="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-password-toggle aria-label="Показать пароль" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button></span></label><label>Действует до<input type="date" name="expires_on" min="{{ expiry_min }}" value="{{ default_expiry }}" required></label></div>
         <button type="submit"><i class="bi bi-shield-lock" aria-hidden="true"></i> Создать защищённую ссылку</button>
-    </form>
+    </form>{% endif %}
     {% if share_active %}<form method="post" class="share-revoke-form" onsubmit="return confirm('Отключить ссылку? Получатели потеряют доступ.');"><input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token() }}"><input type="hidden" name="action" value="revoke"><button class="text-danger" type="submit"><i class="bi bi-link-45deg" aria-hidden="true"></i> Отозвать текущую ссылку</button></form>{% endif %}
 </section>
 {% if generated_url %}<script>
