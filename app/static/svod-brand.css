@@ -176,6 +176,13 @@
     filter: none;
 }
 @media (min-width: 761px) {
+    body:not(.sidebar-collapsed) .app-sidebar .app-sidebar-brand-row { padding-left: 0; }
+    body:not(.sidebar-collapsed) .svod-brand .svod-logo-image {
+        transform: scale(1.2);
+        transform-origin: left center;
+    }
+}
+@media (min-width: 761px) {
     body.sidebar-collapsed .app-sidebar .svod-brand {
         flex: 0 0 42px;
         width: 42px;
