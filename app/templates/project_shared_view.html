@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer">
     <title>{{ project.name }} · Общий доступ</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css', v='5.3.3') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v6') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v7') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="shared-view-body">
@@ -63,7 +63,7 @@
         {% for section in letters %}
         <section class="panel shared-section tab-pane fade" id="shared-{{ section.kind }}" role="tabpanel" aria-labelledby="shared-{{ section.kind }}-tab" tabindex="0">
             <div class="shared-section-heading">
-                <div><p class="eyebrow">ПЕРЕПИСКА ПРОЕКТА</p><h2>{{ section.label }}</h2></div>
+                <div><h2>{{ section.label }}</h2></div>
                 <span>{{ section.rows|length }}</span>
             </div>
             {% if section.rows %}
