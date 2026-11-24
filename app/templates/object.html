@@ -1404,7 +1404,7 @@
                 button.classList.toggle('is-active', active);
                 button.setAttribute('aria-selected', String(active));
             });
-            reviewForm.querySelector('[data-ird-frame]').src = entry.result.preview;
+            reviewForm.querySelector('[data-ird-frame]').src = `/documents/${entry.result.id}/viewer`;
             irdDialog.querySelector('[data-ird-heading]').textContent = entry.fields.working_title || entry.file.name;
             batchChecklistLabel.hidden = !separateDocumentsMode;
             batchChecklistSelect.disabled = !separateDocumentsMode;
@@ -1606,13 +1606,13 @@
             splitter.setAttribute('aria-valuemax', '72');
             splitter.setAttribute('aria-valuenow', String(Math.round(splitRatio * 100)));
             if (persist) {
-                try { localStorage.setItem(splitStorageKey, String(splitRatio)); } catch (_) { }
+                try { localStorage.setItem(isNarrowLayout() ? `${splitStorageKey}-mobile` : splitStorageKey, String(splitRatio)); } catch (_) { }
             }
         };
         try {
-            const savedSplit = Number(localStorage.getItem(splitStorageKey));
-            setSplit(Number.isFinite(savedSplit) && savedSplit > 0 ? savedSplit : .25, false);
-        } catch (_) { setSplit(.25, false); }
+            const savedSplit = Number(localStorage.getItem(isNarrowLayout() ? `${splitStorageKey}-mobile` : splitStorageKey));
+            setSplit(Number.isFinite(savedSplit) && savedSplit > 0 ? savedSplit : (isNarrowLayout() ? .48 : .25), false);
+        } catch (_) { setSplit(isNarrowLayout() ? .48 : .25, false); }
         const moveSplit = (event) => {
             if (!dragging || (activePointerId !== null && event.pointerId !== activePointerId)) return;
             const rect = reviewForm.getBoundingClientRect();
@@ -1769,7 +1769,7 @@
             const source=document.createElement('button'); source.type='button'; source.hidden=true;
             source.className='checklist-linked-document-card checklist-multiple-card';
             source.dataset.openIrdDocument=''; source.dataset.linkedDocument=''; source.dataset.linkedDocumentLink='';
-            source.dataset.documentId=String(result.id); source.dataset.documentPreview=result.preview||'';
+            source.dataset.documentId=String(result.id); source.dataset.documentPreview=`/documents/${result.id}/viewer`;
             source.dataset.documentDeleteUrl=`/documents/${result.id}/delete`;
             const values=result.fields||{};
             source.dataset.documentTitle=values.working_title||itemTitle||'Документ';
@@ -1979,7 +1979,7 @@
                 const result=await response.json(); if (!response.ok || result.error) throw new Error(result.error || 'Не удалось обработать документ.');
                 const appendedItemId=checklistAppendMode?checklistAppendItemId:'';
                 checklistAppendMode=false; checklistAppendItemId='';
-                extracted=result; reloadOnClose=true; pendingUploadSaved=false; reviewForm.classList.remove('is-preview-only');splitter.hidden=false;reviewForm.querySelector('[data-ird-frame]').src=result.preview;
+                extracted=result; reloadOnClose=true; pendingUploadSaved=false; reviewForm.classList.remove('is-preview-only');splitter.hidden=false;reviewForm.querySelector('[data-ird-frame]').src=`/documents/${result.id}/viewer`;
                 if (correspondenceMode) {
                     setCorrespondenceMode(true, result.record_type || correspondenceRecordType);
                     correspondenceUpdateUrl = `/objects/{{ object.id }}/correspondence/${result.id}`;
