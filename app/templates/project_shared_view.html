@@ -6,7 +6,7 @@
     <meta name="referrer" content="no-referrer">
     <title>{{ project.name }} · Общий доступ</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css', v='5.3.3') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20261124-secure-share-v3') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="shared-view-body">
@@ -15,7 +15,7 @@
         <span class="shared-view-badge"><i class="bi bi-eye" aria-hidden="true"></i> Только просмотр</span>
     </header>
     <section class="shared-project-heading">
-        <p class="eyebrow">ОБЩИЙ ДОСТУП К ПРОЕКТУ</p>
+        <p class="eyebrow">ДОКУМЕНТЫ ПРОЕКТА</p>
         <h1>{{ project.name }}</h1>
         <p>Договор {{ project.contract_number }}{% if project.stage %} · {{ project.stage }}{% endif %}</p>
     </section>
