@@ -1298,6 +1298,58 @@ def project_shared_view(request, share_token):
 
 @login_not_required
 @require_GET
+def project_shared_archive(request, share_token):
+    share = _active_project_share(share_token)
+    if not _share_is_unlocked(request, share):
+        raise Http404
+
+    project = share.project
+    documents = list(Document.objects.filter(
+        project=project, archived_at__isnull=True,
+    ).order_by("-created_at", "-id").values())
+    letters = list(Correspondence.objects.filter(
+        project=project, record_type="correspondence",
+    ).order_by("-letter_date", "-id").values())
+    approvals = list(Correspondence.objects.filter(
+        project=project, record_type="approval",
+    ).order_by("-letter_date", "-id").values())
+
+    archive = BytesIO()
+    upload_root = Path(settings.MEDIA_ROOT).resolve()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+        def add_file(record, folder, label, title, date_value=""):
+            stored = record.get("stored_filename") or ""
+            candidate = Path(stored)
+            path = (upload_root / candidate).resolve() if stored else None
+            if path is None or candidate.is_absolute() or candidate.name != stored or path.parent != upload_root or not path.is_file():
+                return
+            safe_title = _archive_name(title, label)
+            if folder == "01_ИРД":
+                extension = Path(record.get("original_filename") or path.name).suffix or path.suffix
+                member = f"{folder}/{record['id']:03d}_{safe_title}{extension}"
+            else:
+                date_part = _archive_name(date_value or "без_даты", "без_даты")
+                member = f"{folder}/{record['id']:03d}_{date_part}_{safe_title}{path.suffix}"
+            bundle.writestr(member, path.read_bytes())
+
+        for row in documents:
+            add_file(row, "01_ИРД", "Документ",
+                     row.get("working_title") or row.get("official_title") or row.get("original_filename") or "Документ")
+        for row in letters:
+            add_file(row, "02_Переписка", "Письмо",
+                     row.get("subject") or row.get("sender") or "Письмо", row.get("letter_date"))
+        for row in approvals:
+            add_file(row, "03_Согласования", "Согласование",
+                     row.get("subject") or row.get("sender") or "Согласование", row.get("letter_date"))
+
+    filename = _archive_name(project.name, f"Проект_{project.pk}")
+    response = FileResponse(BytesIO(archive.getvalue()), content_type="application/zip")
+    response["Content-Disposition"] = content_disposition_header(True, f"Архив_проекта_{filename}.zip")
+    return _share_response_headers(response)
+
+
+@login_not_required
+@require_GET
 def project_shared_file(request, share_token, kind, record_id):
     share = _active_project_share(share_token)
     if not _share_is_unlocked(request, share):

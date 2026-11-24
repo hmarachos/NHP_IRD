@@ -66,6 +66,7 @@ urlpatterns = [
     path("documents/<int:document_id>/restore", views.restore_document, name="web_restore_document"),
     path("documents/<int:document_id>/delete", views.delete_document, name="web_delete_document"),
     path("shared/<str:share_token>/", views.project_shared_view, name="web_project_shared_view"),
+    path("shared/<str:share_token>/archive", views.project_shared_archive, name="web_project_shared_archive"),
     path("shared/<str:share_token>/files/<str:kind>/<int:record_id>", views.project_shared_file, name="web_project_shared_file"),
     path("objects/<int:object_id>/checklist/<int:item_id>", views.update_checklist_item, name="web_update_checklist_item"),
     path("objects/<int:object_id>/checklist/<int:item_id>/replacement", views.update_checklist_replacement, name="web_update_checklist_replacement"),
