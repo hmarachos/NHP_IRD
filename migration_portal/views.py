@@ -1164,7 +1164,7 @@ def manage_project_share(request, object_id):
         "status", "validity_years", "issue_date",
     ))
     received_count = sum(
-        row["status"] == "received" or (row["validity_years"] and row["issue_date"])
+        bool(row["status"] == "received" or (row["validity_years"] and row["issue_date"]))
         for row in checklist
     )
     correspondence_count = Correspondence.objects.filter(
